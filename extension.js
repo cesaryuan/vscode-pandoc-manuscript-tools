@@ -307,7 +307,9 @@ class PandocHoverProvider {
 
     const mathBlock = findMathBlockAtPosition(parsed, plainPosition);
     if (mathBlock) {
-      return new vscode.Hover(await buildMathHover(mathBlock, this.index, this.mathRenderer), toRange(mathBlock.selectionRange));
+      // Math-block hovers should shade the whole display equation; label hovers
+      // are handled above so `{#eq:...}` still keeps its tighter range.
+      return new vscode.Hover(await buildMathHover(mathBlock, this.index, this.mathRenderer), toRange(mathBlock.range));
     }
 
     const inlineMath = findInlineMathAtPosition(parsed, plainPosition);
