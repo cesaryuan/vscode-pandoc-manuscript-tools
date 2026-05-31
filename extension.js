@@ -4,6 +4,7 @@ const vscode = require("vscode");
 const {
   parsePandocDocument,
   findMathBlockAtPosition,
+  findInlineMathAtPosition,
   findTokenAtPosition,
 } = require("./parser");
 
@@ -309,6 +310,11 @@ class PandocHoverProvider {
       return new vscode.Hover(await buildMathHover(mathBlock, this.index, this.mathRenderer), toRange(mathBlock.selectionRange));
     }
 
+    const inlineMath = findInlineMathAtPosition(parsed, plainPosition);
+    if (inlineMath) {
+      return new vscode.Hover(await buildInlineMathHover(inlineMath, this.mathRenderer), toRange(inlineMath.fullRange));
+    }
+
     return undefined;
   }
 }
@@ -422,7 +428,7 @@ async function buildMathHover(mathBlock, index, mathRenderer) {
   }
 
   if (mathBlock.tex) {
-    const renderedSvg = await mathRenderer.renderToDataUri(mathBlock.tex);
+    const renderedSvg = await mathRenderer.renderToDataUri(mathBlock.tex, true);
     if (renderedSvg) {
       markdown.appendMarkdown(`\n\n![Rendered equation preview](${renderedSvg})\n\n`);
     } else {
@@ -431,6 +437,28 @@ async function buildMathHover(mathBlock, index, mathRenderer) {
     markdown.appendCodeblock(mathBlock.tex, "tex");
   }
 
+  return markdown;
+}
+
+/**
+ * Builds a hover body for inline TeX math spans.
+ *
+ * @param {import("./parser").InlineMathEntry} inlineMath Inline math entry.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @returns {Promise<vscode.MarkdownString>}
+ */
+async function buildInlineMathHover(inlineMath, mathRenderer) {
+  const markdown = new vscode.MarkdownString(undefined, true);
+  markdown.appendMarkdown("**Inline math**");
+
+  const renderedSvg = await mathRenderer.renderToDataUri(inlineMath.tex, false);
+  if (renderedSvg) {
+    markdown.appendMarkdown(`\n\n![Rendered inline equation preview](${renderedSvg})\n\n`);
+  } else {
+    markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. Run `npm install` in the extension folder and reload the Extension Development Host.\n\n");
+  }
+
+  markdown.appendCodeblock(inlineMath.tex, "tex");
   return markdown;
 }
 
@@ -451,10 +479,11 @@ class MathJaxRenderer {
    * Converts TeX into a data URI containing a standalone SVG image.
    *
    * @param {string} tex TeX source.
+   * @param {boolean} display Whether to render in display style.
    * @returns {Promise<string | undefined>}
    */
-  async renderToDataUri(tex) {
-    const svg = await this.renderToSvg(tex);
+  async renderToDataUri(tex, display) {
+    const svg = await this.renderToSvg(tex, display);
     if (!svg) {
       return undefined;
     }
@@ -462,31 +491,34 @@ class MathJaxRenderer {
   }
 
   /**
-   * Converts TeX into SVG and caches the result by source text.
+   * Converts TeX into SVG and caches the result by source text and mode.
    *
    * @param {string} tex TeX source.
+   * @param {boolean} display Whether to render in display style.
    * @returns {Promise<string | undefined>}
    */
-  async renderToSvg(tex) {
+  async renderToSvg(tex, display) {
     const trimmedTex = tex.trim();
     if (!trimmedTex) {
       return undefined;
     }
 
-    if (!this.svgCache.has(trimmedTex)) {
-      this.svgCache.set(trimmedTex, this.renderToSvgUncached(trimmedTex));
+    const cacheKey = `${display ? "display" : "inline"}:${trimmedTex}`;
+    if (!this.svgCache.has(cacheKey)) {
+      this.svgCache.set(cacheKey, this.renderToSvgUncached(trimmedTex, display));
     }
 
-    return this.svgCache.get(trimmedTex);
+    return this.svgCache.get(cacheKey);
   }
 
   /**
    * Converts TeX into SVG without consulting the cache.
    *
    * @param {string} tex TeX source.
+   * @param {boolean} display Whether to render in display style.
    * @returns {Promise<string | undefined>}
    */
-  async renderToSvgUncached(tex) {
+  async renderToSvgUncached(tex, display) {
     try {
       const mathJax = await this.ensureMathJax();
       if (!mathJax) {
@@ -494,7 +526,7 @@ class MathJaxRenderer {
       }
 
       const node = await mathJax.tex2svgPromise(tex, {
-        display: true,
+        display,
         em: 16,
         ex: 8,
         containerWidth: 80 * 16,
@@ -578,17 +610,64 @@ class MathJaxRenderer {
 }
 
 /**
- * Adds a white background so black MathJax glyphs remain visible in dark hovers.
+ * Makes a MathJax SVG fit inside hover images without clipping.
  *
  * @param {string} svg Raw MathJax SVG.
  * @returns {string}
  */
 function makeSvgHoverFriendly(svg) {
-  const hoverStyle = "background:#fff;border-radius:6px;padding:8px;";
-  if (/<svg\b[^>]*\sstyle="/.test(svg)) {
-    return svg.replace(/(<svg\b[^>]*\sstyle=")/, `$1${hoverStyle}`);
+  const sizedSvg = setSvgPixelSize(svg, 720);
+  const hoverStyle = "background:#fff;border-radius:6px;";
+  if (/<svg\b[^>]*\sstyle="/.test(sizedSvg)) {
+    return sizedSvg.replace(/(<svg\b[^>]*\sstyle=")/, `$1${hoverStyle}`);
   }
-  return svg.replace("<svg ", `<svg style="${hoverStyle}" `);
+  return sizedSvg.replace("<svg ", `<svg style="${hoverStyle}" `);
+}
+
+/**
+ * Converts MathJax's ex-based dimensions into capped pixel dimensions.
+ *
+ * VS Code hover images can crop very wide SVGs; using the viewBox lets the
+ * preview scale down while preserving the complete formula.
+ *
+ * @param {string} svg Raw MathJax SVG.
+ * @param {number} maxWidthPx Maximum rendered width.
+ * @returns {string}
+ */
+function setSvgPixelSize(svg, maxWidthPx) {
+  const viewBoxMatch = svg.match(/\bviewBox="(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
+  if (!viewBoxMatch) {
+    return svg;
+  }
+
+  const viewBoxWidth = Number(viewBoxMatch[3]);
+  const viewBoxHeight = Number(viewBoxMatch[4]);
+  if (!Number.isFinite(viewBoxWidth) || !Number.isFinite(viewBoxHeight) || viewBoxWidth <= 0 || viewBoxHeight <= 0) {
+    return svg;
+  }
+
+  const naturalWidthPx = Math.ceil((viewBoxWidth / 1000) * 16);
+  const naturalHeightPx = Math.ceil((viewBoxHeight / 1000) * 16);
+  const widthPx = Math.min(naturalWidthPx, maxWidthPx);
+  const heightPx = Math.max(1, Math.ceil(naturalHeightPx * (widthPx / naturalWidthPx)));
+
+  return upsertSvgAttribute(upsertSvgAttribute(svg, "width", `${widthPx}px`), "height", `${heightPx}px`);
+}
+
+/**
+ * Adds or replaces an attribute on the root SVG element.
+ *
+ * @param {string} svg Raw SVG.
+ * @param {string} attribute Attribute name.
+ * @param {string} value Attribute value.
+ * @returns {string}
+ */
+function upsertSvgAttribute(svg, attribute, value) {
+  const pattern = new RegExp(`(<svg\\b[^>]*\\s)${attribute}="[^"]*"`);
+  if (pattern.test(svg)) {
+    return svg.replace(pattern, `$1${attribute}="${value}"`);
+  }
+  return svg.replace("<svg ", `<svg ${attribute}="${value}" `);
 }
 
 /**

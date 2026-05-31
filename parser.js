@@ -26,6 +26,7 @@ function parsePandocDocument(text, uriText = "") {
   const references = [];
   const headings = [];
   const mathBlocks = [];
+  const inlineMath = [];
   const labelMap = new Map();
   const referenceMap = new Map();
 
@@ -82,6 +83,7 @@ function parsePandocDocument(text, uriText = "") {
     const lineLabels = scanLabels(line, uriText, "markdown");
     addAllLabels(lineLabels, labels, labelMap);
     addAllReferences(scanReferences(line, uriText), references, referenceMap);
+    inlineMath.push(...scanInlineMath(line, uriText));
 
     const heading = scanHeading(line, uriText);
     if (heading) {
@@ -106,6 +108,7 @@ function parsePandocDocument(text, uriText = "") {
     references,
     headings,
     mathBlocks,
+    inlineMath,
     labelMap,
     referenceMap,
   };
@@ -283,6 +286,7 @@ function createMathBlock(uriText, startLine, endLine, bodyLines, closingLabels) 
   const equationLabel = closingLabels.find((entry) => entry.prefix === "eq");
   return {
     label: equationLabel ? equationLabel.label : undefined,
+    display: true,
     uriText,
     line: startLine.number,
     endLine: endLine.number,
@@ -290,6 +294,109 @@ function createMathBlock(uriText, startLine, endLine, bodyLines, closingLabels) 
     selectionRange: equationLabel ? equationLabel.range : createRange(startLine.number, 0, startLine.number, startLine.text.length),
     tex: bodyLines.join("\n").trim(),
   };
+}
+
+/**
+ * Finds inline TeX math on one line.
+ *
+ * Inline formulas are intentionally independent from cross-reference parsing:
+ * they only power hover previews and do not create labels or references.
+ *
+ * @param {ParsedLine} line Parsed line.
+ * @param {string} uriText URI string for resulting entries.
+ * @returns {InlineMathEntry[]}
+ */
+function scanInlineMath(line, uriText) {
+  const entries = [];
+  scanDelimitedInlineMath(line, uriText, "$", "$", entries);
+  scanDelimitedInlineMath(line, uriText, "\\(", "\\)", entries);
+  return entries;
+}
+
+/**
+ * Scans inline math wrapped by one delimiter pair.
+ *
+ * @param {ParsedLine} line Parsed line.
+ * @param {string} uriText URI string for resulting entries.
+ * @param {string} openDelimiter Opening delimiter.
+ * @param {string} closeDelimiter Closing delimiter.
+ * @param {InlineMathEntry[]} entries Target entries.
+ */
+function scanDelimitedInlineMath(line, uriText, openDelimiter, closeDelimiter, entries) {
+  let searchStart = 0;
+  while (searchStart < line.text.length) {
+    const openIndex = findNextDelimiter(line.text, openDelimiter, searchStart);
+    if (openIndex < 0) {
+      return;
+    }
+
+    if (openDelimiter === "$" && line.text[openIndex + 1] === "$") {
+      searchStart = openIndex + 2;
+      continue;
+    }
+
+    const contentStart = openIndex + openDelimiter.length;
+    const closeIndex = findNextDelimiter(line.text, closeDelimiter, contentStart);
+    if (closeIndex < 0) {
+      return;
+    }
+
+    if (closeDelimiter === "$" && line.text[closeIndex + 1] === "$") {
+      searchStart = closeIndex + 2;
+      continue;
+    }
+
+    const tex = line.text.slice(contentStart, closeIndex).trim();
+    if (tex.length > 0) {
+      entries.push({
+        tex,
+        display: false,
+        uriText,
+        line: line.number,
+        character: openIndex,
+        range: createRange(line.number, contentStart, line.number, closeIndex),
+        fullRange: createRange(line.number, openIndex, line.number, closeIndex + closeDelimiter.length),
+        offset: line.startOffset + contentStart,
+        endOffset: line.startOffset + closeIndex,
+        fullOffset: line.startOffset + openIndex,
+        fullEndOffset: line.startOffset + closeIndex + closeDelimiter.length,
+        preview: line.text.trim(),
+      });
+    }
+
+    searchStart = closeIndex + closeDelimiter.length;
+  }
+}
+
+/**
+ * Finds the next unescaped inline math delimiter.
+ *
+ * @param {string} text Line text.
+ * @param {string} delimiter Delimiter to find.
+ * @param {number} start Search start index.
+ * @returns {number}
+ */
+function findNextDelimiter(text, delimiter, start) {
+  let index = text.indexOf(delimiter, start);
+  while (index >= 0 && isEscaped(text, index)) {
+    index = text.indexOf(delimiter, index + delimiter.length);
+  }
+  return index;
+}
+
+/**
+ * Checks whether a character at an index is escaped by an odd backslash count.
+ *
+ * @param {string} text Line text.
+ * @param {number} index Character index.
+ * @returns {boolean}
+ */
+function isEscaped(text, index) {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
 }
 
 /**
@@ -428,6 +535,17 @@ function findMathBlockAtPosition(parsed, position) {
 }
 
 /**
+ * Finds the inline math span under a cursor position.
+ *
+ * @param {ParsedPandocDocument} parsed Parsed document.
+ * @param {{line: number, character: number}} position Cursor position.
+ * @returns {InlineMathEntry | undefined}
+ */
+function findInlineMathAtPosition(parsed, position) {
+  return parsed.inlineMath.find((entry) => containsPosition(entry.fullRange, position));
+}
+
+/**
  * Checks whether a range includes a position.
  *
  * @param {PlainRange} range Plain range.
@@ -451,6 +569,7 @@ module.exports = {
   LABEL_PREFIXES,
   parsePandocDocument,
   findMathBlockAtPosition,
+  findInlineMathAtPosition,
   findTokenAtPosition,
   containsPosition,
 };
@@ -461,6 +580,7 @@ module.exports = {
  * @typedef {{label: string, prefix: string, kind: string, source: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} LabelEntry
  * @typedef {{label: string, prefix: string, kind: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} ReferenceEntry
  * @typedef {{title: string, label?: string, level: number, uriText: string, line: number, character: number, range: PlainRange, selectionRange: PlainRange, preview: string}} HeadingEntry
- * @typedef {{label?: string, uriText: string, line: number, endLine: number, range: PlainRange, selectionRange: PlainRange, tex: string}} MathBlockEntry
- * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
+ * @typedef {{label?: string, display: true, uriText: string, line: number, endLine: number, range: PlainRange, selectionRange: PlainRange, tex: string}} MathBlockEntry
+ * @typedef {{tex: string, display: false, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} InlineMathEntry
+ * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], inlineMath: InlineMathEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
  */
