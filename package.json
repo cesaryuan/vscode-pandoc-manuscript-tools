@@ -10,6 +10,9 @@
   "categories": [
     "Other"
   ],
+  "scripts": {
+    "profile:test-md": "node scripts/profile-test-md.js test.md"
+  },
   "activationEvents": [
     "onLanguage:markdown",
     "onCommand:pandocCrossrefHelper.rebuildIndex"
