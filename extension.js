@@ -403,7 +403,7 @@ function buildLabelHover(entry, index, tokenType) {
     markdown.appendMarkdown("\n\n$(warning) No definition found for this Pandoc cross reference.");
   } else if (definitions.length > 1) {
     markdown.appendMarkdown("\n\n$(warning) Duplicate definitions were found for this label.");
-  } else if (!isTableDefinitionHover(entry, tokenType)) {
+  } else if (!isDefinitionHover(tokenType)) {
     markdown.appendMarkdown(`\n\nDefined at \`${definitions[0].preview}\``);
   }
 
@@ -411,17 +411,16 @@ function buildLabelHover(entry, index, tokenType) {
 }
 
 /**
- * Returns whether a hover is on the table label definition itself.
+ * Returns whether a hover is on a label definition itself.
  *
- * Table captions are already the definition site, so repeating their current
- * line as "Defined at" makes the hover noisy without adding navigation value.
+ * Definitions are already at their own location, so repeating the current line
+ * as "Defined at" makes the hover noisy without adding navigation value.
  *
- * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Label or reference entry.
  * @param {string} tokenType Parsed token type.
  * @returns {boolean}
  */
-function isTableDefinitionHover(entry, tokenType) {
-  return tokenType === "label" && entry.prefix === "tbl";
+function isDefinitionHover(tokenType) {
+  return tokenType === "label";
 }
 
 /**
