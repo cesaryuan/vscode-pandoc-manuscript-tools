@@ -23,7 +23,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
    - Hover over an equation block or inline math span such as `$f(x)$` to see the rendered MathJax SVG preview.
    - Check the Outline after `## Mathematical Formulation`.
 
-For build and packaging commands, see DEVELOPMENT.md.
+For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## Commands
 
