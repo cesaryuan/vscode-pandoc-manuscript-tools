@@ -302,7 +302,7 @@ class PandocHoverProvider {
     const plainPosition = toPlainPosition(position);
     const token = findTokenAtPosition(parsed, plainPosition);
     if (token) {
-      return new vscode.Hover(buildLabelHover(token.entry, this.index), toRange(token.entry.fullRange));
+      return new vscode.Hover(buildLabelHover(token.entry, this.index, token.type), toRange(token.entry.fullRange));
     }
 
     const mathBlock = findMathBlockAtPosition(parsed, plainPosition);
@@ -388,9 +388,10 @@ class PandocCompletionProvider {
  *
  * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Label or reference entry.
  * @param {PandocWorkspaceIndex} index Workspace index.
+ * @param {string} tokenType Parsed token type, for example `label` or `reference`.
  * @returns {vscode.MarkdownString}
  */
-function buildLabelHover(entry, index) {
+function buildLabelHover(entry, index, tokenType) {
   const definitions = index.getDefinitions(entry.label);
   const references = index.getReferences(entry.label);
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -402,11 +403,25 @@ function buildLabelHover(entry, index) {
     markdown.appendMarkdown("\n\n$(warning) No definition found for this Pandoc cross reference.");
   } else if (definitions.length > 1) {
     markdown.appendMarkdown("\n\n$(warning) Duplicate definitions were found for this label.");
-  } else {
+  } else if (!isTableDefinitionHover(entry, tokenType)) {
     markdown.appendMarkdown(`\n\nDefined at \`${definitions[0].preview}\``);
   }
 
   return markdown;
+}
+
+/**
+ * Returns whether a hover is on the table label definition itself.
+ *
+ * Table captions are already the definition site, so repeating their current
+ * line as "Defined at" makes the hover noisy without adding navigation value.
+ *
+ * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Label or reference entry.
+ * @param {string} tokenType Parsed token type.
+ * @returns {boolean}
+ */
+function isTableDefinitionHover(entry, tokenType) {
+  return tokenType === "label" && entry.prefix === "tbl";
 }
 
 /**
