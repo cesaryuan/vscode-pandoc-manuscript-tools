@@ -238,7 +238,7 @@ class PandocDefinitionProvider {
    *
    * @param {vscode.TextDocument} document Markdown document.
    * @param {vscode.Position} position Cursor position.
-   * @returns {vscode.Location[] | undefined}
+   * @returns {vscode.LocationLink[] | undefined}
    */
   provideDefinition(document, position) {
     const token = getTokenAtDocumentPosition(this.index, document, position);
@@ -246,7 +246,7 @@ class PandocDefinitionProvider {
       return undefined;
     }
 
-    return this.index.getDefinitions(token.entry.label).map(toLocation);
+    return this.index.getDefinitions(token.entry.label).map((definition) => toLocationLink(definition, token.entry));
   }
 }
 
@@ -861,6 +861,25 @@ function toRange(range) {
  */
 function toLocation(entry) {
   return new vscode.Location(vscode.Uri.parse(entry.uriText), toRange(entry.range));
+}
+
+/**
+ * Converts a definition target into a VS Code location link.
+ *
+ * The origin range must cover the full Pandoc token; otherwise Ctrl-hover
+ * falls back to VS Code word ranges and underlines only `sec` or `results`.
+ *
+ * @param {import("./parser").LabelEntry} target Definition target entry.
+ * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} origin Origin token under the cursor.
+ * @returns {vscode.LocationLink}
+ */
+function toLocationLink(target, origin) {
+  return {
+    originSelectionRange: toRange(origin.fullRange),
+    targetUri: vscode.Uri.parse(target.uriText),
+    targetRange: toRange(target.fullRange),
+    targetSelectionRange: toRange(target.range),
+  };
 }
 
 /**
