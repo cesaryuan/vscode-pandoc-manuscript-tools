@@ -15,6 +15,9 @@
     "onCommand:pandocCrossrefHelper.rebuildIndex"
   ],
   "main": "./extension.js",
+  "dependencies": {
+    "@mathjax/src": "^4.0.0"
+  },
   "contributes": {
     "commands": [
       {

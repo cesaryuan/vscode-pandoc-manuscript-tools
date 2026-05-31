@@ -9,7 +9,7 @@
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}",
         "--goto",
-        "${workspaceFolder}/manuscript.md:1:1"
+        "${workspaceFolder}/test.md:1:1"
       ]
     }
   ]

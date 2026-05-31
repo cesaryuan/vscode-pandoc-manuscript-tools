@@ -6,7 +6,7 @@ Local VS Code helpers for this repository's Pandoc Markdown manuscript syntax.
 
 - Go to definition for `@sec:*`, `@fig:*`, `@tbl:*`, and `@eq:*` references.
 - Find all references for Pandoc labels and reference tokens.
-- Hover cards for labels, references, and display math blocks.
+- Hover cards for labels, references, and display math blocks with MathJax-rendered SVG previews.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
 - Completion suggestions after `@` using labels found in Markdown files.
 - Diagnostics for undefined references and duplicate labels.
@@ -14,12 +14,13 @@ Local VS Code helpers for this repository's Pandoc Markdown manuscript syntax.
 ## Try It Locally
 
 1. Open this `vscode-pandoc-crossref-helper` folder in VS Code.
-2. Press `F5` to launch an Extension Development Host.
-3. In the Extension Development Host, open the manuscript repository folder.
-4. Open `manuscript.md` and try:
+2. Run `npm install` once so the MathJax renderer is available.
+3. Press `F5` to launch an Extension Development Host.
+4. In the Extension Development Host, open the manuscript repository folder.
+5. Open `manuscript.md` and try:
    - Ctrl-click `@eq:loss` or `@tbl:results`.
    - Run `Find All References` on `{#eq:loss}`.
-   - Hover over an equation block.
+   - Hover over an equation block to see the rendered MathJax SVG preview.
    - Check the Outline after `## Mathematical Formulation`.
 
 ## Commands
@@ -36,4 +37,4 @@ Local VS Code helpers for this repository's Pandoc Markdown manuscript syntax.
 
 This extension is intentionally a small language-service layer rather than a full Markdown parser. It scans the Pandoc-crossref syntax used by this manuscript template and avoids code fences and YAML front matter to reduce false positives.
 
-The math hover first emits Markdown math plus a TeX fallback. If your VS Code build or theme does not render math inside hovers, the next step is to add a MathJax SVG renderer and embed the generated SVG in the hover.
+The math hover uses MathJax's Node component loader to convert TeX into SVG, embeds the SVG as a hover image, and keeps the TeX source as a fallback. If the preview is unavailable, run `npm install` in this folder and reload the Extension Development Host.

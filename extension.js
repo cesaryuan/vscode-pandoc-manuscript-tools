@@ -19,15 +19,17 @@ function activate(context) {
   const output = vscode.window.createOutputChannel(EXTENSION_NAME);
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-crossref-helper");
   const index = new PandocWorkspaceIndex(output);
+  const mathRenderer = new MathJaxRenderer(output);
 
   output.appendLine("Activated Pandoc Crossref Helper.");
 
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(MARKDOWN_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(MARKDOWN_SELECTOR, new PandocReferenceProvider(index)));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(MARKDOWN_SELECTOR, new PandocHoverProvider(index)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(MARKDOWN_SELECTOR, new PandocHoverProvider(index, mathRenderer)));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(MARKDOWN_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(MARKDOWN_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
+  context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocCrossrefHelper.rebuildIndex", async () => {
     await index.refreshWorkspace();
@@ -280,9 +282,11 @@ class PandocReferenceProvider {
 class PandocHoverProvider {
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
+   * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
    */
-  constructor(index) {
+  constructor(index, mathRenderer) {
     this.index = index;
+    this.mathRenderer = mathRenderer;
   }
 
   /**
@@ -290,9 +294,9 @@ class PandocHoverProvider {
    *
    * @param {vscode.TextDocument} document Markdown document.
    * @param {vscode.Position} position Cursor position.
-   * @returns {vscode.Hover | undefined}
+   * @returns {Promise<vscode.Hover | undefined>}
    */
-  provideHover(document, position) {
+  async provideHover(document, position) {
     const parsed = this.index.getParsedDocument(document);
     const plainPosition = toPlainPosition(position);
     const token = findTokenAtPosition(parsed, plainPosition);
@@ -302,7 +306,7 @@ class PandocHoverProvider {
 
     const mathBlock = findMathBlockAtPosition(parsed, plainPosition);
     if (mathBlock) {
-      return new vscode.Hover(buildMathHover(mathBlock, this.index), toRange(mathBlock.selectionRange));
+      return new vscode.Hover(await buildMathHover(mathBlock, this.index, this.mathRenderer), toRange(mathBlock.selectionRange));
     }
 
     return undefined;
@@ -400,16 +404,14 @@ function buildLabelHover(entry, index) {
 }
 
 /**
- * Builds a hover body for display math blocks.
- *
- * VS Code hovers may render Markdown math in recent builds; the TeX code block
- * is kept as a fallback for environments where math rendering is unavailable.
+ * Builds a hover body for display math blocks with a rendered SVG preview.
  *
  * @param {import("./parser").MathBlockEntry} mathBlock Math block entry.
  * @param {PandocWorkspaceIndex} index Workspace index.
- * @returns {vscode.MarkdownString}
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @returns {Promise<vscode.MarkdownString>}
  */
-function buildMathHover(mathBlock, index) {
+async function buildMathHover(mathBlock, index, mathRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
   const label = mathBlock.label || "unlabeled equation";
   const referenceCount = mathBlock.label ? index.getReferences(mathBlock.label).length : 0;
@@ -420,11 +422,173 @@ function buildMathHover(mathBlock, index) {
   }
 
   if (mathBlock.tex) {
-    markdown.appendMarkdown(`\n\n$$\n${mathBlock.tex}\n$$\n\n`);
+    const renderedSvg = await mathRenderer.renderToDataUri(mathBlock.tex);
+    if (renderedSvg) {
+      markdown.appendMarkdown(`\n\n![Rendered equation preview](${renderedSvg})\n\n`);
+    } else {
+      markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. Run `npm install` in the extension folder and reload the Extension Development Host.\n\n");
+    }
     markdown.appendCodeblock(mathBlock.tex, "tex");
   }
 
   return markdown;
+}
+
+class MathJaxRenderer {
+  /**
+   * Creates a lazy MathJax renderer for hover previews.
+   *
+   * @param {vscode.OutputChannel} output Output channel for render failures.
+   */
+  constructor(output) {
+    this.output = output;
+    this.readyPromise = undefined;
+    this.svgCache = new Map();
+    this.loadFailure = undefined;
+  }
+
+  /**
+   * Converts TeX into a data URI containing a standalone SVG image.
+   *
+   * @param {string} tex TeX source.
+   * @returns {Promise<string | undefined>}
+   */
+  async renderToDataUri(tex) {
+    const svg = await this.renderToSvg(tex);
+    if (!svg) {
+      return undefined;
+    }
+    return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  }
+
+  /**
+   * Converts TeX into SVG and caches the result by source text.
+   *
+   * @param {string} tex TeX source.
+   * @returns {Promise<string | undefined>}
+   */
+  async renderToSvg(tex) {
+    const trimmedTex = tex.trim();
+    if (!trimmedTex) {
+      return undefined;
+    }
+
+    if (!this.svgCache.has(trimmedTex)) {
+      this.svgCache.set(trimmedTex, this.renderToSvgUncached(trimmedTex));
+    }
+
+    return this.svgCache.get(trimmedTex);
+  }
+
+  /**
+   * Converts TeX into SVG without consulting the cache.
+   *
+   * @param {string} tex TeX source.
+   * @returns {Promise<string | undefined>}
+   */
+  async renderToSvgUncached(tex) {
+    try {
+      const mathJax = await this.ensureMathJax();
+      if (!mathJax) {
+        return undefined;
+      }
+
+      const node = await mathJax.tex2svgPromise(tex, {
+        display: true,
+        em: 16,
+        ex: 8,
+        containerWidth: 80 * 16,
+      });
+      const adaptor = mathJax.startup.adaptor;
+      const svg = adaptor.tags(node, "svg")[0];
+      return makeSvgHoverFriendly(adaptor.serializeXML(svg));
+    } catch (error) {
+      this.output.appendLine(`MathJax failed to render equation: ${String(error)}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Loads MathJax's TeX-to-SVG component once.
+   *
+   * The extension uses a dynamic import so activation still succeeds before the
+   * user has installed dependencies in this local extension folder.
+   *
+   * @returns {Promise<any | undefined>}
+   */
+  async ensureMathJax() {
+    if (this.loadFailure) {
+      return undefined;
+    }
+
+    if (!this.readyPromise) {
+      this.readyPromise = this.loadMathJax();
+    }
+
+    try {
+      return await this.readyPromise;
+    } catch (error) {
+      this.loadFailure = error;
+      this.output.appendLine(`MathJax is unavailable: ${String(error)}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Initializes MathJax for Node-based TeX-to-SVG rendering.
+   *
+   * @returns {Promise<any>}
+   */
+  async loadMathJax() {
+    global.MathJax = {
+      loader: {
+        paths: { mathjax: "@mathjax/src/bundle" },
+        load: ["adaptors/liteDOM"],
+        require: (file) => import(file),
+      },
+      options: {
+        // Hover previews only need visual SVG output; disabling speech avoids
+        // MathJax's SRE worker path issue on Windows Node extension hosts.
+        enableSpeech: false,
+        enableBraille: false,
+        a11y: {
+          speech: false,
+          braille: false,
+        },
+      },
+      output: {
+        font: "mathjax-newcm",
+      },
+    };
+
+    await import("@mathjax/src/bundle/tex-svg.js");
+    await global.MathJax.startup.promise;
+    this.output.appendLine("MathJax TeX-to-SVG renderer loaded.");
+    return global.MathJax;
+  }
+
+  /**
+   * Shuts down MathJax worker resources when available.
+   */
+  dispose() {
+    if (global.MathJax && typeof global.MathJax.done === "function") {
+      global.MathJax.done();
+    }
+  }
+}
+
+/**
+ * Adds a white background so black MathJax glyphs remain visible in dark hovers.
+ *
+ * @param {string} svg Raw MathJax SVG.
+ * @returns {string}
+ */
+function makeSvgHoverFriendly(svg) {
+  const hoverStyle = "background:#fff;border-radius:6px;padding:8px;";
+  if (/<svg\b[^>]*\sstyle="/.test(svg)) {
+    return svg.replace(/(<svg\b[^>]*\sstyle=")/, `$1${hoverStyle}`);
+  }
+  return svg.replace("<svg ", `<svg style="${hoverStyle}" `);
 }
 
 /**
