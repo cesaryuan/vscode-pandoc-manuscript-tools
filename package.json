@@ -19,6 +19,7 @@
   "categories": [
     "Other"
   ],
+  "icon": "assets/icon.png",
   "scripts": {
     "bundle": "esbuild extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
     "check": "node --check extension.js && node --check parser.js && node --check scripts/profile-test-md.js",
