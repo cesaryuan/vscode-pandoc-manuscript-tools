@@ -1,0 +1,46 @@
+{
+  "name": "pandoc-crossref-helper",
+  "displayName": "Pandoc Crossref Helper",
+  "description": "Local VS Code helpers for Pandoc Markdown labels, cross references, math hovers, and outline symbols.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCommand:pandocCrossrefHelper.rebuildIndex"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pandocCrossrefHelper.rebuildIndex",
+        "title": "Pandoc Crossref Helper: Rebuild Index"
+      }
+    ],
+    "configuration": {
+      "title": "Pandoc Crossref Helper",
+      "properties": {
+        "pandocCrossrefHelper.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report undefined Pandoc cross references and duplicate labels in open Markdown documents."
+        },
+        "pandocCrossrefHelper.includeWorkspaceReferences": {
+          "type": "boolean",
+          "default": true,
+          "description": "Index Markdown files in the current workspace when resolving definitions and references."
+        },
+        "pandocCrossrefHelper.includeLabelSymbols": {
+          "type": "boolean",
+          "default": true,
+          "description": "Add equation, figure, and table labels as nested outline symbols below their nearest heading."
+        }
+      }
+    }
+  }
+}

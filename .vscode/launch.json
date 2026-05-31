@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Pandoc Crossref Helper",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/..",
+        "--goto",
+        "${workspaceFolder}/../manuscript.md:1:1"
+      ]
+    }
+  ]
+}
