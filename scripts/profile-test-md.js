@@ -98,7 +98,7 @@ function buildOutline(parsed) {
   const stack = [];
 
   for (const heading of parsed.headings) {
-    const symbol = { title: heading.title, label: heading.label || "", line: heading.line, level: heading.level, children: [] };
+    const symbol = { title: formatHeadingTitle(heading), label: heading.label || "", line: heading.line, level: heading.level, children: [] };
     while (stack.length > 0 && stack[stack.length - 1].level >= heading.level) {
       stack.pop();
     }
@@ -121,6 +121,16 @@ function buildOutline(parsed) {
   }
 
   return { roots, totalSymbols: countSymbols(roots) };
+}
+
+/**
+ * Formats a heading title like the extension's Outline provider.
+ *
+ * @param {import("../parser").HeadingEntry} heading Parsed heading.
+ * @returns {string}
+ */
+function formatHeadingTitle(heading) {
+  return `${"#".repeat(heading.level)} ${heading.title}`;
 }
 
 /**

@@ -702,7 +702,7 @@ function buildHeadingTree(headings) {
 
   for (const heading of headings) {
     const symbol = new vscode.DocumentSymbol(
-      heading.title,
+      formatHeadingSymbolName(heading),
       heading.label || "",
       vscode.SymbolKind.String,
       toRange(heading.range),
@@ -723,6 +723,19 @@ function buildHeadingTree(headings) {
   }
 
   return roots;
+}
+
+/**
+ * Formats a heading for Outline with its Markdown marker preserved.
+ *
+ * VS Code merges our symbols with the built-in Markdown provider, so keeping the
+ * marker here makes the Pandoc-aware outline easy to distinguish from the built-in one.
+ *
+ * @param {import("./parser").HeadingEntry} heading Parsed heading.
+ * @returns {string}
+ */
+function formatHeadingSymbolName(heading) {
+  return `${"#".repeat(heading.level)} ${heading.title}`;
 }
 
 /**
