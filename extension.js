@@ -6,6 +6,7 @@ const {
   findMathBlockAtPosition,
   findInlineMathAtPosition,
   findTokenAtPosition,
+  containsPosition,
 } = require("./parser");
 
 const EXTENSION_NAME = "Pandoc Crossref Helper";
@@ -729,16 +730,14 @@ function buildHeadingTree(headings) {
  */
 function addLabelSymbols(labels, headingSymbols) {
   const nonSectionLabels = labels.filter((entry) => entry.prefix !== "sec");
-  for (const label of nonSectionLabels) {
-    const symbol = new vscode.DocumentSymbol(
-      label.label,
-      label.kind,
-      toSymbolKind(label.prefix),
-      toRange(label.fullRange),
-      toRange(label.range),
-    );
+  const headingCandidates = flattenDocumentSymbols(headingSymbols);
+  const labelSymbols = new Map(nonSectionLabels.map((label) => [label, createLabelSymbol(label)]));
 
-    const parent = findNearestHeadingSymbol(headingSymbols, label.line);
+  for (const label of nonSectionLabels) {
+    const symbol = labelSymbols.get(label);
+    const parentLabel = findNearestContainerLabel(nonSectionLabels, label);
+    const parent = parentLabel ? labelSymbols.get(parentLabel) : findNearestHeadingSymbol(headingCandidates, label.line);
+
     if (parent) {
       parent.children.push(symbol);
     } else {
@@ -748,9 +747,39 @@ function addLabelSymbols(labels, headingSymbols) {
 }
 
 /**
+ * Creates a VS Code symbol for one parsed label definition.
+ *
+ * @param {import("./parser").LabelEntry} label Parsed label definition.
+ * @returns {vscode.DocumentSymbol}
+ */
+function createLabelSymbol(label) {
+  return new vscode.DocumentSymbol(
+    label.label,
+    label.kind,
+    toSymbolKind(label.prefix),
+    toRange(label.fullRange),
+    toRange(label.range),
+  );
+}
+
+/**
+ * Flattens the heading tree before labels are inserted into it.
+ *
+ * @param {vscode.DocumentSymbol[]} symbols Heading symbols.
+ * @returns {vscode.DocumentSymbol[]}
+ */
+function flattenDocumentSymbols(symbols) {
+  const flattened = [];
+  for (const symbol of symbols) {
+    flattened.push(symbol, ...flattenDocumentSymbols(symbol.children));
+  }
+  return flattened;
+}
+
+/**
  * Finds the innermost heading symbol preceding a line.
  *
- * @param {vscode.DocumentSymbol[]} symbols Candidate heading symbols.
+ * @param {vscode.DocumentSymbol[]} symbols Flat candidate heading symbols.
  * @param {number} line Target line.
  * @returns {vscode.DocumentSymbol | undefined}
  */
@@ -761,13 +790,48 @@ function findNearestHeadingSymbol(symbols, line) {
     if (symbolLine <= line) {
       nearest = symbol;
     }
+  }
+  return nearest;
+}
 
-    const childNearest = findNearestHeadingSymbol(symbol.children, line);
-    if (childNearest && childNearest.selectionRange.start.line <= line) {
-      nearest = childNearest;
+/**
+ * Finds the nearest div label that contains another label.
+ *
+ * This is the subfigure special case: only labels created from HTML div ids act
+ * as outline containers, so ordinary image/table labels stay as siblings.
+ *
+ * @param {import("./parser").LabelEntry[]} labels Candidate labels.
+ * @param {import("./parser").LabelEntry} child Child label.
+ * @returns {import("./parser").LabelEntry | undefined}
+ */
+function findNearestContainerLabel(labels, child) {
+  let nearest;
+  for (const candidate of labels) {
+    if (candidate === child || !candidate.containerRange) {
+      continue;
+    }
+    if (!containsPosition(candidate.containerRange, { line: child.line, character: child.character })) {
+      continue;
+    }
+    if (!nearest || isRangeStartAfter(candidate.containerRange, nearest.containerRange)) {
+      nearest = candidate;
     }
   }
   return nearest;
+}
+
+/**
+ * Checks whether one parser range starts after another range.
+ *
+ * @param {import("./parser").PlainRange} left Left range.
+ * @param {import("./parser").PlainRange} right Right range.
+ * @returns {boolean}
+ */
+function isRangeStartAfter(left, right) {
+  if (left.start.line !== right.start.line) {
+    return left.start.line > right.start.line;
+  }
+  return left.start.character > right.start.character;
 }
 
 /**

@@ -36,6 +36,7 @@ function parsePandocDocument(text, uriText = "") {
   let inMath = false;
   let mathStart = null;
   let mathBody = [];
+  const divLabelStack = [];
 
   for (const line of lines) {
     const trimmed = line.text.trim();
@@ -81,6 +82,7 @@ function parsePandocDocument(text, uriText = "") {
     }
 
     const lineLabels = scanLabels(line, uriText, "markdown");
+    updateHtmlDivLabelContainers(line, lineLabels, divLabelStack);
     addAllLabels(lineLabels, labels, labelMap);
     addAllReferences(scanReferences(line, uriText), references, referenceMap);
     inlineMath.push(...scanInlineMath(line, uriText));
@@ -100,6 +102,7 @@ function parsePandocDocument(text, uriText = "") {
   if (inMath && mathStart) {
     mathBlocks.push(createMathBlock(uriText, mathStart, lines[lines.length - 1] || mathStart, mathBody, []));
   }
+  closeOpenHtmlDivLabelContainers(divLabelStack, lines[lines.length - 1]);
 
   return {
     uriText,
@@ -169,6 +172,66 @@ function scanLabels(line, uriText, source) {
   collectLabelMatches(line, uriText, source, LABEL_PATTERN, labels, 1);
   collectLabelMatches(line, uriText, "html-div", DIV_ID_PATTERN, labels, 1);
   return labels;
+}
+
+/**
+ * Tracks the line span of `<div id="fig:...">` labels for subfigure outline nesting.
+ *
+ * Only div labels are container parents; this prevents ordinary figure/table
+ * labels from accidentally nesting every following label in the Outline.
+ *
+ * @param {ParsedLine} line Parsed line.
+ * @param {LabelEntry[]} lineLabels Labels found on this line.
+ * @param {Array<LabelEntry | undefined>} divLabelStack Open div stack.
+ */
+function updateHtmlDivLabelContainers(line, lineLabels, divLabelStack) {
+  const divLabels = lineLabels.filter((entry) => entry.source === "html-div");
+  const divTagPattern = /<\/div\s*>|<div\b[^>]*>/gi;
+  let match;
+
+  while ((match = divTagPattern.exec(line.text))) {
+    const tag = match[0].toLowerCase();
+    if (tag.startsWith("</div")) {
+      closeHtmlDivLabelContainer(divLabelStack, line, match.index + match[0].length);
+      continue;
+    }
+
+    const tagOffset = line.startOffset + match.index;
+    const label = divLabels.find((entry) => entry.fullOffset === tagOffset);
+    divLabelStack.push(label);
+  }
+}
+
+/**
+ * Closes one open div label container at a concrete document location.
+ *
+ * @param {Array<LabelEntry | undefined>} divLabelStack Open div stack.
+ * @param {ParsedLine} line Closing line.
+ * @param {number} endCharacter Character after the closing `</div>`.
+ */
+function closeHtmlDivLabelContainer(divLabelStack, line, endCharacter) {
+  const label = divLabelStack.pop();
+  if (!label) {
+    return;
+  }
+
+  label.containerRange = createRange(label.line, label.fullRange.start.character, line.number, endCharacter);
+}
+
+/**
+ * Gives unclosed div labels a finite container so outline parenting remains stable.
+ *
+ * @param {Array<LabelEntry | undefined>} divLabelStack Open div stack.
+ * @param {ParsedLine | undefined} finalLine Final document line.
+ */
+function closeOpenHtmlDivLabelContainers(divLabelStack, finalLine) {
+  if (!finalLine) {
+    return;
+  }
+
+  while (divLabelStack.length > 0) {
+    closeHtmlDivLabelContainer(divLabelStack, finalLine, finalLine.text.length);
+  }
 }
 
 /**
@@ -577,7 +640,7 @@ module.exports = {
 /**
  * @typedef {{text: string, number: number, startOffset: number, endOffset: number}} ParsedLine
  * @typedef {{start: {line: number, character: number}, end: {line: number, character: number}}} PlainRange
- * @typedef {{label: string, prefix: string, kind: string, source: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} LabelEntry
+ * @typedef {{label: string, prefix: string, kind: string, source: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, containerRange?: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} LabelEntry
  * @typedef {{label: string, prefix: string, kind: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} ReferenceEntry
  * @typedef {{title: string, label?: string, level: number, uriText: string, line: number, character: number, range: PlainRange, selectionRange: PlainRange, preview: string}} HeadingEntry
  * @typedef {{label?: string, display: true, uriText: string, line: number, endLine: number, range: PlainRange, selectionRange: PlainRange, tex: string}} MathBlockEntry
