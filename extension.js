@@ -700,7 +700,7 @@ function buildHeadingTree(headings) {
     const symbol = new vscode.DocumentSymbol(
       heading.title,
       heading.label || "",
-      vscode.SymbolKind.Namespace,
+      vscode.SymbolKind.String,
       toRange(heading.range),
       toRange(heading.selectionRange),
     );
