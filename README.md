@@ -1,6 +1,6 @@
-# Pandoc Crossref Helper
+# Pandoc Manuscript Tools
 
-Local VS Code helpers for this repository's Pandoc Markdown manuscript syntax.
+Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 
 ## Features
 
@@ -13,7 +13,7 @@ Local VS Code helpers for this repository's Pandoc Markdown manuscript syntax.
 
 ## Try It Locally
 
-1. Open this `vscode-pandoc-crossref-helper` folder in VS Code.
+1. Open this repository folder in VS Code.
 2. Run `npm install` once so the MathJax renderer is available.
 3. Press `F5` to launch an Extension Development Host.
 4. In the Extension Development Host, open the manuscript repository folder.
@@ -23,15 +23,17 @@ Local VS Code helpers for this repository's Pandoc Markdown manuscript syntax.
    - Hover over an equation block or inline math span such as `$f(x)$` to see the rendered MathJax SVG preview.
    - Check the Outline after `## Mathematical Formulation`.
 
+For build and packaging commands, see DEVELOPMENT.md.
+
 ## Commands
 
-- `Pandoc Crossref Helper: Rebuild Index`
+- `Pandoc Manuscript Tools: Rebuild Index`
 
 ## Settings
 
-- `pandocCrossrefHelper.enableDiagnostics`: report undefined references and duplicate labels.
-- `pandocCrossrefHelper.includeWorkspaceReferences`: index all workspace Markdown files, not just open documents.
-- `pandocCrossrefHelper.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
+- `pandocManuscriptTools.enableDiagnostics`: report undefined references and duplicate labels.
+- `pandocManuscriptTools.includeWorkspaceReferences`: index all workspace Markdown files, not just open documents.
+- `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
 
 ## Notes
 

@@ -9,7 +9,7 @@ const {
   containsPosition,
 } = require("./parser");
 
-const EXTENSION_NAME = "Pandoc Crossref Helper";
+const EXTENSION_NAME = "Pandoc Manuscript Tools";
 const MARKDOWN_SELECTOR = [{ language: "markdown" }];
 
 /**
@@ -19,11 +19,11 @@ const MARKDOWN_SELECTOR = [{ language: "markdown" }];
  */
 function activate(context) {
   const output = vscode.window.createOutputChannel(EXTENSION_NAME);
-  const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-crossref-helper");
+  const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
 
-  output.appendLine("Activated Pandoc Crossref Helper.");
+  output.appendLine("Activated Pandoc Manuscript Tools.");
 
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(MARKDOWN_SELECTOR, new PandocDefinitionProvider(index)));
@@ -33,10 +33,10 @@ function activate(context) {
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(MARKDOWN_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
 
-  context.subscriptions.push(vscode.commands.registerCommand("pandocCrossrefHelper.rebuildIndex", async () => {
+  context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
     await index.refreshWorkspace();
     updateDiagnosticsForOpenDocuments(index, diagnostics);
-    vscode.window.showInformationMessage("Pandoc Crossref Helper index rebuilt.");
+    vscode.window.showInformationMessage("Pandoc Manuscript Tools index rebuilt.");
   }));
 
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
@@ -610,6 +610,9 @@ class MathJaxRenderer {
       },
     };
 
+    // Import the adaptor explicitly so esbuild can include MathJax's Node DOM
+    // component in the extension bundle instead of shipping all node_modules.
+    await import("@mathjax/src/bundle/adaptors/liteDOM.js");
     await import("@mathjax/src/bundle/tex-svg.js");
     await global.MathJax.startup.promise;
     this.output.appendLine("MathJax TeX-to-SVG renderer loaded.");
@@ -993,7 +996,7 @@ function isMarkdownDocument(document) {
  * @returns {vscode.WorkspaceConfiguration}
  */
 function getConfiguration() {
-  return vscode.workspace.getConfiguration("pandocCrossrefHelper");
+  return vscode.workspace.getConfiguration("pandocManuscriptTools");
 }
 
 module.exports = {

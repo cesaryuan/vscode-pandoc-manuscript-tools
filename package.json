@@ -1,9 +1,18 @@
 {
-  "name": "pandoc-crossref-helper",
-  "displayName": "Pandoc Crossref Helper",
+  "name": "pandoc-manuscript-tools",
+  "displayName": "Pandoc Manuscript Tools",
   "description": "Local VS Code helpers for Pandoc Markdown labels, cross references, math hovers, and outline symbols.",
   "version": "0.0.1",
   "publisher": "local",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cesaryuan/vscode-pandoc-manuscript-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cesaryuan/vscode-pandoc-manuscript-tools/issues"
+  },
+  "homepage": "https://github.com/cesaryuan/vscode-pandoc-manuscript-tools#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -11,42 +20,52 @@
     "Other"
   ],
   "scripts": {
+    "bundle": "esbuild extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
+    "check": "node --check extension.js && node --check parser.js && node --check scripts/profile-test-md.js",
+    "check:bundle": "node --check dist/extension.js",
+    "package:vsix": "npm run check && npm run bundle && npm run check:bundle && vsce package",
+    "publish:marketplace": "npm run check && npm run bundle && npm run check:bundle && vsce publish",
+    "publish:patch": "npm run check && npm run bundle && npm run check:bundle && vsce publish patch",
     "profile:test-md": "node scripts/profile-test-md.js test.md"
   },
   "activationEvents": [
     "onLanguage:markdown",
-    "onCommand:pandocCrossrefHelper.rebuildIndex"
+    "onCommand:pandocManuscriptTools.rebuildIndex"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
   "dependencies": {
     "@mathjax/src": "^4.0.0"
   },
   "contributes": {
     "commands": [
       {
-        "command": "pandocCrossrefHelper.rebuildIndex",
-        "title": "Pandoc Crossref Helper: Rebuild Index"
+        "command": "pandocManuscriptTools.rebuildIndex",
+        "title": "Pandoc Manuscript Tools: Rebuild Index"
       }
     ],
     "configuration": {
-      "title": "Pandoc Crossref Helper",
+      "title": "Pandoc Manuscript Tools",
       "properties": {
-        "pandocCrossrefHelper.enableDiagnostics": {
+        "pandocManuscriptTools.enableDiagnostics": {
           "type": "boolean",
           "default": true,
           "description": "Report undefined Pandoc cross references and duplicate labels in open Markdown documents."
         },
-        "pandocCrossrefHelper.includeWorkspaceReferences": {
+        "pandocManuscriptTools.includeWorkspaceReferences": {
           "type": "boolean",
           "default": true,
           "description": "Index Markdown files in the current workspace when resolving definitions and references."
         },
-        "pandocCrossrefHelper.includeLabelSymbols": {
+        "pandocManuscriptTools.includeLabelSymbols": {
           "type": "boolean",
           "default": true,
           "description": "Add equation, figure, and table labels as nested outline symbols below their nearest heading."
         }
       }
     }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0"
   }
 }
