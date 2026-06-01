@@ -1,6 +1,7 @@
 "use strict";
 
 const cp = require("child_process");
+const fs = require("fs/promises");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -319,6 +320,14 @@ class PandocBuildRunner {
     if (!(await isUvAvailable())) {
       vscode.window.showErrorMessage("Cannot build DOCX because `uv` is not available on PATH.");
       await this.refreshContext();
+      return;
+    }
+
+    const docxUri = getExpectedDocxUri(project.rootUri, editor.document.uri);
+    if (await isFileLockedForOverwrite(docxUri)) {
+      const message = `Close ${path.basename(docxUri.fsPath)} in Word, then try building again.`;
+      this.output.appendLine(`[DOCX] Target DOCX is already open or not writable: ${docxUri.fsPath}`);
+      vscode.window.showWarningMessage(message);
       return;
     }
 
@@ -1379,6 +1388,44 @@ async function pathExists(uri) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Checks whether an existing output file is likely locked by Word.
+ *
+ * The build overwrites and post-processes the DOCX in place. On Windows, Word
+ * usually denies a read/write open while the document is open, so this catches
+ * the common failure before Pandoc spends time rebuilding the manuscript.
+ *
+ * @param {vscode.Uri} uri Target DOCX URI.
+ * @returns {Promise<boolean>}
+ */
+async function isFileLockedForOverwrite(uri) {
+  if (!(await pathExists(uri))) {
+    return false;
+  }
+
+  let handle;
+  try {
+    handle = await fs.open(uri.fsPath, "r+");
+    return false;
+  } catch (error) {
+    return isFileLockError(error);
+  } finally {
+    if (handle) {
+      await handle.close();
+    }
+  }
+}
+
+/**
+ * Returns whether a filesystem error indicates a file lock or write denial.
+ *
+ * @param {any} error Filesystem error.
+ * @returns {boolean}
+ */
+function isFileLockError(error) {
+  return Boolean(error && ["EBUSY", "EPERM", "EACCES"].includes(error.code));
 }
 
 /**
