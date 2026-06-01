@@ -2,13 +2,13 @@
 
 ## Build and Package
 
-This extension is plain JavaScript, so there is no TypeScript compile step. The build check is a syntax pass over the extension sources:
+This extension is plain JavaScript, so there is no TypeScript compile step. The editable extension sources live in `src/`, and the build check is a syntax pass over those sources:
 
 ```powershell
 npm run check
 ```
 
-Bundle the extension entry and runtime dependencies into `dist/extension.js`:
+Bundle `src/extension.js` and runtime dependencies into `dist/extension.js`:
 
 ```powershell
 npm run bundle

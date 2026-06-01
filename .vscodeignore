@@ -3,6 +3,5 @@
 node_modules/**
 scripts/**
 test.md
-extension.js
-parser.js
+src/**
 *.vsix

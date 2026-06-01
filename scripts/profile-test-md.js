@@ -8,7 +8,7 @@ const {
   findMathBlockAtPosition,
   findInlineMathAtPosition,
   findTokenAtPosition,
-} = require("../parser");
+} = require("../src/parser");
 
 const repoRoot = path.resolve(__dirname, "..");
 const targetPath = path.resolve(repoRoot, process.argv[2] || "test.md");
@@ -42,8 +42,8 @@ function formatMs(ms) {
 /**
  * Builds the same label-to-definitions map used by diagnostics and hovers.
  *
- * @param {import("../parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {Map<string, import("../parser").LabelEntry[]>}
+ * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
+ * @returns {Map<string, import("../src/parser").LabelEntry[]>}
  */
 function buildDefinitionMap(parsed) {
   const map = new Map();
@@ -59,7 +59,7 @@ function buildDefinitionMap(parsed) {
 /**
  * Simulates the extension's diagnostics pass without the VS Code API objects.
  *
- * @param {import("../parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {{undefinedReferences: number, duplicateLabels: number, total: number}}
  */
 function buildDiagnostics(parsed) {
@@ -90,7 +90,7 @@ function buildDiagnostics(parsed) {
 /**
  * Builds a lightweight outline tree matching the extension's symbol grouping.
  *
- * @param {import("../parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {{roots: unknown[], totalSymbols: number}}
  */
 function buildOutline(parsed) {
@@ -126,7 +126,7 @@ function buildOutline(parsed) {
 /**
  * Formats a heading title like the extension's Outline provider.
  *
- * @param {import("../parser").HeadingEntry} heading Parsed heading.
+ * @param {import("../src/parser").HeadingEntry} heading Parsed heading.
  * @returns {string}
  */
 function formatHeadingTitle(heading) {
@@ -171,7 +171,7 @@ function countSymbols(symbols) {
 /**
  * Simulates the completion provider's unique sorted label list.
  *
- * @param {import("../parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {string[]}
  */
 function buildCompletions(parsed) {
@@ -185,7 +185,7 @@ function buildCompletions(parsed) {
 /**
  * Exercises token and math lookups at positions that exist in the fixture.
  *
- * @param {import("../parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {{tokenLookups: number, displayMathLookups: number, inlineMathLookups: number}}
  */
 function runHoverAndNavigationLookups(parsed) {
@@ -267,7 +267,7 @@ function importMathJaxComponent(file) {
 /**
  * Renders one display and one inline formula to capture cold/warm hover costs.
  *
- * @param {import("../parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {Promise<{displaySvgLength: number, inlineSvgLength: number}>}
  */
 async function renderMathSamples(parsed) {
