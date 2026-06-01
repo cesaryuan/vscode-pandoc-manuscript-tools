@@ -449,7 +449,7 @@ async function buildMathHover(mathBlock, index, mathRenderer) {
     if (renderedSvg) {
       markdown.appendMarkdown(`\n\n![Rendered equation preview](${renderedSvg})\n\n`);
     } else {
-      markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. Run `npm install` in the extension folder and reload the Extension Development Host.\n\n");
+      appendMathJaxUnavailableMessage(markdown);
     }
     markdown.appendCodeblock(mathBlock.tex, "tex");
   }
@@ -472,11 +472,20 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
   if (renderedSvg) {
     markdown.appendMarkdown(`\n\n![Rendered inline equation preview](${renderedSvg})\n\n`);
   } else {
-    markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. Run `npm install` in the extension folder and reload the Extension Development Host.\n\n");
+    appendMathJaxUnavailableMessage(markdown);
   }
 
   markdown.appendCodeblock(inlineMath.tex, "tex");
   return markdown;
+}
+
+/**
+ * Adds the MathJax fallback message shown when a hover preview cannot render.
+ *
+ * @param {vscode.MarkdownString} markdown Hover markdown being built.
+ */
+function appendMathJaxUnavailableMessage(markdown) {
+  markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. See the Pandoc Manuscript Tools output for details, then run `npm install` if dependencies are missing.\n\n");
 }
 
 class MathJaxRenderer {
@@ -593,7 +602,7 @@ class MathJaxRenderer {
       loader: {
         paths: { mathjax: "@mathjax/src/bundle" },
         load: ["adaptors/liteDOM"],
-        require: (file) => import(file),
+        require: importMathJaxComponent,
       },
       options: {
         // Hover previews only need visual SVG output; disabling speech avoids
@@ -610,9 +619,8 @@ class MathJaxRenderer {
       },
     };
 
-    // Import the adaptor explicitly so esbuild can include MathJax's Node DOM
-    // component in the extension bundle instead of shipping all node_modules.
-    await import("@mathjax/src/bundle/adaptors/liteDOM.js");
+    // MathJax loads the adaptor through loader.require after its core is ready;
+    // importing the adaptor before tex-svg crashes because MathJax._ is unset.
     await import("@mathjax/src/bundle/tex-svg.js");
     await global.MathJax.startup.promise;
     this.output.appendLine("MathJax TeX-to-SVG renderer loaded.");
@@ -627,6 +635,22 @@ class MathJaxRenderer {
       global.MathJax.done();
     }
   }
+}
+
+/**
+ * Loads MathJax components requested by the component loader.
+ *
+ * The liteDOM branch uses a literal import so esbuild bundles the Node adaptor,
+ * while still deferring it until MathJax asks for it during startup.
+ *
+ * @param {string} file Component path resolved by MathJax.
+ * @returns {Promise<any>}
+ */
+function importMathJaxComponent(file) {
+  if (file === "@mathjax/src/bundle/adaptors/liteDOM.js" || file.endsWith("/adaptors/liteDOM.js")) {
+    return import("@mathjax/src/bundle/adaptors/liteDOM.js");
+  }
+  return import(file);
 }
 
 /**

@@ -230,7 +230,7 @@ async function loadMathJax() {
     loader: {
       paths: { mathjax: "@mathjax/src/bundle" },
       load: ["adaptors/liteDOM"],
-      require: (file) => import(file),
+      require: importMathJaxComponent,
     },
     options: {
       // Keep this aligned with extension.js; speech workers are unnecessary for hover timing.
@@ -246,6 +246,22 @@ async function loadMathJax() {
     return global.MathJax;
   });
   return mathJaxReadyPromise;
+}
+
+/**
+ * Loads MathJax components requested during profile rendering.
+ *
+ * Kept aligned with extension.js so the profile catches bundled adaptor loading
+ * regressions instead of only testing the direct node_modules path.
+ *
+ * @param {string} file Component path resolved by MathJax.
+ * @returns {Promise<any>}
+ */
+function importMathJaxComponent(file) {
+  if (file === "@mathjax/src/bundle/adaptors/liteDOM.js" || file.endsWith("/adaptors/liteDOM.js")) {
+    return import("@mathjax/src/bundle/adaptors/liteDOM.js");
+  }
+  return import(file);
 }
 
 /**
