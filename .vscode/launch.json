@@ -5,6 +5,7 @@
       "name": "Run Pandoc Crossref Helper",
       "type": "extensionHost",
       "request": "launch",
+      "preLaunchTask": "bundle",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}/..",
