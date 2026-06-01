@@ -54,7 +54,7 @@
         },
         "pandocManuscriptTools.includeWorkspaceReferences": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Index Markdown files in the current workspace when resolving definitions and references."
         },
         "pandocManuscriptTools.includeLabelSymbols": {
