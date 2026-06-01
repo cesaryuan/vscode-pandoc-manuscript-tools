@@ -2,6 +2,12 @@
 
 All notable changes to Pandoc Manuscript Tools are documented in this file.
 
+## 0.0.7 - 2026-06-01
+
+### Added
+
+- Add DOCX build button and functionality for Markdown files in Pandoc projects
+
 ## 0.0.6 - 2026-06-01
 
 ### Changed
