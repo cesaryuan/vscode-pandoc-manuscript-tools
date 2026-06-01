@@ -367,9 +367,9 @@ class PandocBuildRunner {
 
     const docxUri = getExpectedDocxUri(project.rootUri, editor.document.uri);
     if (await isFileLockedForOverwrite(docxUri)) {
-      const message = `Close ${path.basename(docxUri.fsPath)} in Word, then try building again.`;
+      const message = getCloseDocxBeforeBuildMessage(path.basename(docxUri.fsPath));
       this.output.appendLine(`[DOCX] Target DOCX is already open or not writable: ${docxUri.fsPath}`);
-      vscode.window.showWarningMessage(message);
+      await vscode.window.showWarningMessage(message, { modal: true });
       return;
     }
 
@@ -1466,6 +1466,28 @@ async function isFileLockedForOverwrite(uri) {
  */
 function isFileLockError(error) {
   return Boolean(error && ["EBUSY", "EPERM", "EACCES"].includes(error.code));
+}
+
+/**
+ * Returns the modal warning text for a locked DOCX output file.
+ *
+ * @param {string} fileName DOCX filename.
+ * @returns {string}
+ */
+function getCloseDocxBeforeBuildMessage(fileName) {
+  if (isChineseVscodeLanguage()) {
+    return `目标 Word 文件 ${fileName} 已经打开或无法写入。请先在 Word 中关闭它，然后再重新编译。`;
+  }
+  return `The target Word file ${fileName} is already open or not writable. Close it in Word, then try building again.`;
+}
+
+/**
+ * Checks whether VS Code is currently using a Chinese UI locale.
+ *
+ * @returns {boolean}
+ */
+function isChineseVscodeLanguage() {
+  return vscode.env.language.toLowerCase().startsWith("zh");
 }
 
 /**
