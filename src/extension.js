@@ -448,6 +448,13 @@ class PandocHoverProvider {
     const plainPosition = toPlainPosition(position);
     const token = findTokenAtPosition(parsed, plainPosition);
     if (token) {
+      const labeledMathBlock = findMathBlockForEquationLabelHover(parsed, token, plainPosition);
+      if (labeledMathBlock) {
+        // Pandoc-crossref puts equation labels on the closing delimiter, so the
+        // token hover must opt into the formula preview before the generic label
+        // hover short-circuits it.
+        return new vscode.Hover(await buildMathHover(labeledMathBlock, this.index, this.mathRenderer), toRange(token.entry.fullRange));
+      }
       return new vscode.Hover(buildLabelHover(token.entry, this.index, token.type), toRange(token.entry.fullRange));
     }
 
@@ -465,6 +472,31 @@ class PandocHoverProvider {
 
     return undefined;
   }
+}
+
+/**
+ * Finds the display equation associated with an equation-definition label hover.
+ *
+ * Only labels parsed from math delimiters should use the formula preview here;
+ * cross-reference hovers such as `@eq:linear` still need the generic label
+ * summary instead of rendering the target equation inline.
+ *
+ * @param {import("./parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {{type: string, entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry}} token Token under the cursor.
+ * @param {{line: number, character: number}} position Cursor position.
+ * @returns {import("./parser").MathBlockEntry | undefined}
+ */
+function findMathBlockForEquationLabelHover(parsed, token, position) {
+  if (token.type !== "label" || token.entry.prefix !== "eq" || token.entry.source !== "math") {
+    return undefined;
+  }
+
+  const mathBlock = findMathBlockAtPosition(parsed, position);
+  if (!mathBlock || mathBlock.label !== token.entry.label) {
+    return undefined;
+  }
+
+  return mathBlock;
 }
 
 class PandocDocumentSymbolProvider {
@@ -630,7 +662,7 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
  * @param {vscode.MarkdownString} markdown Hover markdown being built.
  */
 function appendMathJaxUnavailableMessage(markdown) {
-  markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. See the Pandoc Manuscript Tools output for details, then run `npm install` if dependencies are missing.\n\n");
+  markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Pandoc Manuscript Tools output for the TeX source and error details.\n\n");
 }
 
 class MathJaxRenderer {
@@ -691,33 +723,51 @@ class MathJaxRenderer {
    */
   async renderToSvgUncached(tex, display) {
     try {
-      const mathJax = await this.ensureMathJax();
-      if (!mathJax) {
+      const renderer = await this.ensureMathJax();
+      if (!renderer) {
         return undefined;
       }
 
-      const node = await mathJax.tex2svgPromise(tex, {
+      const node = await renderer.html.convertPromise(tex, {
         display,
         em: 16,
         ex: 8,
         containerWidth: 80 * 16,
       });
-      const adaptor = mathJax.startup.adaptor;
-      const svg = adaptor.tags(node, "svg")[0];
-      return makeSvgHoverFriendly(adaptor.serializeXML(svg));
+      const adaptor = renderer.adaptor;
+      const svgNodes = adaptor.tags(node, "svg");
+      if (svgNodes.length !== 1) {
+        this.output.appendLine(`MathJax returned ${svgNodes.length} SVG fragment(s) for equation ${formatTexForLog(tex)}; expected one complete preview.`);
+        return undefined;
+      }
+
+      const svg = svgNodes[0];
+      if (!svg) {
+        this.output.appendLine(`MathJax did not return an SVG for equation: ${formatTexForLog(tex)}`);
+        return undefined;
+      }
+
+      const serializedSvg = adaptor.serializeXML(svg);
+      const renderError = getMathJaxSvgError(serializedSvg);
+      if (renderError) {
+        this.output.appendLine(`MathJax rendered an error for equation ${formatTexForLog(tex)}: ${renderError}`);
+        return undefined;
+      }
+
+      return makeSvgHoverFriendly(serializedSvg);
     } catch (error) {
-      this.output.appendLine(`MathJax failed to render equation: ${String(error)}`);
+      this.output.appendLine(`MathJax failed to render equation ${formatTexForLog(tex)}: ${String(error)}`);
       return undefined;
     }
   }
 
   /**
-   * Loads MathJax's TeX-to-SVG component once.
+   * Loads the direct MathJax TeX-to-SVG renderer once.
    *
-   * The extension uses a dynamic import so activation still succeeds before the
-   * user has installed dependencies in this local extension folder.
+   * The extension uses static require calls inside the lazy loader so esbuild
+   * can bundle MathJax without invoking the component loader's SRE path probes.
    *
-   * @returns {Promise<any | undefined>}
+   * @returns {Promise<{adaptor: any, html: any} | undefined>}
    */
   async ensureMathJax() {
     if (this.loadFailure) {
@@ -738,64 +788,119 @@ class MathJaxRenderer {
   }
 
   /**
-   * Initializes MathJax for Node-based TeX-to-SVG rendering.
+   * Initializes MathJax's direct Node API for TeX-to-SVG rendering.
    *
-   * @returns {Promise<any>}
+   * @returns {Promise<{adaptor: any, html: any}>}
    */
   async loadMathJax() {
-    global.MathJax = {
-      loader: {
-        paths: { mathjax: "@mathjax/src/bundle" },
-        load: ["adaptors/liteDOM"],
-        require: importMathJaxComponent,
-      },
-      options: {
-        // Hover previews only need visual SVG output; disabling speech avoids
-        // MathJax's SRE worker path issue on Windows Node extension hosts.
-        enableSpeech: false,
-        enableBraille: false,
-        a11y: {
-          speech: false,
-          braille: false,
-        },
-      },
-      output: {
-        font: "mathjax-newcm",
-      },
-    };
+    require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
+    require("@mathjax/src/js/input/tex/ams/AmsConfiguration.js");
+    // \boldsymbol lives in a separate TeX package, so preload it explicitly for common ML notation.
+    require("@mathjax/src/js/input/tex/boldsymbol/BoldsymbolConfiguration.js");
+    require("@mathjax/src/js/input/tex/newcommand/NewcommandConfiguration.js");
 
-    // MathJax loads the adaptor through loader.require after its core is ready;
-    // importing the adaptor before tex-svg crashes because MathJax._ is unset.
-    await import("@mathjax/src/bundle/tex-svg.js");
-    await global.MathJax.startup.promise;
-    this.output.appendLine("MathJax TeX-to-SVG renderer loaded.");
-    return global.MathJax;
+    const { mathjax } = require("@mathjax/src/js/mathjax.js");
+    const { TeX } = require("@mathjax/src/js/input/tex.js");
+    const { SVG } = require("@mathjax/src/js/output/svg.js");
+    const { liteAdaptor } = require("@mathjax/src/js/adaptors/liteAdaptor.js");
+    const { RegisterHTMLHandler } = require("@mathjax/src/js/handlers/html.js");
+    configureMathJaxAsyncLoad(mathjax);
+
+    const adaptor = liteAdaptor();
+    RegisterHTMLHandler(adaptor);
+    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand"] });
+    const svg = new SVG({
+      fontCache: "none",
+      // VS Code hovers need a single data URI image; MathJax v4 inline
+      // linebreaking otherwise returns multiple sibling SVG fragments.
+      linebreaks: { inline: false },
+    });
+    const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
+
+    this.output.appendLine("MathJax direct TeX-to-SVG renderer loaded.");
+    return { adaptor, html };
   }
 
   /**
-   * Shuts down MathJax worker resources when available.
+   * Releases renderer references held by the hover provider.
    */
   dispose() {
-    if (global.MathJax && typeof global.MathJax.done === "function") {
-      global.MathJax.done();
+    this.readyPromise = undefined;
+    if (this.svgCache) {
+      this.svgCache.clear();
     }
   }
 }
 
 /**
- * Loads MathJax components requested by the component loader.
+ * Registers bundled dynamic loaders for MathJax v4 SVG font chunks.
  *
- * The liteDOM branch uses a literal import so esbuild bundles the Node adaptor,
- * while still deferring it until MathJax asks for it during startup.
+ * VSIX packaging excludes node_modules, so the common \mathcal path must resolve
+ * through literal require calls that esbuild can include in dist/extension.js.
  *
- * @param {string} file Component path resolved by MathJax.
- * @returns {Promise<any>}
+ * @param {any} mathjax MathJax direct API namespace.
  */
-function importMathJaxComponent(file) {
-  if (file === "@mathjax/src/bundle/adaptors/liteDOM.js" || file.endsWith("/adaptors/liteDOM.js")) {
-    return import("@mathjax/src/bundle/adaptors/liteDOM.js");
+function configureMathJaxAsyncLoad(mathjax) {
+  mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
+  mathjax.asyncIsSynchronous = true;
+}
+
+/**
+ * Loads dynamic MathJax modules, keeping known NewCM SVG chunks bundled.
+ *
+ * @param {string} name Module name requested by MathJax.
+ * @returns {any}
+ */
+function loadBundledMathJaxDynamicModule(name) {
+  const normalizedName = name.replace(/\\/g, "/");
+  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js")) {
+    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js");
   }
-  return import(file);
+  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js")) {
+    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js");
+  }
+  return require(name);
+}
+
+/**
+ * Extracts MathJax's SVG-level render error when conversion produced merror.
+ *
+ * MathJax can return an SVG containing an error node instead of throwing; the
+ * hover should treat that as a failed preview so the output channel has details.
+ *
+ * @param {string} svg Serialized MathJax SVG.
+ * @returns {string | undefined}
+ */
+function getMathJaxSvgError(svg) {
+  const match = svg.match(/\bdata-mjx-error="([^"]+)"/);
+  return match ? decodeHtmlAttribute(match[1]) : undefined;
+}
+
+/**
+ * Decodes the small set of HTML entities expected inside SVG attributes.
+ *
+ * @param {string} value Attribute value.
+ * @returns {string}
+ */
+function decodeHtmlAttribute(value) {
+  return value
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Formats TeX compactly for one-line output-channel diagnostics.
+ *
+ * @param {string} tex TeX source.
+ * @returns {string}
+ */
+function formatTexForLog(tex) {
+  const compactTex = tex.replace(/\s+/g, " ").trim();
+  const truncatedTex = compactTex.length > 160 ? `${compactTex.slice(0, 157)}...` : compactTex;
+  return `"${truncatedTex}"`;
 }
 
 /**

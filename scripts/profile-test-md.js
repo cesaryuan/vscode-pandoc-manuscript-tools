@@ -224,44 +224,57 @@ async function loadMathJax() {
     return mathJaxReadyPromise;
   }
 
-  // MathJax bundles are ESM-cached, so initialize once and reuse the ready object
-  // for the warm hover pass instead of replacing global.MathJax.
-  global.MathJax = {
-    loader: {
-      paths: { mathjax: "@mathjax/src/bundle" },
-      load: ["adaptors/liteDOM"],
-      require: importMathJaxComponent,
-    },
-    options: {
-      // Keep this aligned with extension.js; speech workers are unnecessary for hover timing.
-      enableSpeech: false,
-      enableBraille: false,
-      a11y: { speech: false, braille: false },
-    },
-    output: { font: "mathjax-newcm" },
-  };
+  // Keep this aligned with extension.js: use the direct API so profiling matches
+  // the packaged extension bundle rather than MathJax's component loader.
+  mathJaxReadyPromise = Promise.resolve().then(() => {
+    require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
+    require("@mathjax/src/js/input/tex/ams/AmsConfiguration.js");
+    // Keep \boldsymbol coverage aligned with the extension hover renderer.
+    require("@mathjax/src/js/input/tex/boldsymbol/BoldsymbolConfiguration.js");
+    require("@mathjax/src/js/input/tex/newcommand/NewcommandConfiguration.js");
 
-  mathJaxReadyPromise = import("@mathjax/src/bundle/tex-svg.js").then(async () => {
-    await global.MathJax.startup.promise;
-    return global.MathJax;
+    const { mathjax } = require("@mathjax/src/js/mathjax.js");
+    const { TeX } = require("@mathjax/src/js/input/tex.js");
+    const { SVG } = require("@mathjax/src/js/output/svg.js");
+    const { liteAdaptor } = require("@mathjax/src/js/adaptors/liteAdaptor.js");
+    const { RegisterHTMLHandler } = require("@mathjax/src/js/handlers/html.js");
+    configureMathJaxAsyncLoad(mathjax);
+
+    const adaptor = liteAdaptor();
+    RegisterHTMLHandler(adaptor);
+    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand"] });
+    const svg = new SVG({ fontCache: "none", linebreaks: { inline: false } });
+    const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
+    return { adaptor, html };
   });
   return mathJaxReadyPromise;
 }
 
 /**
- * Loads MathJax components requested during profile rendering.
+ * Registers the same bundled MathJax dynamic loader used by extension.js.
  *
- * Kept aligned with extension.js so the profile catches bundled adaptor loading
- * regressions instead of only testing the direct node_modules path.
- *
- * @param {string} file Component path resolved by MathJax.
- * @returns {Promise<any>}
+ * @param {any} mathjax MathJax direct API namespace.
  */
-function importMathJaxComponent(file) {
-  if (file === "@mathjax/src/bundle/adaptors/liteDOM.js" || file.endsWith("/adaptors/liteDOM.js")) {
-    return import("@mathjax/src/bundle/adaptors/liteDOM.js");
+function configureMathJaxAsyncLoad(mathjax) {
+  mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
+  mathjax.asyncIsSynchronous = true;
+}
+
+/**
+ * Loads dynamic MathJax modules, keeping known NewCM SVG chunks bundle-friendly.
+ *
+ * @param {string} name Module name requested by MathJax.
+ * @returns {any}
+ */
+function loadBundledMathJaxDynamicModule(name) {
+  const normalizedName = name.replace(/\\/g, "/");
+  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js")) {
+    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js");
   }
-  return import(file);
+  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js")) {
+    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js");
+  }
+  return require(name);
 }
 
 /**
@@ -271,20 +284,20 @@ function importMathJaxComponent(file) {
  * @returns {Promise<{displaySvgLength: number, inlineSvgLength: number}>}
  */
 async function renderMathSamples(parsed) {
-  const mathJax = await loadMathJax();
-  const adaptor = mathJax.startup.adaptor;
+  const renderer = await loadMathJax();
+  const adaptor = renderer.adaptor;
   const displayTex = parsed.mathBlocks[0] && parsed.mathBlocks[0].tex;
   const inlineTex = parsed.inlineMath[0] && parsed.inlineMath[0].tex;
   let displaySvgLength = 0;
   let inlineSvgLength = 0;
 
   if (displayTex) {
-    const displayNode = await mathJax.tex2svgPromise(displayTex, { display: true, em: 16, ex: 8, containerWidth: 80 * 16 });
+    const displayNode = await renderer.html.convertPromise(displayTex, { display: true, em: 16, ex: 8, containerWidth: 80 * 16 });
     displaySvgLength = adaptor.serializeXML(adaptor.tags(displayNode, "svg")[0]).length;
   }
 
   if (inlineTex) {
-    const inlineNode = await mathJax.tex2svgPromise(inlineTex, { display: false, em: 16, ex: 8, containerWidth: 80 * 16 });
+    const inlineNode = await renderer.html.convertPromise(inlineTex, { display: false, em: 16, ex: 8, containerWidth: 80 * 16 });
     inlineSvgLength = adaptor.serializeXML(adaptor.tags(inlineNode, "svg")[0]).length;
   }
 
@@ -356,9 +369,6 @@ async function main() {
   console.log(`- parse benchmark: ${stages[6].result.iterations} iterations, avg ${formatMs(stages[6].result.avgMs)}`);
   console.log(`- MathJax sample SVG lengths: ${JSON.stringify(mathStage.result)}`);
 
-  if (global.MathJax && typeof global.MathJax.done === "function") {
-    global.MathJax.done();
-  }
 }
 
 main().catch((error) => {
