@@ -371,7 +371,7 @@ class PandocBuildRunner {
       }
 
       this.output.appendLine(`[DOCX] Opened ${docxUri.fsPath}`);
-      vscode.window.showInformationMessage(`Built and opened ${path.basename(docxUri.fsPath)}.`);
+      vscode.window.setStatusBarMessage(`$(check) Built and opened ${path.basename(docxUri.fsPath)}.`, 5000);
     } catch (error) {
       const message = `Failed to build DOCX: ${String(error.message || error)}`;
       this.output.appendLine(`[DOCX] ${message}`);
