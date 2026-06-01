@@ -661,7 +661,7 @@ function importMathJaxComponent(file) {
  */
 function makeSvgHoverFriendly(svg) {
   const sizedSvg = setSvgPixelSize(svg, 720);
-  const hoverStyle = "background:#fff;border-radius:6px;";
+  const hoverStyle = "background:transparent;";
   if (/<svg\b[^>]*\sstyle="/.test(sizedSvg)) {
     return sizedSvg.replace(/(<svg\b[^>]*\sstyle=")/, `$1${hoverStyle}`);
   }
