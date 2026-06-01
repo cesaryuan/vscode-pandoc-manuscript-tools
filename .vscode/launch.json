@@ -7,9 +7,9 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}",
-        "--goto",
-        "${workspaceFolder}/test.md:1:1"
+        "${workspaceFolder}/..",
+        // "--goto",
+        // "${workspaceFolder}/test.md:1:1"
       ]
     }
   ]

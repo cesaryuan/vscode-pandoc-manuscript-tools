@@ -2,7 +2,7 @@
   "name": "pandoc-manuscript-tools",
   "displayName": "Pandoc Manuscript Tools",
   "description": "Local VS Code helpers for Pandoc Markdown labels, cross references, math hovers, and outline symbols.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "cesaryuan",
   "license": "GPL-3.0-or-later",
   "repository": {
@@ -31,7 +31,8 @@
   },
   "activationEvents": [
     "onLanguage:markdown",
-    "onCommand:pandocManuscriptTools.rebuildIndex"
+    "onCommand:pandocManuscriptTools.rebuildIndex",
+    "onCommand:pandocManuscriptTools.buildDocxAndOpen"
   ],
   "main": "./dist/extension.js",
   "dependencies": {
@@ -42,8 +43,28 @@
       {
         "command": "pandocManuscriptTools.rebuildIndex",
         "title": "Pandoc Manuscript Tools: Rebuild Index"
+      },
+      {
+        "command": "pandocManuscriptTools.buildDocxAndOpen",
+        "title": "Pandoc Manuscript Tools: Build DOCX and Open in Word",
+        "icon": "$(play)"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "pandocManuscriptTools.buildDocxAndOpen",
+          "when": "resourceLangId == markdown && pandocManuscriptTools.canBuildDocx",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "pandocManuscriptTools.buildDocxAndOpen",
+          "when": "pandocManuscriptTools.canBuildDocx"
+        }
+      ]
+    },
     "configuration": {
       "title": "Pandoc Manuscript Tools",
       "properties": {
