@@ -2,7 +2,7 @@
 
 All notable changes to Pandoc Manuscript Tools are documented in this file.
 
-## 0.0.7 - 2026-06-01
+## 0.1.0 - 2026-06-01
 
 ### Added
 
