@@ -303,6 +303,13 @@ class PandocHoverProvider {
     const plainPosition = toPlainPosition(position);
     const token = findTokenAtPosition(parsed, plainPosition);
     if (token) {
+      const labeledMathBlock = findMathBlockForEquationLabelHover(parsed, token, plainPosition);
+      if (labeledMathBlock) {
+        // Pandoc-crossref puts equation labels on the closing delimiter, so the
+        // token hover must opt into the formula preview before the generic label
+        // hover short-circuits it.
+        return new vscode.Hover(await buildMathHover(labeledMathBlock, this.index, this.mathRenderer), toRange(token.entry.fullRange));
+      }
       return new vscode.Hover(buildLabelHover(token.entry, this.index, token.type), toRange(token.entry.fullRange));
     }
 
@@ -320,6 +327,31 @@ class PandocHoverProvider {
 
     return undefined;
   }
+}
+
+/**
+ * Finds the display equation associated with an equation-definition label hover.
+ *
+ * Only labels parsed from math delimiters should use the formula preview here;
+ * cross-reference hovers such as `@eq:linear` still need the generic label
+ * summary instead of rendering the target equation inline.
+ *
+ * @param {import("./parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {{type: string, entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry}} token Token under the cursor.
+ * @param {{line: number, character: number}} position Cursor position.
+ * @returns {import("./parser").MathBlockEntry | undefined}
+ */
+function findMathBlockForEquationLabelHover(parsed, token, position) {
+  if (token.type !== "label" || token.entry.prefix !== "eq" || token.entry.source !== "math") {
+    return undefined;
+  }
+
+  const mathBlock = findMathBlockAtPosition(parsed, position);
+  if (!mathBlock || mathBlock.label !== token.entry.label) {
+    return undefined;
+  }
+
+  return mathBlock;
 }
 
 class PandocDocumentSymbolProvider {
