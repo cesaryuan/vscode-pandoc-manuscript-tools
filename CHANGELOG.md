@@ -2,6 +2,13 @@
 
 All notable changes to Pandoc Manuscript Tools are documented in this file.
 
+## 0.0.6 - 2026-06-01
+
+### Changed
+
+- Expanded bundled MathJax newcm SVG dynamic module loading from the previously handled font chunks to all known newcm SVG dynamic chunks, so bundled hover previews can render formulas that need additional alphabets, symbols, arrows, and variant glyphs.
+- Kept the Markdown profiling script aligned with the extension's bundled MathJax dynamic font loading path, so profile runs exercise the same fallback behavior as runtime hovers.
+
 ## 0.0.5 - 2026-06-01
 
 ### Changed
