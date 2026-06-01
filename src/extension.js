@@ -485,7 +485,7 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
  * @param {vscode.MarkdownString} markdown Hover markdown being built.
  */
 function appendMathJaxUnavailableMessage(markdown) {
-  markdown.appendMarkdown("\n\n$(warning) MathJax preview is unavailable. See the Pandoc Manuscript Tools output for details, then run `npm install` if dependencies are missing.\n\n");
+  markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Pandoc Manuscript Tools output for the TeX source and error details.\n\n");
 }
 
 class MathJaxRenderer {
@@ -558,10 +558,28 @@ class MathJaxRenderer {
         containerWidth: 80 * 16,
       });
       const adaptor = renderer.adaptor;
-      const svg = adaptor.tags(node, "svg")[0];
-      return makeSvgHoverFriendly(adaptor.serializeXML(svg));
+      const svgNodes = adaptor.tags(node, "svg");
+      if (svgNodes.length !== 1) {
+        this.output.appendLine(`MathJax returned ${svgNodes.length} SVG fragment(s) for equation ${formatTexForLog(tex)}; expected one complete preview.`);
+        return undefined;
+      }
+
+      const svg = svgNodes[0];
+      if (!svg) {
+        this.output.appendLine(`MathJax did not return an SVG for equation: ${formatTexForLog(tex)}`);
+        return undefined;
+      }
+
+      const serializedSvg = adaptor.serializeXML(svg);
+      const renderError = getMathJaxSvgError(serializedSvg);
+      if (renderError) {
+        this.output.appendLine(`MathJax rendered an error for equation ${formatTexForLog(tex)}: ${renderError}`);
+        return undefined;
+      }
+
+      return makeSvgHoverFriendly(serializedSvg);
     } catch (error) {
-      this.output.appendLine(`MathJax failed to render equation: ${String(error)}`);
+      this.output.appendLine(`MathJax failed to render equation ${formatTexForLog(tex)}: ${String(error)}`);
       return undefined;
     }
   }
@@ -598,11 +616,11 @@ class MathJaxRenderer {
    * @returns {Promise<{adaptor: any, html: any}>}
    */
   async loadMathJax() {
+    require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
     require("@mathjax/src/js/input/tex/ams/AmsConfiguration.js");
     // \boldsymbol lives in a separate TeX package, so preload it explicitly for common ML notation.
     require("@mathjax/src/js/input/tex/boldsymbol/BoldsymbolConfiguration.js");
     require("@mathjax/src/js/input/tex/newcommand/NewcommandConfiguration.js");
-    require("@mathjax/src/js/input/tex/noundefined/NoUndefinedConfiguration.js");
 
     const { mathjax } = require("@mathjax/src/js/mathjax.js");
     const { TeX } = require("@mathjax/src/js/input/tex.js");
@@ -613,8 +631,13 @@ class MathJaxRenderer {
 
     const adaptor = liteAdaptor();
     RegisterHTMLHandler(adaptor);
-    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand", "noundefined"] });
-    const svg = new SVG({ fontCache: "none" });
+    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand"] });
+    const svg = new SVG({
+      fontCache: "none",
+      // VS Code hovers need a single data URI image; MathJax v4 inline
+      // linebreaking otherwise returns multiple sibling SVG fragments.
+      linebreaks: { inline: false },
+    });
     const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
 
     this.output.appendLine("MathJax direct TeX-to-SVG renderer loaded.");
@@ -660,6 +683,47 @@ function loadBundledMathJaxDynamicModule(name) {
     return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js");
   }
   return require(name);
+}
+
+/**
+ * Extracts MathJax's SVG-level render error when conversion produced merror.
+ *
+ * MathJax can return an SVG containing an error node instead of throwing; the
+ * hover should treat that as a failed preview so the output channel has details.
+ *
+ * @param {string} svg Serialized MathJax SVG.
+ * @returns {string | undefined}
+ */
+function getMathJaxSvgError(svg) {
+  const match = svg.match(/\bdata-mjx-error="([^"]+)"/);
+  return match ? decodeHtmlAttribute(match[1]) : undefined;
+}
+
+/**
+ * Decodes the small set of HTML entities expected inside SVG attributes.
+ *
+ * @param {string} value Attribute value.
+ * @returns {string}
+ */
+function decodeHtmlAttribute(value) {
+  return value
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Formats TeX compactly for one-line output-channel diagnostics.
+ *
+ * @param {string} tex TeX source.
+ * @returns {string}
+ */
+function formatTexForLog(tex) {
+  const compactTex = tex.replace(/\s+/g, " ").trim();
+  const truncatedTex = compactTex.length > 160 ? `${compactTex.slice(0, 157)}...` : compactTex;
+  return `"${truncatedTex}"`;
 }
 
 /**

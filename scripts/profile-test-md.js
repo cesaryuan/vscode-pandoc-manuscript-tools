@@ -227,11 +227,11 @@ async function loadMathJax() {
   // Keep this aligned with extension.js: use the direct API so profiling matches
   // the packaged extension bundle rather than MathJax's component loader.
   mathJaxReadyPromise = Promise.resolve().then(() => {
+    require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
     require("@mathjax/src/js/input/tex/ams/AmsConfiguration.js");
     // Keep \boldsymbol coverage aligned with the extension hover renderer.
     require("@mathjax/src/js/input/tex/boldsymbol/BoldsymbolConfiguration.js");
     require("@mathjax/src/js/input/tex/newcommand/NewcommandConfiguration.js");
-    require("@mathjax/src/js/input/tex/noundefined/NoUndefinedConfiguration.js");
 
     const { mathjax } = require("@mathjax/src/js/mathjax.js");
     const { TeX } = require("@mathjax/src/js/input/tex.js");
@@ -242,8 +242,8 @@ async function loadMathJax() {
 
     const adaptor = liteAdaptor();
     RegisterHTMLHandler(adaptor);
-    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand", "noundefined"] });
-    const svg = new SVG({ fontCache: "none" });
+    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand"] });
+    const svg = new SVG({ fontCache: "none", linebreaks: { inline: false } });
     const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
     return { adaptor, html };
   });
