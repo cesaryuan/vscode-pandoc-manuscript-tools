@@ -5,11 +5,12 @@
       "name": "Run Pandoc Crossref Helper",
       "type": "extensionHost",
       "request": "launch",
+      "preLaunchTask": "bundle",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}",
-        "--goto",
-        "${workspaceFolder}/test.md:1:1"
+        "${workspaceFolder}/..",
+        // "--goto",
+        // "${workspaceFolder}/test.md:1:1"
       ]
     }
   ]

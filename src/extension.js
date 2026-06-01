@@ -1,5 +1,8 @@
 "use strict";
 
+const cp = require("child_process");
+const fs = require("fs/promises");
+const path = require("path");
 const vscode = require("vscode");
 const {
   parsePandocDocument,
@@ -11,6 +14,10 @@ const {
 
 const EXTENSION_NAME = "Pandoc Manuscript Tools";
 const MARKDOWN_SELECTOR = [{ language: "markdown" }];
+const BUILD_DOCX_COMMAND = "pandocManuscriptTools.buildDocxAndOpen";
+const CAN_BUILD_DOCX_CONTEXT = "pandocManuscriptTools.canBuildDocx";
+const BUILD_SCRIPT_CANDIDATES = ["scripts/build.py", "scripts/build"];
+const POSTPROCESS_FEATURE_CANDIDATES = ["scripts/postprocess_docx.py", "scripts/postprocess"];
 const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS = {
   "accents-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js"),
   accents: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js"),
@@ -64,6 +71,7 @@ function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
+  const buildRunner = new PandocBuildRunner(output);
 
   output.appendLine("Activated Pandoc Manuscript Tools.");
 
@@ -81,10 +89,23 @@ function activate(context) {
     vscode.window.showInformationMessage("Pandoc Manuscript Tools index rebuilt.");
   }));
 
+  context.subscriptions.push(vscode.commands.registerCommand(BUILD_DOCX_COMMAND, async () => {
+    await buildRunner.buildActiveMarkdownDocx();
+  }));
+
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
+    void buildRunner.refreshContext();
+  }));
+
+  context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    void buildRunner.refreshContext();
+  }));
+
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
     if (isMarkdownDocument(document)) {
       index.updateDocument(document);
       updateDiagnostics(document, index, diagnostics);
+      void buildRunner.refreshContext();
     }
   }));
 
@@ -104,6 +125,7 @@ function activate(context) {
   }));
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
+  void buildRunner.refreshContext();
 }
 
 /**
@@ -265,6 +287,138 @@ class PandocWorkspaceIndex {
       map.get(label.label).push(label);
     }
     return map;
+  }
+}
+
+class PandocBuildRunner {
+  /**
+   * Creates the DOCX build runner used by the editor-title command.
+   *
+   * @param {vscode.OutputChannel} output Output channel for build logs.
+   */
+  constructor(output) {
+    this.output = output;
+    this.contextRefreshId = 0;
+  }
+
+  /**
+   * Recomputes whether the active editor should show the DOCX build button.
+   *
+   * @returns {Promise<void>}
+   */
+  async refreshContext() {
+    const refreshId = this.contextRefreshId + 1;
+    this.contextRefreshId = refreshId;
+
+    const canBuild = await this.canBuildActiveDocument();
+    if (refreshId !== this.contextRefreshId) {
+      return;
+    }
+
+    await vscode.commands.executeCommand("setContext", CAN_BUILD_DOCX_CONTEXT, canBuild);
+  }
+
+  /**
+   * Returns whether the current editor is a buildable manuscript Markdown file.
+   *
+   * @returns {Promise<boolean>}
+   */
+  async canBuildActiveDocument() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
+      return false;
+    }
+
+    const project = await findPandocManuscriptProject(editor.document.uri);
+    if (!project) {
+      return false;
+    }
+
+    return isUvAvailable();
+  }
+
+  /**
+   * Builds the active Markdown file as DOCX and opens the result externally.
+   *
+   * The button is hidden unless these checks pass, but command-palette calls can
+   * still reach this path, so the user gets a precise reason instead of silence.
+   *
+   * @returns {Promise<void>}
+   */
+  async buildActiveMarkdownDocx() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
+      vscode.window.showWarningMessage("Open a saved Markdown file before building DOCX.");
+      return;
+    }
+
+    const project = await findPandocManuscriptProject(editor.document.uri);
+    if (!project) {
+      vscode.window.showWarningMessage("This Markdown file is not inside a Pandoc manuscript template project.");
+      await this.refreshContext();
+      return;
+    }
+
+    if (!(await isUvAvailable())) {
+      vscode.window.showErrorMessage("Cannot build DOCX because `uv` is not available on PATH.");
+      await this.refreshContext();
+      return;
+    }
+
+    const docxUri = getExpectedDocxUri(project.rootUri, editor.document.uri);
+    if (await isFileLockedForOverwrite(docxUri)) {
+      const message = `Close ${path.basename(docxUri.fsPath)} in Word, then try building again.`;
+      this.output.appendLine(`[DOCX] Target DOCX is already open or not writable: ${docxUri.fsPath}`);
+      vscode.window.showWarningMessage(message);
+      return;
+    }
+
+    const saved = await editor.document.save();
+    if (!saved) {
+      vscode.window.showWarningMessage("The Markdown file must be saved before building DOCX.");
+      return;
+    }
+
+    await this.runDocxBuild(project, editor.document);
+    await this.refreshContext();
+  }
+
+  /**
+   * Runs `uv run scripts/build... docx <current-file>` and opens the output DOCX.
+   *
+   * @param {PandocManuscriptProject} project Detected manuscript project root.
+   * @param {vscode.TextDocument} document Markdown document to build.
+   * @returns {Promise<void>}
+   */
+  async runDocxBuild(project, document) {
+    const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
+    const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
+    const args = ["run", project.buildScript, "docx", markdownRelativePath];
+
+    this.output.show(true);
+    this.output.appendLine("");
+    this.output.appendLine(`[DOCX] Building ${markdownRelativePath}`);
+    this.output.appendLine(`[DOCX] Working directory: ${project.rootUri.fsPath}`);
+    this.output.appendLine(`[DOCX] Command: uv ${args.join(" ")}`);
+
+    try {
+      await runProcess("uv", args, { cwd: project.rootUri.fsPath, output: this.output });
+      if (!(await pathExists(docxUri))) {
+        throw new Error(`Build finished, but the expected DOCX was not found: ${docxUri.fsPath}`);
+      }
+
+      const opened = await vscode.env.openExternal(docxUri);
+      if (!opened) {
+        throw new Error(`VS Code could not open the DOCX with an external application: ${docxUri.fsPath}`);
+      }
+
+      this.output.appendLine(`[DOCX] Opened ${docxUri.fsPath}`);
+      vscode.window.setStatusBarMessage(`$(check) Built and opened ${path.basename(docxUri.fsPath)}.`, 5000);
+    } catch (error) {
+      const message = `Failed to build DOCX: ${String(error.message || error)}`;
+      this.output.appendLine(`[DOCX] ${message}`);
+      vscode.window.showErrorMessage(message);
+    }
   }
 }
 
@@ -1173,6 +1327,222 @@ function isMarkdownDocument(document) {
 }
 
 /**
+ * Checks whether a Markdown document can be passed to the project build script.
+ *
+ * Untitled Markdown is useful for language features, but the DOCX build needs
+ * a concrete file path so the build script can derive the output filename.
+ *
+ * @param {vscode.TextDocument} document Text document.
+ * @returns {boolean}
+ */
+function isBuildableMarkdownDocument(document) {
+  return document.languageId === "markdown" && document.uri.scheme === "file";
+}
+
+/**
+ * Finds the manuscript template project root for a Markdown file.
+ *
+ * @param {vscode.Uri} markdownUri Markdown file URI.
+ * @returns {Promise<PandocManuscriptProject | undefined>}
+ */
+async function findPandocManuscriptProject(markdownUri) {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(markdownUri);
+  const stopAtPath = workspaceFolder ? workspaceFolder.uri.fsPath : undefined;
+  let currentPath = path.dirname(markdownUri.fsPath);
+
+  while (true) {
+    const project = await readPandocManuscriptProject(vscode.Uri.file(currentPath));
+    if (project) {
+      return project;
+    }
+
+    if (stopAtPath && isSameFsPath(currentPath, stopAtPath)) {
+      return undefined;
+    }
+
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) {
+      return undefined;
+    }
+    currentPath = parentPath;
+  }
+}
+
+/**
+ * Returns manuscript project metadata when a directory has the required layout.
+ *
+ * These features intentionally match the local template's DOCX path: a build
+ * script, the Python post-processing pipeline, and Pandoc DOCX defaults.
+ *
+ * @param {vscode.Uri} rootUri Candidate project root.
+ * @returns {Promise<PandocManuscriptProject | undefined>}
+ */
+async function readPandocManuscriptProject(rootUri) {
+  const buildScript = await firstExistingRelativePath(rootUri, BUILD_SCRIPT_CANDIDATES);
+  if (!buildScript) {
+    return undefined;
+  }
+
+  if (!(await firstExistingRelativePath(rootUri, POSTPROCESS_FEATURE_CANDIDATES))) {
+    return undefined;
+  }
+
+  if (!(await pathExists(vscode.Uri.joinPath(rootUri, "pandoc")))) {
+    return undefined;
+  }
+
+  if (!(await pathExists(vscode.Uri.joinPath(rootUri, "pandoc", "pandoc-docx.yml")))) {
+    return undefined;
+  }
+
+  return { rootUri, buildScript };
+}
+
+/**
+ * Returns the first existing project-relative path from a candidate list.
+ *
+ * @param {vscode.Uri} rootUri Candidate project root.
+ * @param {string[]} relativePaths Project-relative path candidates.
+ * @returns {Promise<string | undefined>}
+ */
+async function firstExistingRelativePath(rootUri, relativePaths) {
+  for (const relativePath of relativePaths) {
+    const parts = relativePath.split("/");
+    if (await pathExists(vscode.Uri.joinPath(rootUri, ...parts))) {
+      return relativePath;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Checks whether a file or directory exists.
+ *
+ * @param {vscode.Uri} uri File or directory URI.
+ * @returns {Promise<boolean>}
+ */
+async function pathExists(uri) {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks whether an existing output file is likely locked by Word.
+ *
+ * The build overwrites and post-processes the DOCX in place. On Windows, Word
+ * usually denies a read/write open while the document is open, so this catches
+ * the common failure before Pandoc spends time rebuilding the manuscript.
+ *
+ * @param {vscode.Uri} uri Target DOCX URI.
+ * @returns {Promise<boolean>}
+ */
+async function isFileLockedForOverwrite(uri) {
+  if (!(await pathExists(uri))) {
+    return false;
+  }
+
+  let handle;
+  try {
+    handle = await fs.open(uri.fsPath, "r+");
+    return false;
+  } catch (error) {
+    return isFileLockError(error);
+  } finally {
+    if (handle) {
+      await handle.close();
+    }
+  }
+}
+
+/**
+ * Returns whether a filesystem error indicates a file lock or write denial.
+ *
+ * @param {any} error Filesystem error.
+ * @returns {boolean}
+ */
+function isFileLockError(error) {
+  return Boolean(error && ["EBUSY", "EPERM", "EACCES"].includes(error.code));
+}
+
+/**
+ * Returns the DOCX path produced by scripts/build.py for a Markdown input file.
+ *
+ * @param {vscode.Uri} rootUri Project root URI.
+ * @param {vscode.Uri} markdownUri Markdown file URI.
+ * @returns {vscode.Uri}
+ */
+function getExpectedDocxUri(rootUri, markdownUri) {
+  const outputName = `${path.parse(markdownUri.fsPath).name}.docx`;
+  return vscode.Uri.file(path.join(rootUri.fsPath, "output", "docx", outputName));
+}
+
+/**
+ * Checks whether `uv` can be executed from the VS Code extension host.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function isUvAvailable() {
+  try {
+    await runProcess("uv", ["--version"], {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runs a child process and optionally streams output to the extension channel.
+ *
+ * @param {string} command Command executable.
+ * @param {string[]} args Command arguments.
+ * @param {{cwd?: string, output?: vscode.OutputChannel}} options Process options.
+ * @returns {Promise<void>}
+ */
+function runProcess(command, args, options) {
+  return new Promise((resolve, reject) => {
+    const child = cp.spawn(command, args, {
+      cwd: options.cwd,
+      shell: process.platform === "win32",
+      windowsHide: true,
+    });
+
+    if (options.output) {
+      child.stdout.on("data", (chunk) => options.output.append(chunk.toString()));
+      child.stderr.on("data", (chunk) => options.output.append(chunk.toString()));
+    }
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${command} exited with code ${code}`));
+      }
+    });
+  });
+}
+
+/**
+ * Compares filesystem paths with Windows casing rules.
+ *
+ * @param {string} left Left path.
+ * @param {string} right Right path.
+ * @returns {boolean}
+ */
+function isSameFsPath(left, right) {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  if (process.platform === "win32") {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+  return normalizedLeft === normalizedRight;
+}
+
+/**
  * Returns this extension's workspace configuration.
  *
  * @returns {vscode.WorkspaceConfiguration}
@@ -1188,4 +1558,5 @@ module.exports = {
 
 /**
  * @typedef {{uri: vscode.Uri, version?: number, parsed: import("./parser").ParsedPandocDocument}} ParsedCacheEntry
+ * @typedef {{rootUri: vscode.Uri, buildScript: string}} PandocManuscriptProject
  */
