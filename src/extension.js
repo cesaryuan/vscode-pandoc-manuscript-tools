@@ -546,18 +546,18 @@ class MathJaxRenderer {
    */
   async renderToSvgUncached(tex, display) {
     try {
-      const mathJax = await this.ensureMathJax();
-      if (!mathJax) {
+      const renderer = await this.ensureMathJax();
+      if (!renderer) {
         return undefined;
       }
 
-      const node = await mathJax.tex2svgPromise(tex, {
+      const node = await renderer.html.convertPromise(tex, {
         display,
         em: 16,
         ex: 8,
         containerWidth: 80 * 16,
       });
-      const adaptor = mathJax.startup.adaptor;
+      const adaptor = renderer.adaptor;
       const svg = adaptor.tags(node, "svg")[0];
       return makeSvgHoverFriendly(adaptor.serializeXML(svg));
     } catch (error) {
@@ -567,12 +567,12 @@ class MathJaxRenderer {
   }
 
   /**
-   * Loads MathJax's TeX-to-SVG component once.
+   * Loads the direct MathJax TeX-to-SVG renderer once.
    *
-   * The extension uses a dynamic import so activation still succeeds before the
-   * user has installed dependencies in this local extension folder.
+   * The extension uses static require calls inside the lazy loader so esbuild
+   * can bundle MathJax without invoking the component loader's SRE path probes.
    *
-   * @returns {Promise<any | undefined>}
+   * @returns {Promise<{adaptor: any, html: any} | undefined>}
    */
   async ensureMathJax() {
     if (this.loadFailure) {
@@ -593,64 +593,73 @@ class MathJaxRenderer {
   }
 
   /**
-   * Initializes MathJax for Node-based TeX-to-SVG rendering.
+   * Initializes MathJax's direct Node API for TeX-to-SVG rendering.
    *
-   * @returns {Promise<any>}
+   * @returns {Promise<{adaptor: any, html: any}>}
    */
   async loadMathJax() {
-    global.MathJax = {
-      loader: {
-        paths: { mathjax: "@mathjax/src/bundle" },
-        load: ["adaptors/liteDOM"],
-        require: importMathJaxComponent,
-      },
-      options: {
-        // Hover previews only need visual SVG output; disabling speech avoids
-        // MathJax's SRE worker path issue on Windows Node extension hosts.
-        enableSpeech: false,
-        enableBraille: false,
-        a11y: {
-          speech: false,
-          braille: false,
-        },
-      },
-      output: {
-        font: "mathjax-newcm",
-      },
-    };
+    require("@mathjax/src/js/input/tex/ams/AmsConfiguration.js");
+    // \boldsymbol lives in a separate TeX package, so preload it explicitly for common ML notation.
+    require("@mathjax/src/js/input/tex/boldsymbol/BoldsymbolConfiguration.js");
+    require("@mathjax/src/js/input/tex/newcommand/NewcommandConfiguration.js");
+    require("@mathjax/src/js/input/tex/noundefined/NoUndefinedConfiguration.js");
 
-    // MathJax loads the adaptor through loader.require after its core is ready;
-    // importing the adaptor before tex-svg crashes because MathJax._ is unset.
-    await import("@mathjax/src/bundle/tex-svg.js");
-    await global.MathJax.startup.promise;
-    this.output.appendLine("MathJax TeX-to-SVG renderer loaded.");
-    return global.MathJax;
+    const { mathjax } = require("@mathjax/src/js/mathjax.js");
+    const { TeX } = require("@mathjax/src/js/input/tex.js");
+    const { SVG } = require("@mathjax/src/js/output/svg.js");
+    const { liteAdaptor } = require("@mathjax/src/js/adaptors/liteAdaptor.js");
+    const { RegisterHTMLHandler } = require("@mathjax/src/js/handlers/html.js");
+    configureMathJaxAsyncLoad(mathjax);
+
+    const adaptor = liteAdaptor();
+    RegisterHTMLHandler(adaptor);
+    const tex = new TeX({ packages: ["base", "ams", "boldsymbol", "newcommand", "noundefined"] });
+    const svg = new SVG({ fontCache: "none" });
+    const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
+
+    this.output.appendLine("MathJax direct TeX-to-SVG renderer loaded.");
+    return { adaptor, html };
   }
 
   /**
-   * Shuts down MathJax worker resources when available.
+   * Releases renderer references held by the hover provider.
    */
   dispose() {
-    if (global.MathJax && typeof global.MathJax.done === "function") {
-      global.MathJax.done();
+    this.readyPromise = undefined;
+    if (this.svgCache) {
+      this.svgCache.clear();
     }
   }
 }
 
 /**
- * Loads MathJax components requested by the component loader.
+ * Registers bundled dynamic loaders for MathJax v4 SVG font chunks.
  *
- * The liteDOM branch uses a literal import so esbuild bundles the Node adaptor,
- * while still deferring it until MathJax asks for it during startup.
+ * VSIX packaging excludes node_modules, so the common \mathcal path must resolve
+ * through literal require calls that esbuild can include in dist/extension.js.
  *
- * @param {string} file Component path resolved by MathJax.
- * @returns {Promise<any>}
+ * @param {any} mathjax MathJax direct API namespace.
  */
-function importMathJaxComponent(file) {
-  if (file === "@mathjax/src/bundle/adaptors/liteDOM.js" || file.endsWith("/adaptors/liteDOM.js")) {
-    return import("@mathjax/src/bundle/adaptors/liteDOM.js");
+function configureMathJaxAsyncLoad(mathjax) {
+  mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
+  mathjax.asyncIsSynchronous = true;
+}
+
+/**
+ * Loads dynamic MathJax modules, keeping known NewCM SVG chunks bundled.
+ *
+ * @param {string} name Module name requested by MathJax.
+ * @returns {any}
+ */
+function loadBundledMathJaxDynamicModule(name) {
+  const normalizedName = name.replace(/\\/g, "/");
+  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js")) {
+    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js");
   }
-  return import(file);
+  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js")) {
+    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js");
+  }
+  return require(name);
 }
 
 /**
