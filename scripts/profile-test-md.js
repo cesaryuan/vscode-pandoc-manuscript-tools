@@ -14,6 +14,48 @@ const repoRoot = path.resolve(__dirname, "..");
 const targetPath = path.resolve(repoRoot, process.argv[2] || "test.md");
 const uriText = `file:///${targetPath.replace(/\\/g, "/")}`;
 const parseIterations = Number(process.env.PROFILE_PARSE_ITERATIONS || 50);
+const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS = {
+  "accents-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js"),
+  accents: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js"),
+  arabic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/arabic.js"),
+  arrows: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/arrows.js"),
+  "braille-d": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/braille-d.js"),
+  braille: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/braille.js"),
+  calligraphic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js"),
+  cherokee: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/cherokee.js"),
+  "cyrillic-ss": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/cyrillic-ss.js"),
+  cyrillic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/cyrillic.js"),
+  devanagari: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/devanagari.js"),
+  "double-struck": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/double-struck.js"),
+  fraktur: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/fraktur.js"),
+  "greek-ss": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/greek-ss.js"),
+  greek: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/greek.js"),
+  hebrew: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/hebrew.js"),
+  "latin-b": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin-b.js"),
+  "latin-bi": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin-bi.js"),
+  "latin-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin-i.js"),
+  latin: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin.js"),
+  marrows: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/marrows.js"),
+  math: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/math.js"),
+  "monospace-ex": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/monospace-ex.js"),
+  "monospace-l": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/monospace-l.js"),
+  monospace: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/monospace.js"),
+  mshapes: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/mshapes.js"),
+  "phonetics-ss": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/phonetics-ss.js"),
+  phonetics: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/phonetics.js"),
+  PUA: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/PUA.js"),
+  "sans-serif-b": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-b.js"),
+  "sans-serif-bi": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-bi.js"),
+  "sans-serif-ex": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-ex.js"),
+  "sans-serif-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-i.js"),
+  "sans-serif-r": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-r.js"),
+  "sans-serif": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif.js"),
+  script: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js"),
+  shapes: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/shapes.js"),
+  "symbols-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols-b-i.js"),
+  symbols: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols.js"),
+  variants: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/variants.js"),
+};
 let mathJaxReadyPromise;
 
 /**
@@ -268,11 +310,9 @@ function configureMathJaxAsyncLoad(mathjax) {
  */
 function loadBundledMathJaxDynamicModule(name) {
   const normalizedName = name.replace(/\\/g, "/");
-  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js")) {
-    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js");
-  }
-  if (normalizedName.endsWith("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js")) {
-    return require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js");
+  const dynamicChunkMatch = normalizedName.match(/@mathjax\/mathjax-newcm-font\/js\/svg\/dynamic\/([^/]+)\.js$/);
+  if (dynamicChunkMatch && MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS[dynamicChunkMatch[1]]) {
+    return MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS[dynamicChunkMatch[1]]();
   }
   return require(name);
 }
