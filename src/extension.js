@@ -2,6 +2,8 @@
 
 const cp = require("child_process");
 const fs = require("fs/promises");
+const http = require("http");
+const crypto = require("crypto");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -407,9 +409,9 @@ class PandocBuildRunner {
         throw new Error(`Build finished, but the expected DOCX was not found: ${docxUri.fsPath}`);
       }
 
-      const opened = await vscode.env.openExternal(docxUri);
+      const opened = await openDocxInLocalWord(docxUri, this.output);
       if (!opened) {
-        throw new Error(`VS Code could not open the DOCX with an external application: ${docxUri.fsPath}`);
+        throw new Error(`VS Code could not open the DOCX in local Word: ${docxUri.fsPath}`);
       }
 
       this.output.appendLine(`[DOCX] Opened ${docxUri.fsPath}`);
@@ -1491,6 +1493,152 @@ function isChineseVscodeLanguage() {
 }
 
 /**
+ * Opens a generated DOCX with the user's local Word application.
+ *
+ * Remote extension hosts cannot write a local temp file directly. For remote
+ * workspaces, serve the remote DOCX through a short-lived forwarded URL and ask
+ * the local Word URI handler to download and open that URL.
+ *
+ * @param {vscode.Uri} docxUri Generated DOCX URI.
+ * @param {vscode.OutputChannel} output Output channel for diagnostics.
+ * @returns {Promise<boolean>}
+ */
+async function openDocxInLocalWord(docxUri, output) {
+  if (!vscode.env.remoteName) {
+    return vscode.env.openExternal(docxUri);
+  }
+
+  if (vscode.env.uiKind === vscode.UIKind.Web) {
+    throw new Error("Opening local Word is not available from the VS Code web UI.");
+  }
+
+  const downloadServer = await createRemoteDocxDownloadServer(docxUri, output);
+  try {
+    const externalUri = await vscode.env.asExternalUri(downloadServer.uri);
+    const wordUri = vscode.Uri.parse(`ms-word:ofe|u|${externalUri.toString(true)}`);
+    output.appendLine(`[DOCX] Opening local Word through forwarded URL: ${externalUri.toString(true)}`);
+    const opened = await vscode.env.openExternal(wordUri);
+    if (!opened) {
+      downloadServer.dispose();
+    }
+    return opened;
+  } catch (error) {
+    downloadServer.dispose();
+    throw error;
+  }
+}
+
+/**
+ * Creates a short-lived HTTP server that serves one generated DOCX file.
+ *
+ * @param {vscode.Uri} docxUri Generated DOCX URI on the extension host.
+ * @param {vscode.OutputChannel} output Output channel for diagnostics.
+ * @returns {Promise<DocxDownloadServer>}
+ */
+async function createRemoteDocxDownloadServer(docxUri, output) {
+  const fileName = path.basename(docxUri.fsPath);
+  const token = crypto.randomBytes(16).toString("hex");
+  const requestPath = `/download/${token}/${encodeURIComponent(fileName)}`;
+  const stat = await fs.stat(docxUri.fsPath);
+
+  return new Promise((resolve, reject) => {
+    let closeTimer;
+    const server = http.createServer(async (request, response) => {
+      try {
+        if (!isDocxDownloadRequest(request, requestPath)) {
+          response.writeHead(404);
+          response.end("Not found");
+          return;
+        }
+
+        response.writeHead(200, {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "Content-Disposition": `attachment; filename="${escapeHeaderFileName(fileName)}"`,
+          "Content-Length": stat.size,
+        });
+
+        if (request.method === "HEAD") {
+          response.end();
+          return;
+        }
+
+        const bytes = await fs.readFile(docxUri.fsPath);
+        response.end(bytes);
+        output.appendLine(`[DOCX] Served forwarded DOCX download: ${docxUri.fsPath}`);
+        closeTimer = scheduleServerClose(server, closeTimer, 30000);
+      } catch (error) {
+        output.appendLine(`[DOCX] Failed to serve forwarded DOCX download: ${String(error)}`);
+        response.writeHead(500);
+        response.end("Failed to read DOCX");
+      }
+    });
+
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Could not determine DOCX download server port."));
+        return;
+      }
+
+      const uri = vscode.Uri.parse(`http://localhost:${address.port}${requestPath}`);
+      closeTimer = scheduleServerClose(server, closeTimer, 120000);
+      output.appendLine(`[DOCX] Started temporary DOCX download server: ${uri.toString(true)}`);
+      resolve({
+        uri,
+        dispose: () => {
+          if (closeTimer) {
+            clearTimeout(closeTimer);
+          }
+          server.close();
+        },
+      });
+    });
+  });
+}
+
+/**
+ * Checks whether an HTTP request is allowed to download the generated DOCX.
+ *
+ * @param {import("http").IncomingMessage} request HTTP request.
+ * @param {string} requestPath Tokenized download path.
+ * @returns {boolean}
+ */
+function isDocxDownloadRequest(request, requestPath) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return false;
+  }
+  const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+  return requestUrl.pathname === requestPath;
+}
+
+/**
+ * Schedules an HTTP server close, replacing any existing close timer.
+ *
+ * @param {import("http").Server} server HTTP server.
+ * @param {NodeJS.Timeout | undefined} existingTimer Existing close timer.
+ * @param {number} delayMs Delay before close.
+ * @returns {NodeJS.Timeout}
+ */
+function scheduleServerClose(server, existingTimer, delayMs) {
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+  return setTimeout(() => server.close(), delayMs);
+}
+
+/**
+ * Escapes a filename for a simple quoted Content-Disposition header.
+ *
+ * @param {string} fileName Filename.
+ * @returns {string}
+ */
+function escapeHeaderFileName(fileName) {
+  return fileName.replace(/["\r\n]/g, "_");
+}
+
+/**
  * Returns the DOCX path produced by scripts/build.py for a Markdown input file.
  *
  * @param {vscode.Uri} rootUri Project root URI.
@@ -1581,4 +1729,5 @@ module.exports = {
 /**
  * @typedef {{uri: vscode.Uri, version?: number, parsed: import("./parser").ParsedPandocDocument}} ParsedCacheEntry
  * @typedef {{rootUri: vscode.Uri, buildScript: string}} PandocManuscriptProject
+ * @typedef {{uri: vscode.Uri, dispose: () => void}} DocxDownloadServer
  */

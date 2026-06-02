@@ -8,6 +8,10 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 
 - Add DOCX build button and functionality for Markdown files in Pandoc projects
 
+### Changed
+
+- Open DOCX build outputs from remote workspaces through a forwarded one-shot download URL so local Word can fetch and open the generated file.
+
 ## 0.0.6 - 2026-06-01
 
 ### Changed
