@@ -1515,8 +1515,9 @@ async function openDocxInLocalWord(docxUri, output) {
   const downloadServer = await createRemoteDocxDownloadServer(docxUri, output);
   try {
     const externalUri = await vscode.env.asExternalUri(downloadServer.uri);
-    const wordUri = vscode.Uri.parse(`ms-word:ofe|u|${externalUri.toString(true)}`);
+    const wordUri = vscode.Uri.parse(`ms-word:ofv|u|${externalUri.toString(true)}`);
     output.appendLine(`[DOCX] Opening local Word through forwarded URL: ${externalUri.toString(true)}`);
+    output.appendLine(`[DOCX] Word URI: ${wordUri.toString(true)}`);
     const opened = await vscode.env.openExternal(wordUri);
     if (!opened) {
       downloadServer.dispose();
@@ -1538,33 +1539,71 @@ async function openDocxInLocalWord(docxUri, output) {
 async function createRemoteDocxDownloadServer(docxUri, output) {
   const fileName = path.basename(docxUri.fsPath);
   const token = crypto.randomBytes(16).toString("hex");
-  const requestPath = `/download/${token}/${encodeURIComponent(fileName)}`;
+  const requestPathPrefix = `/download/${token}/`;
+  const requestPath = `${requestPathPrefix}${encodeURIComponent(fileName)}`;
   const stat = await fs.stat(docxUri.fsPath);
 
   return new Promise((resolve, reject) => {
     let closeTimer;
     const server = http.createServer(async (request, response) => {
       try {
-        if (!isDocxDownloadRequest(request, requestPath)) {
+        logDocxDownloadRequest(request, output);
+        if (!isDocxDownloadRequest(request, requestPath, requestPathPrefix)) {
+          output.appendLine(`[DOCX] Rejected forwarded DOCX request: ${request.method || "UNKNOWN"} ${request.url || "/"}`);
           response.writeHead(404);
           response.end("Not found");
           return;
         }
 
-        response.writeHead(200, {
+        if (request.method === "OPTIONS") {
+          writeDocxOptionsResponse(response);
+          closeTimer = scheduleServerClose(server, closeTimer, 120000);
+          return;
+        }
+
+        if (request.method === "PROPFIND") {
+          writeDocxPropfindResponse(response, requestPath, fileName, stat);
+          closeTimer = scheduleServerClose(server, closeTimer, 120000);
+          return;
+        }
+
+        const range = parseHttpRange(request.headers.range, stat.size);
+        if (request.headers.range && !range) {
+          response.writeHead(416, {
+            "Content-Range": `bytes */${stat.size}`,
+          });
+          response.end();
+          closeTimer = scheduleServerClose(server, closeTimer, 120000);
+          return;
+        }
+
+        const responseHeaders = {
           "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "Content-Disposition": `attachment; filename="${escapeHeaderFileName(fileName)}"`,
-          "Content-Length": stat.size,
-        });
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*",
+        };
+
+        if (range) {
+          responseHeaders["Accept-Ranges"] = "bytes";
+          responseHeaders["Content-Range"] = `bytes ${range.start}-${range.end}/${stat.size}`;
+          responseHeaders["Content-Length"] = range.end - range.start + 1;
+          response.writeHead(206, responseHeaders);
+        } else {
+          responseHeaders["Accept-Ranges"] = "bytes";
+          responseHeaders["Content-Length"] = stat.size;
+          response.writeHead(200, responseHeaders);
+        }
 
         if (request.method === "HEAD") {
           response.end();
+          closeTimer = scheduleServerClose(server, closeTimer, 120000);
           return;
         }
 
         const bytes = await fs.readFile(docxUri.fsPath);
-        response.end(bytes);
-        output.appendLine(`[DOCX] Served forwarded DOCX download: ${docxUri.fsPath}`);
+        response.end(range ? bytes.subarray(range.start, range.end + 1) : bytes);
+        output.appendLine(`[DOCX] Served forwarded DOCX download${range ? ` range ${range.start}-${range.end}` : ""}: ${docxUri.fsPath}`);
         closeTimer = scheduleServerClose(server, closeTimer, 30000);
       } catch (error) {
         output.appendLine(`[DOCX] Failed to serve forwarded DOCX download: ${String(error)}`);
@@ -1582,7 +1621,7 @@ async function createRemoteDocxDownloadServer(docxUri, output) {
         return;
       }
 
-      const uri = vscode.Uri.parse(`http://localhost:${address.port}${requestPath}`);
+      const uri = vscode.Uri.parse(`http://127.0.0.1:${address.port}${requestPath}`);
       closeTimer = scheduleServerClose(server, closeTimer, 120000);
       output.appendLine(`[DOCX] Started temporary DOCX download server: ${uri.toString(true)}`);
       resolve({
@@ -1599,18 +1638,132 @@ async function createRemoteDocxDownloadServer(docxUri, output) {
 }
 
 /**
+ * Writes the Office/WebDAV capability response Word asks for before fetching.
+ *
+ * @param {import("http").ServerResponse} response HTTP response.
+ */
+function writeDocxOptionsResponse(response) {
+  response.writeHead(200, {
+    "Allow": "GET, HEAD, OPTIONS, PROPFIND",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, PROPFIND",
+    "Access-Control-Allow-Origin": "*",
+    "DAV": "1, 2",
+    "MS-Author-Via": "DAV",
+    "X-MSDAVEXT": "1",
+    "Content-Length": 0,
+  });
+  response.end();
+}
+
+/**
+ * Writes a minimal WebDAV property response for Word's URL probe.
+ *
+ * @param {import("http").ServerResponse} response HTTP response.
+ * @param {string} requestPath Tokenized full download path.
+ * @param {string} fileName DOCX filename.
+ * @param {import("fs").Stats} stat DOCX file stat.
+ */
+function writeDocxPropfindResponse(response, requestPath, fileName, stat) {
+  const body = `<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+  <D:response>
+    <D:href>${escapeXml(requestPath)}</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:displayname>${escapeXml(fileName)}</D:displayname>
+        <D:getcontentlength>${stat.size}</D:getcontentlength>
+        <D:getcontenttype>application/vnd.openxmlformats-officedocument.wordprocessingml.document</D:getcontenttype>
+        <D:getlastmodified>${stat.mtime.toUTCString()}</D:getlastmodified>
+        <D:resourcetype/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>`;
+
+  response.writeHead(207, {
+    "Content-Type": "text/xml; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body, "utf8"),
+    "DAV": "1, 2",
+    "MS-Author-Via": "DAV",
+    "Access-Control-Allow-Origin": "*",
+  });
+  response.end(body);
+}
+
+/**
+ * Logs one forwarded DOCX request without dumping all headers.
+ *
+ * @param {import("http").IncomingMessage} request HTTP request.
+ * @param {vscode.OutputChannel} output Output channel for diagnostics.
+ */
+function logDocxDownloadRequest(request, output) {
+  const host = request.headers.host || "";
+  const userAgent = request.headers["user-agent"] || "";
+  const range = request.headers.range || "";
+  output.appendLine(`[DOCX] Forwarded DOCX request: ${request.method || "UNKNOWN"} ${request.url || "/"} host=${host} range=${range} ua=${userAgent}`);
+}
+
+/**
  * Checks whether an HTTP request is allowed to download the generated DOCX.
  *
  * @param {import("http").IncomingMessage} request HTTP request.
  * @param {string} requestPath Tokenized download path.
+ * @param {string} requestPathPrefix Tokenized download path prefix.
  * @returns {boolean}
  */
-function isDocxDownloadRequest(request, requestPath) {
-  if (request.method !== "GET" && request.method !== "HEAD") {
+function isDocxDownloadRequest(request, requestPath, requestPathPrefix) {
+  if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "OPTIONS" && request.method !== "PROPFIND") {
     return false;
   }
   const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
-  return requestUrl.pathname === requestPath;
+  return requestUrl.pathname === requestPath || requestUrl.pathname === requestPathPrefix;
+}
+
+/**
+ * Parses a single HTTP byte range.
+ *
+ * @param {string | undefined} rangeHeader Range header value.
+ * @param {number} size Total file size.
+ * @returns {{start: number, end: number} | undefined}
+ */
+function parseHttpRange(rangeHeader, size) {
+  if (!rangeHeader || size <= 0) {
+    return undefined;
+  }
+
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const startText = match[1];
+  const endText = match[2];
+  if (!startText && !endText) {
+    return undefined;
+  }
+
+  if (!startText) {
+    const suffixLength = Number(endText);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+      return undefined;
+    }
+    return {
+      start: Math.max(0, size - suffixLength),
+      end: size - 1,
+    };
+  }
+
+  const start = Number(startText);
+  const end = endText ? Number(endText) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) {
+    return undefined;
+  }
+
+  return {
+    start,
+    end: Math.min(end, size - 1),
+  };
 }
 
 /**
@@ -1636,6 +1789,21 @@ function scheduleServerClose(server, existingTimer, delayMs) {
  */
 function escapeHeaderFileName(fileName) {
   return fileName.replace(/["\r\n]/g, "_");
+}
+
+/**
+ * Escapes text for a small XML response body.
+ *
+ * @param {string} value Raw XML text value.
+ * @returns {string}
+ */
+function escapeXml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 /**

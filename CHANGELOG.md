@@ -12,6 +12,10 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 
 - Open DOCX build outputs from remote workspaces through a forwarded one-shot download URL so local Word can fetch and open the generated file.
 
+### Fixed
+
+- Use Word's read-only URL open mode and support HTTP `OPTIONS`, minimal WebDAV `PROPFIND`, and byte-range requests for forwarded remote DOCX downloads, improving SSH Remote compatibility.
+
 ## 0.0.6 - 2026-06-01
 
 ### Changed
