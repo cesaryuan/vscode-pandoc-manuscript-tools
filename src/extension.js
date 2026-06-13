@@ -582,6 +582,11 @@ function findInlineMathParagraphHover(document, parsed, position) {
   }
 
   const range = findParagraphRange(document, position.line);
+  const paragraphText = document.getText(range);
+  if (isParagraphTooLongForHover(paragraphText)) {
+    return undefined;
+  }
+
   const startOffset = document.offsetAt(range.start);
   const endOffset = document.offsetAt(range.end);
   const inlineMath = parsed.inlineMath.filter((entry) => entry.fullOffset >= startOffset && entry.fullEndOffset <= endOffset);
@@ -591,10 +596,24 @@ function findInlineMathParagraphHover(document, parsed, position) {
 
   return {
     range,
-    text: document.getText(range),
+    text: paragraphText,
     startOffset,
     inlineMath,
   };
+}
+
+/**
+ * Checks the user-configured paragraph preview length limit.
+ *
+ * Long paragraphs can make VS Code hovers noisy and expensive because each
+ * inline formula may need MathJax rendering, so they opt out before rendering.
+ *
+ * @param {string} paragraphText Raw paragraph text.
+ * @returns {boolean}
+ */
+function isParagraphTooLongForHover(paragraphText) {
+  const maxCharacters = getConfiguration().get("inlineMathParagraphHoverMaxCharacters", 1000);
+  return Number.isFinite(maxCharacters) && paragraphText.length > maxCharacters;
 }
 
 /**

@@ -7,6 +7,7 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 ### Added
 
 - Add an opt-in `pandocManuscriptTools.enableInlineMathParagraphHover` setting that shows a paragraph-level hover preview for Markdown paragraphs containing inline math.
+- Add `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters` to suppress paragraph-level inline math hover previews for long paragraphs.
 
 ### Fixed
 

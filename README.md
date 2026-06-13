@@ -39,6 +39,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document.
 - `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
 - `pandocManuscriptTools.enableInlineMathParagraphHover`: show a paragraph-level hover preview for Markdown paragraphs that contain inline math.
+- `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters`: maximum paragraph length, in characters, that can show an inline-math paragraph hover preview.
 
 ## Notes
 

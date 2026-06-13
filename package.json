@@ -90,6 +90,12 @@
           "type": "boolean",
           "default": false,
           "description": "Show a paragraph-level hover preview when hovering over a Markdown paragraph that contains inline math."
+        },
+        "pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 1,
+          "description": "Maximum paragraph length, in characters, that can show an inline-math paragraph hover preview."
         }
       }
     }
