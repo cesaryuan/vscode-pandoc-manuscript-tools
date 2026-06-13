@@ -494,7 +494,7 @@ class PandocHoverProvider {
   }
 
   /**
-   * Provides label, reference, and math-block hover information.
+   * Provides label, reference, math, and optional paragraph hover information.
    *
    * @param {vscode.TextDocument} document Markdown document.
    * @param {vscode.Position} position Cursor position.
@@ -520,6 +520,11 @@ class PandocHoverProvider {
       // Math-block hovers should shade the whole display equation; label hovers
       // are handled above so `{#eq:...}` still keeps its tighter range.
       return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
+    }
+
+    const inlineMathParagraph = findInlineMathParagraphHover(document, parsed, position);
+    if (inlineMathParagraph) {
+      return new vscode.Hover(await buildInlineMathParagraphHover(inlineMathParagraph, this.mathRenderer), inlineMathParagraph.range);
     }
 
     const inlineMath = findInlineMathAtPosition(parsed, plainPosition);
@@ -554,6 +559,63 @@ function findMathBlockForEquationLabelHover(parsed, token, position) {
   }
 
   return mathBlock;
+}
+
+/**
+ * Finds the current Markdown paragraph when paragraph hover previews are enabled.
+ *
+ * This intentionally gates the large paragraph preview behind a user setting so
+ * ordinary inline math hovers stay lightweight unless the user opts in.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {import("./parser").ParsedPandocDocument} parsed Parsed document.
+ * @param {vscode.Position} position Hover position.
+ * @returns {InlineMathParagraphHover | undefined}
+ */
+function findInlineMathParagraphHover(document, parsed, position) {
+  if (!getConfiguration().get("enableInlineMathParagraphHover", false)) {
+    return undefined;
+  }
+
+  if (document.lineAt(position.line).text.trim().length === 0) {
+    return undefined;
+  }
+
+  const range = findParagraphRange(document, position.line);
+  const startOffset = document.offsetAt(range.start);
+  const endOffset = document.offsetAt(range.end);
+  const inlineMath = parsed.inlineMath.filter((entry) => entry.fullOffset >= startOffset && entry.fullEndOffset <= endOffset);
+  if (inlineMath.length === 0) {
+    return undefined;
+  }
+
+  return {
+    range,
+    text: document.getText(range),
+    startOffset,
+    inlineMath,
+  };
+}
+
+/**
+ * Finds a blank-line-delimited Markdown paragraph around one line.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} lineNumber Zero-based line number inside the paragraph.
+ * @returns {vscode.Range}
+ */
+function findParagraphRange(document, lineNumber) {
+  let startLine = lineNumber;
+  while (startLine > 0 && document.lineAt(startLine - 1).text.trim().length > 0) {
+    startLine -= 1;
+  }
+
+  let endLine = lineNumber;
+  while (endLine + 1 < document.lineCount && document.lineAt(endLine + 1).text.trim().length > 0) {
+    endLine += 1;
+  }
+
+  return new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length);
 }
 
 class PandocDocumentSymbolProvider {
@@ -713,6 +775,81 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
 
   markdown.appendCodeblock(inlineMath.tex, "tex");
   return markdown;
+}
+
+/**
+ * Builds a hover body that previews a whole paragraph with inline math rendered.
+ *
+ * @param {InlineMathParagraphHover} paragraph Paragraph and inline math entries.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @returns {Promise<vscode.MarkdownString>}
+ */
+async function buildInlineMathParagraphHover(paragraph, mathRenderer) {
+  const markdown = new vscode.MarkdownString(undefined, true);
+  markdown.appendMarkdown("**Paragraph math preview**\n\n");
+  markdown.appendMarkdown(await renderInlineMathParagraphMarkdown(paragraph, mathRenderer));
+  return markdown;
+}
+
+/**
+ * Renders inline math spans inside one paragraph as hover-friendly SVG images.
+ *
+ * Failed formulas fall back to inline TeX so one bad span does not hide the
+ * rest of the paragraph preview.
+ *
+ * @param {InlineMathParagraphHover} paragraph Paragraph and inline math entries.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @returns {Promise<string>}
+ */
+async function renderInlineMathParagraphMarkdown(paragraph, mathRenderer) {
+  const parts = [];
+  let cursor = 0;
+
+  for (const inlineMath of paragraph.inlineMath) {
+    const formulaStart = inlineMath.fullOffset - paragraph.startOffset;
+    const formulaEnd = inlineMath.fullEndOffset - paragraph.startOffset;
+    if (formulaStart < cursor || formulaEnd > paragraph.text.length) {
+      continue;
+    }
+
+    parts.push(escapeMarkdownText(paragraph.text.slice(cursor, formulaStart)));
+    const renderedSvg = await mathRenderer.renderToDataUri(inlineMath.tex, false);
+    if (renderedSvg) {
+      parts.push(`![Rendered inline equation preview](${renderedSvg})`);
+    } else {
+      parts.push(`\`${escapeMarkdownCodeSpan(inlineMath.tex)}\``);
+    }
+    cursor = formulaEnd;
+  }
+
+  parts.push(escapeMarkdownText(paragraph.text.slice(cursor)));
+  return parts.join("").trim();
+}
+
+/**
+ * Escapes paragraph text so the hover previews literal prose plus rendered math.
+ *
+ * @param {string} value Raw paragraph text chunk.
+ * @returns {string}
+ */
+function escapeMarkdownText(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/[ \t]*\r?\n[ \t]*/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/([`*_{}\[\]()#+\-.!|])/g, "\\$1");
+}
+
+/**
+ * Escapes rare backticks in TeX fallback code spans.
+ *
+ * @param {string} value TeX source.
+ * @returns {string}
+ */
+function escapeMarkdownCodeSpan(value) {
+  return value.replace(/`/g, "\\`");
 }
 
 /**
@@ -1918,4 +2055,5 @@ module.exports = {
  * @typedef {{uri: vscode.Uri, version?: number, parsed: import("./parser").ParsedPandocDocument}} ParsedCacheEntry
  * @typedef {{rootUri: vscode.Uri, buildScript: string}} PandocManuscriptProject
  * @typedef {{uri: vscode.Uri, dispose: () => void}} DocxDownloadServer
+ * @typedef {{range: vscode.Range, text: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[]}} InlineMathParagraphHover
  */

@@ -85,6 +85,11 @@
           "type": "boolean",
           "default": true,
           "description": "Add equation, figure, and table labels as nested outline symbols below their nearest heading."
+        },
+        "pandocManuscriptTools.enableInlineMathParagraphHover": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a paragraph-level hover preview when hovering over a Markdown paragraph that contains inline math."
         }
       }
     }

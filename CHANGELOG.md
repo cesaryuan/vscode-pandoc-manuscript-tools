@@ -4,6 +4,10 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Add an opt-in `pandocManuscriptTools.enableInlineMathParagraphHover` setting that shows a paragraph-level hover preview for Markdown paragraphs containing inline math.
+
 ### Fixed
 
 - Render MathJax hover previews for formulas with stretchy operators such as `\xleftarrow` by ignoring nested SVG fragments inside the complete preview.
