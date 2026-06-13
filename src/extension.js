@@ -788,9 +788,9 @@ class MathJaxRenderer {
         containerWidth: 80 * 16,
       });
       const adaptor = renderer.adaptor;
-      const svgNodes = adaptor.tags(node, "svg");
+      const svgNodes = getTopLevelSvgNodes(adaptor, node);
       if (svgNodes.length !== 1) {
-        this.output.appendLine(`MathJax returned ${svgNodes.length} SVG fragment(s) for equation ${formatTexForLog(tex)}; expected one complete preview.`);
+        this.output.appendLine(`MathJax returned ${svgNodes.length} top-level SVG fragment(s) for equation ${formatTexForLog(tex)}; expected one complete preview.`);
         return undefined;
       }
 
@@ -883,6 +883,20 @@ class MathJaxRenderer {
       this.svgCache.clear();
     }
   }
+}
+
+/**
+ * Returns complete SVG previews directly under MathJax's container node.
+ *
+ * Some stretchy operators, including \xleftarrow, embed nested SVG fragments
+ * inside the real preview; counting recursive descendants falsely rejects them.
+ *
+ * @param {any} adaptor MathJax DOM adaptor.
+ * @param {any} node MathJax conversion result node.
+ * @returns {any[]}
+ */
+function getTopLevelSvgNodes(adaptor, node) {
+  return adaptor.childNodes(node).filter((child) => adaptor.kind(child) === "svg");
 }
 
 /**

@@ -2,6 +2,12 @@
 
 All notable changes to Pandoc Manuscript Tools are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Render MathJax hover previews for formulas with stretchy operators such as `\xleftarrow` by ignoring nested SVG fragments inside the complete preview.
+
 ## 0.1.0 - 2026-06-01
 
 ### Added
