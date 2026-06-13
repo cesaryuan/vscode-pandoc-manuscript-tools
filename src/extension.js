@@ -20,6 +20,9 @@ const BUILD_DOCX_COMMAND = "pandocManuscriptTools.buildDocxAndOpen";
 const CAN_BUILD_DOCX_CONTEXT = "pandocManuscriptTools.canBuildDocx";
 const BUILD_SCRIPT_CANDIDATES = ["scripts/build.py", "scripts/build"];
 const POSTPROCESS_FEATURE_CANDIDATES = ["scripts/postprocess_docx.py", "scripts/postprocess"];
+const GOOGLE_TRANSLATE_HTML_URL = "https://translate-pa.googleapis.com/v1/translateHtml";
+const GOOGLE_TRANSLATE_HTML_API_KEY = "AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520";
+const GOOGLE_TRANSLATE_HTML_CLIENT = "wt_lib";
 const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS = {
   "accents-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js"),
   accents: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js"),
@@ -73,6 +76,7 @@ function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
+  const paragraphTranslator = new GoogleParagraphTranslator(output);
   const buildRunner = new PandocBuildRunner(output);
 
   output.appendLine("Activated Pandoc Manuscript Tools.");
@@ -80,7 +84,7 @@ function activate(context) {
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(MARKDOWN_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(MARKDOWN_SELECTOR, new PandocReferenceProvider(index)));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(MARKDOWN_SELECTOR, new PandocHoverProvider(index, mathRenderer)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(MARKDOWN_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator)));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(MARKDOWN_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(MARKDOWN_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
@@ -487,10 +491,12 @@ class PandocHoverProvider {
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+   * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
    */
-  constructor(index, mathRenderer) {
+  constructor(index, mathRenderer, paragraphTranslator) {
     this.index = index;
     this.mathRenderer = mathRenderer;
+    this.paragraphTranslator = paragraphTranslator;
   }
 
   /**
@@ -522,9 +528,12 @@ class PandocHoverProvider {
       return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
     }
 
-    const inlineMathParagraph = findInlineMathParagraphHover(document, parsed, position);
-    if (inlineMathParagraph) {
-      return new vscode.Hover(await buildInlineMathParagraphHover(inlineMathParagraph, this.mathRenderer), inlineMathParagraph.range);
+    const paragraphHover = findParagraphHover(document, parsed, position);
+    if (paragraphHover) {
+      const paragraphMarkdown = await buildParagraphHover(paragraphHover, this.mathRenderer, this.paragraphTranslator);
+      if (paragraphMarkdown) {
+        return new vscode.Hover(paragraphMarkdown, paragraphHover.range);
+      }
     }
 
     const inlineMath = findInlineMathAtPosition(parsed, plainPosition);
@@ -562,35 +571,30 @@ function findMathBlockForEquationLabelHover(parsed, token, position) {
 }
 
 /**
- * Finds the current Markdown paragraph when paragraph hover previews are enabled.
+ * Finds the current Markdown paragraph when a paragraph hover feature applies.
  *
- * This intentionally gates the large paragraph preview behind a user setting so
- * ordinary inline math hovers stay lightweight unless the user opts in.
+ * Paragraph hovers can be triggered by inline-math preview or translation, so
+ * English paragraphs without formulas can still show translation when enabled.
  *
  * @param {vscode.TextDocument} document Markdown document.
  * @param {import("./parser").ParsedPandocDocument} parsed Parsed document.
  * @param {vscode.Position} position Hover position.
- * @returns {InlineMathParagraphHover | undefined}
+ * @returns {ParagraphHover | undefined}
  */
-function findInlineMathParagraphHover(document, parsed, position) {
-  if (!getConfiguration().get("enableInlineMathParagraphHover", false)) {
-    return undefined;
-  }
-
+function findParagraphHover(document, parsed, position) {
   if (document.lineAt(position.line).text.trim().length === 0) {
     return undefined;
   }
 
   const range = findParagraphRange(document, position.line);
   const paragraphText = document.getText(range);
-  if (isParagraphTooLongForHover(paragraphText)) {
-    return undefined;
-  }
-
   const startOffset = document.offsetAt(range.start);
   const endOffset = document.offsetAt(range.end);
   const inlineMath = parsed.inlineMath.filter((entry) => entry.fullOffset >= startOffset && entry.fullEndOffset <= endOffset);
-  if (inlineMath.length === 0) {
+  const showMathPreview = shouldShowInlineMathParagraphPreview(paragraphText, inlineMath);
+  const showTranslation = shouldTranslateParagraphHover(paragraphText);
+
+  if (!showMathPreview && !showTranslation) {
     return undefined;
   }
 
@@ -599,7 +603,22 @@ function findInlineMathParagraphHover(document, parsed, position) {
     text: paragraphText,
     startOffset,
     inlineMath,
+    showMathPreview,
+    showTranslation,
   };
+}
+
+/**
+ * Checks whether the paragraph should show the rendered inline-math preview.
+ *
+ * @param {string} paragraphText Raw paragraph text.
+ * @param {import("./parser").InlineMathEntry[]} inlineMath Inline math spans inside the paragraph.
+ * @returns {boolean}
+ */
+function shouldShowInlineMathParagraphPreview(paragraphText, inlineMath) {
+  return getConfiguration().get("enableInlineMathParagraphHover", false)
+    && inlineMath.length > 0
+    && !isParagraphTooLongForHover(paragraphText);
 }
 
 /**
@@ -614,6 +633,25 @@ function findInlineMathParagraphHover(document, parsed, position) {
 function isParagraphTooLongForHover(paragraphText) {
   const maxCharacters = getConfiguration().get("inlineMathParagraphHoverMaxCharacters", 1000);
   return Number.isFinite(maxCharacters) && paragraphText.length > maxCharacters;
+}
+
+/**
+ * Checks whether the paragraph should request a translation hover.
+ *
+ * @param {string} paragraphText Raw paragraph text.
+ * @returns {boolean}
+ */
+function shouldTranslateParagraphHover(paragraphText) {
+  if (!getConfiguration().get("enableParagraphHoverTranslation", false)) {
+    return false;
+  }
+
+  const maxCharacters = getConfiguration().get("paragraphHoverTranslationMaxCharacters", 800);
+  if (Number.isFinite(maxCharacters) && paragraphText.length > maxCharacters) {
+    return false;
+  }
+
+  return isLikelyEnglishParagraph(paragraphText);
 }
 
 /**
@@ -797,17 +835,86 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
 }
 
 /**
- * Builds a hover body that previews a whole paragraph with inline math rendered.
+ * Builds a hover body for paragraph-level math preview and/or translation.
  *
- * @param {InlineMathParagraphHover} paragraph Paragraph and inline math entries.
+ * @param {ParagraphHover} paragraph Paragraph hover data.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @returns {Promise<vscode.MarkdownString>}
+ * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @returns {Promise<vscode.MarkdownString | undefined>}
  */
-async function buildInlineMathParagraphHover(paragraph, mathRenderer) {
+async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator) {
   const markdown = new vscode.MarkdownString(undefined, true);
-  markdown.appendMarkdown("**Paragraph math preview**\n\n");
-  markdown.appendMarkdown(await renderInlineMathParagraphMarkdown(paragraph, mathRenderer));
-  return markdown;
+  let hasContent = false;
+
+  if (paragraph.showMathPreview) {
+    markdown.appendMarkdown("**Paragraph math preview**\n\n");
+    markdown.appendMarkdown(await renderInlineMathParagraphMarkdown(paragraph, mathRenderer));
+    hasContent = true;
+  }
+
+  const translation = await buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator);
+  if (translation) {
+    if (paragraph.showMathPreview) {
+      markdown.appendMarkdown("\n\n---\n\n");
+    }
+    markdown.appendMarkdown("**Chinese translation**\n\n");
+    markdown.appendMarkdown(translation);
+    hasContent = true;
+  }
+
+  return hasContent ? markdown : undefined;
+}
+
+/**
+ * Builds the optional translated paragraph preview.
+ *
+ * The full paragraph, including any TeX, is sent to Google Translate because
+ * the user wants translation to see the same text that appears in the editor;
+ * any inline TeX that survives translation is rendered before showing the hover.
+ *
+ * @param {ParagraphHover} paragraph Paragraph hover data.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @returns {Promise<string | undefined>}
+ */
+async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator) {
+  if (!paragraph.showTranslation) {
+    return undefined;
+  }
+
+  const translatedText = await paragraphTranslator.translateText(normalizeParagraphText(paragraph.text));
+  if (translatedText === undefined) {
+    return undefined;
+  }
+  return renderInlineMathTextMarkdown(translatedText, mathRenderer);
+}
+
+/**
+ * Checks whether prose looks like an English paragraph.
+ *
+ * @param {string} text Raw paragraph text.
+ * @returns {boolean}
+ */
+function isLikelyEnglishParagraph(text) {
+  const latinLetters = text.match(/[A-Za-z]/g) || [];
+  const cjkCharacters = text.match(/[\u3400-\u9FFF]/g) || [];
+  const nonAsciiLetters = text.match(/[^\x00-\x7F]/g) || [];
+  const wordMatches = text.match(/[A-Za-z]{2,}/g) || [];
+
+  return latinLetters.length >= 20
+    && wordMatches.length >= 4
+    && cjkCharacters.length === 0
+    && latinLetters.length >= nonAsciiLetters.length * 3;
+}
+
+/**
+ * Normalizes a paragraph before translation.
+ *
+ * @param {string} value Raw paragraph text.
+ * @returns {string}
+ */
+function normalizeParagraphText(value) {
+  return value.replace(/[ \t]*\r?\n[ \t]*/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -816,32 +923,49 @@ async function buildInlineMathParagraphHover(paragraph, mathRenderer) {
  * Failed formulas fall back to inline TeX so one bad span does not hide the
  * rest of the paragraph preview.
  *
- * @param {InlineMathParagraphHover} paragraph Paragraph and inline math entries.
+ * @param {ParagraphHover} paragraph Paragraph hover data.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<string>}
  */
 async function renderInlineMathParagraphMarkdown(paragraph, mathRenderer) {
+  return renderInlineMathTextMarkdown(paragraph.text, mathRenderer, paragraph.inlineMath, paragraph.startOffset);
+}
+
+/**
+ * Renders inline math spans inside arbitrary hover text.
+ *
+ * Translated text is parsed after Google returns it so preserved TeX delimiters
+ * are rendered even when the original paragraph preview is not enabled.
+ *
+ * @param {string} text Hover text.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @param {import("./parser").InlineMathEntry[]=} inlineMath Inline math entries, if already known.
+ * @param {number=} startOffset Offset used by precomputed inline math entries.
+ * @returns {Promise<string>}
+ */
+async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath, startOffset = 0) {
+  const mathEntries = inlineMath || parsePandocDocument(text).inlineMath;
   const parts = [];
   let cursor = 0;
 
-  for (const inlineMath of paragraph.inlineMath) {
-    const formulaStart = inlineMath.fullOffset - paragraph.startOffset;
-    const formulaEnd = inlineMath.fullEndOffset - paragraph.startOffset;
-    if (formulaStart < cursor || formulaEnd > paragraph.text.length) {
+  for (const inlineMathEntry of mathEntries) {
+    const formulaStart = inlineMathEntry.fullOffset - startOffset;
+    const formulaEnd = inlineMathEntry.fullEndOffset - startOffset;
+    if (formulaStart < cursor || formulaEnd > text.length) {
       continue;
     }
 
-    parts.push(escapeMarkdownText(paragraph.text.slice(cursor, formulaStart)));
-    const renderedSvg = await mathRenderer.renderToDataUri(inlineMath.tex, false);
+    parts.push(escapeMarkdownText(text.slice(cursor, formulaStart)));
+    const renderedSvg = await mathRenderer.renderToDataUri(inlineMathEntry.tex, false);
     if (renderedSvg) {
       parts.push(`![Rendered inline equation preview](${renderedSvg})`);
     } else {
-      parts.push(`\`${escapeMarkdownCodeSpan(inlineMath.tex)}\``);
+      parts.push(`\`${escapeMarkdownCodeSpan(inlineMathEntry.tex)}\``);
     }
     cursor = formulaEnd;
   }
 
-  parts.push(escapeMarkdownText(paragraph.text.slice(cursor)));
+  parts.push(escapeMarkdownText(text.slice(cursor)));
   return parts.join("").trim();
 }
 
@@ -878,6 +1002,118 @@ function escapeMarkdownCodeSpan(value) {
  */
 function appendMathJaxUnavailableMessage(markdown) {
   markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Pandoc Manuscript Tools output for the TeX source and error details.\n\n");
+}
+
+class GoogleParagraphTranslator {
+  /**
+   * Creates a small Google Translate client for paragraph hover previews.
+   *
+   * @param {vscode.OutputChannel} output Output channel for translation failures.
+   */
+  constructor(output) {
+    this.output = output;
+    this.translationCache = new Map();
+  }
+
+  /**
+   * Translates one short English paragraph to the configured target language.
+   *
+   * @param {string} text English paragraph text.
+   * @returns {Promise<string | undefined>}
+   */
+  async translateText(text) {
+    if (!text) {
+      return "";
+    }
+
+    const targetLanguage = getConfiguration().get("paragraphHoverTranslationTargetLanguage", "zh");
+    const cacheKey = `${targetLanguage}:${text}`;
+    if (!this.translationCache.has(cacheKey)) {
+      this.translationCache.set(cacheKey, this.translateTextUncached(text, targetLanguage));
+    }
+
+    return this.translationCache.get(cacheKey);
+  }
+
+  /**
+   * Sends one request to Google translateHtml.
+   *
+   * This mirrors read-frog's unofficial Google Translate provider and avoids
+   * the official paid Cloud Translation API for lightweight hover previews.
+   *
+   * @param {string} text English paragraph text.
+   * @param {string} targetLanguage Target language code accepted by Google Translate.
+   * @returns {Promise<string | undefined>}
+   */
+  async translateTextUncached(text, targetLanguage) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(GOOGLE_TRANSLATE_HTML_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json+protobuf",
+          "X-Goog-API-Key": GOOGLE_TRANSLATE_HTML_API_KEY,
+        },
+        body: JSON.stringify([
+          [[text], "en", targetLanguage],
+          GOOGLE_TRANSLATE_HTML_CLIENT,
+        ]),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        this.output.appendLine(`Google paragraph translation failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`);
+        return undefined;
+      }
+
+      const result = await response.json();
+      if (!Array.isArray(result) || !Array.isArray(result[0]) || typeof result[0][0] !== "string") {
+        this.output.appendLine("Google paragraph translation returned an unexpected response format.");
+        return undefined;
+      }
+
+      return decodeHtmlText(result[0][0]).trim();
+    } catch (error) {
+      this.output.appendLine(`Google paragraph translation failed for ${formatTranslationTextForLog(text)}: ${String(error)}`);
+      return undefined;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+/**
+ * Decodes common HTML entities returned by translateHtml.
+ *
+ * @param {string} value Translated text.
+ * @returns {string}
+ */
+function decodeHtmlText(value) {
+  return value
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Formats translation text compactly for one-line output-channel diagnostics.
+ *
+ * @param {string} text Source text.
+ * @returns {string}
+ */
+function formatTranslationTextForLog(text) {
+  const compactText = text.replace(/\s+/g, " ").trim();
+  const truncatedText = compactText.length > 120 ? `${compactText.slice(0, 117)}...` : compactText;
+  return `"${truncatedText}"`;
 }
 
 class MathJaxRenderer {
@@ -2074,5 +2310,5 @@ module.exports = {
  * @typedef {{uri: vscode.Uri, version?: number, parsed: import("./parser").ParsedPandocDocument}} ParsedCacheEntry
  * @typedef {{rootUri: vscode.Uri, buildScript: string}} PandocManuscriptProject
  * @typedef {{uri: vscode.Uri, dispose: () => void}} DocxDownloadServer
- * @typedef {{range: vscode.Range, text: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[]}} InlineMathParagraphHover
+ * @typedef {{range: vscode.Range, text: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[], showMathPreview: boolean, showTranslation: boolean}} ParagraphHover
  */

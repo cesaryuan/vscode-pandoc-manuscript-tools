@@ -88,7 +88,7 @@
         },
         "pandocManuscriptTools.enableInlineMathParagraphHover": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Show a paragraph-level hover preview when hovering over a Markdown paragraph that contains inline math."
         },
         "pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters": {
@@ -96,6 +96,22 @@
           "default": 1000,
           "minimum": 1,
           "description": "Maximum paragraph length, in characters, that can show an inline-math paragraph hover preview."
+        },
+        "pandocManuscriptTools.enableParagraphHoverTranslation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a Google Translate-powered Chinese translation for eligible English paragraph hovers."
+        },
+        "pandocManuscriptTools.paragraphHoverTranslationMaxCharacters": {
+          "type": "number",
+          "default": 800,
+          "minimum": 1,
+          "description": "Maximum English paragraph length, in characters, that can request a paragraph hover translation."
+        },
+        "pandocManuscriptTools.paragraphHoverTranslationTargetLanguage": {
+          "type": "string",
+          "default": "zh",
+          "description": "Target language code for paragraph hover translations sent to Google Translate, for example zh or zh-TW."
         }
       }
     }
