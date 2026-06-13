@@ -445,8 +445,10 @@ async function buildMathHover(mathBlock, index, document, mathRenderer) {
       markdown.appendMarkdown(`\n\n![Rendered equation preview](${renderedSvg})\n\n`);
     } else {
       appendMathJaxUnavailableMessage(markdown);
+      // Only show raw TeX when rendering fails; successful previews should not
+      // repeat LaTeX text underneath the formula image.
+      markdown.appendCodeblock(mathBlock.tex, "tex");
     }
-    markdown.appendCodeblock(mathBlock.tex, "tex");
   }
 
   return markdown;
@@ -468,9 +470,11 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
     markdown.appendMarkdown(`\n\n![Rendered inline equation preview](${renderedSvg})\n\n`);
   } else {
     appendMathJaxUnavailableMessage(markdown);
+    // Keep failed inline hovers diagnosable without showing source below a
+    // successful rendered preview.
+    markdown.appendCodeblock(inlineMath.tex, "tex");
   }
 
-  markdown.appendCodeblock(inlineMath.tex, "tex");
   return markdown;
 }
 
