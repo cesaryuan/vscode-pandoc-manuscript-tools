@@ -486,19 +486,19 @@ async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator)
   const markdown = new vscode.MarkdownString(undefined, true);
   let hasContent = false;
 
-  if (paragraph.showMathPreview) {
-    markdown.appendMarkdown("**Paragraph math preview**\n\n");
-    markdown.appendMarkdown(await renderInlineMathParagraphMarkdown(paragraph, mathRenderer));
+  const translation = await buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator);
+  if (translation) {
+    markdown.appendMarkdown("**Chinese translation**\n\n");
+    markdown.appendMarkdown(translation);
     hasContent = true;
   }
 
-  const translation = await buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator);
-  if (translation) {
-    if (paragraph.showMathPreview) {
+  if (paragraph.showMathPreview) {
+    if (hasContent) {
       markdown.appendMarkdown("\n\n---\n\n");
     }
-    markdown.appendMarkdown("**Chinese translation**\n\n");
-    markdown.appendMarkdown(translation);
+    markdown.appendMarkdown("**Paragraph math preview**\n\n");
+    markdown.appendMarkdown(await renderInlineMathParagraphMarkdown(paragraph, mathRenderer));
     hasContent = true;
   }
 
