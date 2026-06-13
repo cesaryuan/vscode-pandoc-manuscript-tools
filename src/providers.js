@@ -169,7 +169,7 @@ function findMathBlockForEquationLabelHover(parsed, token, position) {
  * @returns {ParagraphHover | undefined}
  */
 function findParagraphHover(document, parsed, position) {
-  if (document.lineAt(position.line).text.trim().length === 0) {
+  if (isParagraphBoundaryLine(document, position.line)) {
     return undefined;
   }
 
@@ -242,7 +242,10 @@ function shouldTranslateParagraphHover(paragraphText) {
 }
 
 /**
- * Finds a blank-line-delimited Markdown paragraph around one line.
+ * Finds a Markdown paragraph around one line.
+ *
+ * Paragraph hovers intentionally stop at standalone HTML comments because
+ * manuscript revision notes are not prose and should not be sent to previews.
  *
  * @param {vscode.TextDocument} document Markdown document.
  * @param {number} lineNumber Zero-based line number inside the paragraph.
@@ -250,16 +253,66 @@ function shouldTranslateParagraphHover(paragraphText) {
  */
 function findParagraphRange(document, lineNumber) {
   let startLine = lineNumber;
-  while (startLine > 0 && document.lineAt(startLine - 1).text.trim().length > 0) {
+  while (startLine > 0 && !isParagraphBoundaryLine(document, startLine - 1)) {
     startLine -= 1;
   }
 
   let endLine = lineNumber;
-  while (endLine + 1 < document.lineCount && document.lineAt(endLine + 1).text.trim().length > 0) {
+  while (endLine + 1 < document.lineCount && !isParagraphBoundaryLine(document, endLine + 1)) {
     endLine += 1;
   }
 
   return new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length);
+}
+
+/**
+ * Checks whether a line should split paragraph hover ranges.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} lineNumber Zero-based line number.
+ * @returns {boolean}
+ */
+function isParagraphBoundaryLine(document, lineNumber) {
+  return document.lineAt(lineNumber).text.trim().length === 0
+    || isStandaloneHtmlCommentLine(document, lineNumber);
+}
+
+/**
+ * Checks whether a line belongs to a standalone HTML comment block.
+ *
+ * Standalone comments often hold review notes such as `<!-- Revision... -->`.
+ * Treating them as boundaries keeps hidden editorial text out of paragraph
+ * translation and inline-math preview hovers.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} lineNumber Zero-based line number.
+ * @returns {boolean}
+ */
+function isStandaloneHtmlCommentLine(document, lineNumber) {
+  for (let currentLine = lineNumber; currentLine >= 0; currentLine -= 1) {
+    const trimmed = document.lineAt(currentLine).text.trim();
+    if (trimmed.length === 0) {
+      return false;
+    }
+
+    const commentEnd = trimmed.lastIndexOf("-->");
+    if (commentEnd !== -1 && currentLine !== lineNumber) {
+      return false;
+    }
+
+    const commentStart = trimmed.lastIndexOf("<!--");
+    if (commentStart === -1) {
+      continue;
+    }
+
+    const hasProseBeforeComment = trimmed.slice(0, commentStart).trim().length > 0;
+    const sameLineCommentEnd = trimmed.indexOf("-->", commentStart + 4);
+    const hasProseAfterComment = sameLineCommentEnd !== -1
+      && trimmed.slice(sameLineCommentEnd + 3).trim().length > 0;
+    return !hasProseBeforeComment && !hasProseAfterComment;
+  }
+
+  return false;
 }
 
 class PandocDocumentSymbolProvider {
