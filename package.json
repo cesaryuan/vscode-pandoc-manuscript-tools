@@ -93,7 +93,7 @@
         },
         "pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters": {
           "type": "number",
-          "default": 1000,
+          "default": 2000,
           "minimum": 1,
           "description": "Maximum paragraph length, in characters, that can show an inline-math paragraph hover preview."
         },
@@ -104,7 +104,7 @@
         },
         "pandocManuscriptTools.paragraphHoverTranslationMaxCharacters": {
           "type": "number",
-          "default": 800,
+          "default": 1200,
           "minimum": 1,
           "description": "Maximum English paragraph length, in characters, that can request a paragraph hover translation."
         },
