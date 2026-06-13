@@ -79,7 +79,7 @@
         "pandocManuscriptTools.includeWorkspaceReferences": {
           "type": "boolean",
           "default": false,
-          "description": "Index Markdown files in the current workspace when resolving definitions and references."
+          "description": "Preload Markdown files in the current workspace for the index cache. Definitions, references, completions, and diagnostics remain scoped to the active document."
         },
         "pandocManuscriptTools.includeLabelSymbols": {
           "type": "boolean",

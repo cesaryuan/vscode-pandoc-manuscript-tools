@@ -8,8 +8,8 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Find all references for Pandoc labels and reference tokens.
 - Hover cards for labels, references, display math blocks, and inline math spans with MathJax-rendered SVG previews.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
-- Completion suggestions after `@` using labels found in Markdown files.
-- Diagnostics for undefined references and duplicate labels.
+- Completion suggestions after `@` using labels found in the current Markdown document.
+- Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
 
 ## Try It Locally
@@ -35,7 +35,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 ## Settings
 
 - `pandocManuscriptTools.enableDiagnostics`: report undefined references and duplicate labels.
-- `pandocManuscriptTools.includeWorkspaceReferences`: index all workspace Markdown files, not just open documents.
+- `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document.
 - `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
 
 ## Notes

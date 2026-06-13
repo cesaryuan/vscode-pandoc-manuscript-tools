@@ -7,6 +7,7 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 ### Fixed
 
 - Render MathJax hover previews for formulas with stretchy operators such as `\xleftarrow` by ignoring nested SVG fragments inside the complete preview.
+- Scope Pandoc label definitions, references, completions, hover counts, and diagnostics to the active Markdown document so multiple open manuscripts do not share duplicate-label or reference statistics.
 
 ## 0.1.0 - 2026-06-01
 

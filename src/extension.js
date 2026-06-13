@@ -155,7 +155,7 @@ class PandocWorkspaceIndex {
    * @returns {Promise<void>}
    */
   async refreshWorkspace() {
-    const includeWorkspace = getConfiguration().get("includeWorkspaceReferences", true);
+    const includeWorkspace = getConfiguration().get("includeWorkspaceReferences", false);
     const openMarkdownDocuments = vscode.workspace.textDocuments.filter(isMarkdownDocument);
 
     for (const document of openMarkdownDocuments) {
@@ -232,57 +232,61 @@ class PandocWorkspaceIndex {
   }
 
   /**
-   * Finds all definitions for a Pandoc label.
+   * Finds definitions for a Pandoc label in one Markdown document.
    *
+   * @param {vscode.TextDocument} document Markdown document whose labels define the lookup scope.
    * @param {string} label Pandoc label.
    * @returns {import("./parser").LabelEntry[]}
    */
-  getDefinitions(label) {
-    return this.getAllEntriesByLabel("labels", label);
+  getDefinitions(document, label) {
+    return this.getDocumentEntriesByLabel(document, "labels", label);
   }
 
   /**
-   * Finds all references for a Pandoc label.
+   * Finds references for a Pandoc label in one Markdown document.
    *
+   * @param {vscode.TextDocument} document Markdown document whose references define the lookup scope.
    * @param {string} label Pandoc label.
    * @returns {import("./parser").ReferenceEntry[]}
    */
-  getReferences(label) {
-    return this.getAllEntriesByLabel("references", label);
+  getReferences(document, label) {
+    return this.getDocumentEntriesByLabel(document, "references", label);
   }
 
   /**
-   * Returns all labels currently known to the index.
+   * Returns all labels from one Markdown document.
    *
+   * @param {vscode.TextDocument} document Markdown document whose labels should be returned.
    * @returns {import("./parser").LabelEntry[]}
    */
-  getAllLabels() {
-    return Array.from(this.documents.values()).flatMap((entry) => entry.parsed.labels);
+  getAllLabels(document) {
+    return this.getParsedDocument(document).labels;
   }
 
   /**
-   * Returns entries of a given parsed collection matching one label.
+   * Returns entries from one parsed document collection matching one label.
    *
+   * @param {vscode.TextDocument} document Markdown document whose parsed entries should be searched.
    * @param {"labels" | "references"} collection Parsed collection name.
    * @param {string} label Pandoc label.
    * @returns {Array<import("./parser").LabelEntry | import("./parser").ReferenceEntry>}
    */
-  getAllEntriesByLabel(collection, label) {
-    const entries = [];
-    for (const cached of this.documents.values()) {
-      entries.push(...cached.parsed[collection].filter((entry) => entry.label === label));
-    }
-    return entries;
+  getDocumentEntriesByLabel(document, collection, label) {
+    const parsed = this.getParsedDocument(document);
+    return parsed[collection].filter((entry) => entry.label === label);
   }
 
   /**
-   * Returns a map from label to all matching definitions.
+   * Returns a map from label to definitions in one Markdown document.
    *
+   * @param {vscode.TextDocument} document Markdown document whose labels define the duplicate scope.
    * @returns {Map<string, import("./parser").LabelEntry[]>}
    */
-  getDefinitionMap() {
+  getDefinitionMap(document) {
     const map = new Map();
-    for (const label of this.getAllLabels()) {
+    // Duplicate and undefined-reference diagnostics are document-local because
+    // separate manuscripts often reuse labels intentionally.
+    for (const label of this.getAllLabels(document)) {
       if (!map.has(label.label)) {
         map.set(label.label, []);
       }
@@ -445,7 +449,7 @@ class PandocDefinitionProvider {
       return undefined;
     }
 
-    return this.index.getDefinitions(token.entry.label).map((definition) => toLocationLink(definition, token.entry));
+    return this.index.getDefinitions(document, token.entry.label).map((definition) => toLocationLink(definition, token.entry));
   }
 }
 
@@ -471,9 +475,9 @@ class PandocReferenceProvider {
       return undefined;
     }
 
-    const locations = this.index.getReferences(token.entry.label).map(toLocation);
+    const locations = this.index.getReferences(document, token.entry.label).map(toLocation);
     if (options.includeDeclaration) {
-      locations.unshift(...this.index.getDefinitions(token.entry.label).map(toLocation));
+      locations.unshift(...this.index.getDefinitions(document, token.entry.label).map(toLocation));
     }
     return locations;
   }
@@ -506,16 +510,16 @@ class PandocHoverProvider {
         // Pandoc-crossref puts equation labels on the closing delimiter, so the
         // token hover must opt into the formula preview before the generic label
         // hover short-circuits it.
-        return new vscode.Hover(await buildMathHover(labeledMathBlock, this.index, this.mathRenderer), toRange(token.entry.fullRange));
+        return new vscode.Hover(await buildMathHover(labeledMathBlock, this.index, document, this.mathRenderer), toRange(token.entry.fullRange));
       }
-      return new vscode.Hover(buildLabelHover(token.entry, this.index, token.type), toRange(token.entry.fullRange));
+      return new vscode.Hover(buildLabelHover(token.entry, this.index, document, token.type), toRange(token.entry.fullRange));
     }
 
     const mathBlock = findMathBlockAtPosition(parsed, plainPosition);
     if (mathBlock) {
       // Math-block hovers should shade the whole display equation; label hovers
       // are handled above so `{#eq:...}` still keeps its tighter range.
-      return new vscode.Hover(await buildMathHover(mathBlock, this.index, this.mathRenderer), toRange(mathBlock.range));
+      return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
     }
 
     const inlineMath = findInlineMathAtPosition(parsed, plainPosition);
@@ -602,7 +606,7 @@ class PandocCompletionProvider {
     const replacementRange = new vscode.Range(replacementStart, position);
     const seen = new Set();
 
-    return this.index.getAllLabels()
+    return this.index.getAllLabels(document)
       .filter((entry) => !seen.has(entry.label) && seen.add(entry.label))
       .sort((left, right) => left.label.localeCompare(right.label))
       .map((entry) => {
@@ -621,12 +625,13 @@ class PandocCompletionProvider {
  *
  * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Label or reference entry.
  * @param {PandocWorkspaceIndex} index Workspace index.
+ * @param {vscode.TextDocument} document Markdown document whose references should be counted.
  * @param {string} tokenType Parsed token type, for example `label` or `reference`.
  * @returns {vscode.MarkdownString}
  */
-function buildLabelHover(entry, index, tokenType) {
-  const definitions = index.getDefinitions(entry.label);
-  const references = index.getReferences(entry.label);
+function buildLabelHover(entry, index, document, tokenType) {
+  const definitions = index.getDefinitions(document, entry.label);
+  const references = index.getReferences(document, entry.label);
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown(`**${entry.kind}** \`${entry.label}\`\n\n`);
   markdown.appendMarkdown(`Definitions: **${definitions.length}**  \n`);
@@ -661,13 +666,14 @@ function isDefinitionHover(tokenType) {
  *
  * @param {import("./parser").MathBlockEntry} mathBlock Math block entry.
  * @param {PandocWorkspaceIndex} index Workspace index.
+ * @param {vscode.TextDocument} document Markdown document whose references should be counted.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<vscode.MarkdownString>}
  */
-async function buildMathHover(mathBlock, index, mathRenderer) {
+async function buildMathHover(mathBlock, index, document, mathRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
   const label = mathBlock.label || "unlabeled equation";
-  const referenceCount = mathBlock.label ? index.getReferences(mathBlock.label).length : 0;
+  const referenceCount = mathBlock.label ? index.getReferences(document, mathBlock.label).length : 0;
 
   markdown.appendMarkdown(`**Equation** \`${label}\``);
   if (mathBlock.label) {
@@ -1217,7 +1223,7 @@ function updateDiagnostics(document, index, diagnostics) {
   }
 
   const parsed = index.getParsedDocument(document);
-  const definitionMap = index.getDefinitionMap();
+  const definitionMap = index.getDefinitionMap(document);
   const documentDiagnostics = [];
 
   for (const reference of parsed.references) {
