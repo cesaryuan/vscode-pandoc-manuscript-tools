@@ -526,11 +526,366 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
     return undefined;
   }
 
+  const translatedTable = await buildPipeTableTranslation(paragraph.text, mathRenderer, paragraphTranslator);
+  if (translatedTable !== undefined) {
+    return translatedTable;
+  }
+
   const translatedText = await paragraphTranslator.translateText(normalizeParagraphText(paragraph.text));
   if (translatedText === undefined) {
     return undefined;
   }
   return renderInlineMathTextMarkdown(translatedText, mathRenderer);
+}
+
+/**
+ * Builds a translated Markdown table while preserving the pipe-table syntax.
+ *
+ * Normal paragraph translation collapses line breaks and escapes `|`, which
+ * intentionally makes prose literal but prevents VS Code from rendering tables.
+ *
+ * @param {string} text Raw paragraph text.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @returns {Promise<string | undefined>} Undefined means "not a table"; empty string means table translation failed.
+ */
+async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator) {
+  const table = parseMarkdownPipeTable(text);
+  if (!table) {
+    return undefined;
+  }
+
+  const translatedMarkdown = await buildDirectMarkdownPipeTableTranslation(text, table, mathRenderer, paragraphTranslator);
+  if (translatedMarkdown !== undefined) {
+    return translatedMarkdown;
+  }
+
+  const translatedHtml = await paragraphTranslator.translateText(formatPipeTableTranslationHtml(table));
+  if (translatedHtml === undefined) {
+    return "";
+  }
+
+  const translatedTable = parseTranslatedPipeTableHtml(translatedHtml, table);
+  if (!translatedTable) {
+    return "";
+  }
+
+  const translatedRows = [];
+  let htmlRowIndex = 0;
+  for (let rowIndex = 0; rowIndex < table.rows.length; rowIndex += 1) {
+    const row = table.rows[rowIndex];
+    if (rowIndex === table.separatorIndex) {
+      translatedRows.push(formatPipeTableRow(row.cells));
+      continue;
+    }
+
+    const translatedCells = await renderMarkdownTableCells(translatedTable.rows[htmlRowIndex], mathRenderer);
+    translatedRows.push(formatPipeTableRow(translatedCells));
+    htmlRowIndex += 1;
+  }
+
+  if (translatedTable.caption) {
+    translatedRows.push("", await renderInlineMathTextMarkdown(translatedTable.caption, mathRenderer));
+  }
+
+  return translatedRows.join("\n").trim();
+}
+
+/**
+ * Tries translating raw Markdown directly and accepts it only if still a table.
+ *
+ * `translateHtml` usually leaves Markdown punctuation alone, but Markdown is
+ * not a protected format there; the shape check prevents a broken hover table.
+ *
+ * @param {string} text Raw Markdown table text.
+ * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} sourceTable Source table shape.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @returns {Promise<string | undefined>}
+ */
+async function buildDirectMarkdownPipeTableTranslation(text, sourceTable, mathRenderer, paragraphTranslator) {
+  const translatedMarkdown = await paragraphTranslator.translateText(text);
+  if (translatedMarkdown === undefined) {
+    return undefined;
+  }
+
+  const translatedTable = parseMarkdownPipeTable(translatedMarkdown);
+  if (!translatedTable || !hasMatchingPipeTableShape(translatedTable, sourceTable)) {
+    return undefined;
+  }
+
+  return renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathRenderer);
+}
+
+/**
+ * Checks that direct Markdown translation preserved row and column boundaries.
+ *
+ * @param {{rows: {cells: string[]}[], separatorIndex: number}} translatedTable Translated table.
+ * @param {{rows: {cells: string[]}[], separatorIndex: number}} sourceTable Source table.
+ * @returns {boolean}
+ */
+function hasMatchingPipeTableShape(translatedTable, sourceTable) {
+  if (translatedTable.separatorIndex !== sourceTable.separatorIndex || translatedTable.rows.length !== sourceTable.rows.length) {
+    return false;
+  }
+
+  return translatedTable.rows.every((row, rowIndex) => row.cells.length === sourceTable.rows[rowIndex].cells.length);
+}
+
+/**
+ * Rebuilds a parsed Markdown table after translating and escaping its cells.
+ *
+ * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} translatedTable Translated table.
+ * @param {{rows: {cells: string[]}[], separatorIndex: number}} sourceTable Source table for stable alignment delimiters.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @returns {Promise<string>}
+ */
+async function renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathRenderer) {
+  const translatedRows = [];
+  for (let rowIndex = 0; rowIndex < translatedTable.rows.length; rowIndex += 1) {
+    if (rowIndex === translatedTable.separatorIndex) {
+      translatedRows.push(formatPipeTableRow(sourceTable.rows[sourceTable.separatorIndex].cells));
+      continue;
+    }
+
+    const translatedCells = await renderMarkdownTableCells(translatedTable.rows[rowIndex].cells, mathRenderer);
+    translatedRows.push(formatPipeTableRow(translatedCells));
+  }
+
+  const captionText = normalizeParagraphText(translatedTable.captionLines.map((line) => line.replace(/^:\s*/, "")).join("\n"));
+  if (captionText) {
+    translatedRows.push("", await renderInlineMathTextMarkdown(captionText, mathRenderer));
+  }
+
+  return translatedRows.join("\n").trim();
+}
+
+/**
+ * Formats a pipe table as protected HTML for one full-table translation call.
+ *
+ * The Google endpoint is `translateHtml`, so these simple tags preserve row and
+ * cell boundaries while still letting the model translate with table context.
+ *
+ * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} table Parsed pipe table.
+ * @returns {string}
+ */
+function formatPipeTableTranslationHtml(table) {
+  const htmlRows = [];
+  for (let rowIndex = 0; rowIndex < table.rows.length; rowIndex += 1) {
+    if (rowIndex === table.separatorIndex) {
+      continue;
+    }
+
+    const cells = table.rows[rowIndex].cells
+      .map((cell) => `<td>${escapeHtmlText(normalizeParagraphText(cell))}</td>`)
+      .join("");
+    htmlRows.push(`<tr>${cells}</tr>`);
+  }
+
+  const captionText = normalizeParagraphText(table.captionLines.map((line) => line.replace(/^:\s*/, "")).join("\n"));
+  const captionHtml = captionText ? `<caption>${escapeHtmlText(captionText)}</caption>` : "";
+  return `<table>${captionHtml}${htmlRows.join("\n")}</table>`;
+}
+
+/**
+ * Parses the translated protected HTML table back into row and caption text.
+ *
+ * @param {string} html Translated HTML fragment returned by Google.
+ * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} table Source table shape.
+ * @returns {{rows: string[][], caption: string} | undefined}
+ */
+function parseTranslatedPipeTableHtml(html, table) {
+  const expectedRows = table.rows.filter((_row, rowIndex) => rowIndex !== table.separatorIndex);
+  const rowMatches = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
+  if (rowMatches.length !== expectedRows.length) {
+    return undefined;
+  }
+
+  const rows = [];
+  for (let rowIndex = 0; rowIndex < rowMatches.length; rowIndex += 1) {
+    const cellMatches = [...rowMatches[rowIndex][1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+    if (cellMatches.length !== expectedRows[rowIndex].cells.length) {
+      return undefined;
+    }
+
+    rows.push(cellMatches.map((match) => normalizeTranslatedTableHtmlText(match[1])));
+  }
+
+  const captionMatch = html.match(/<caption\b[^>]*>([\s\S]*?)<\/caption>/i);
+  return {
+    rows,
+    caption: captionMatch ? normalizeTranslatedTableHtmlText(captionMatch[1]) : "",
+  };
+}
+
+/**
+ * Renders translated table cells as safe Markdown cell content.
+ *
+ * @param {string[]} cells Translated cell texts.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @returns {Promise<string[]>}
+ */
+async function renderMarkdownTableCells(cells, mathRenderer) {
+  const renderedCells = [];
+  for (const cell of cells) {
+    renderedCells.push(await renderInlineMathTextMarkdown(cell, mathRenderer));
+  }
+  return renderedCells;
+}
+
+/**
+ * Parses a simple Markdown pipe table from one paragraph hover range.
+ *
+ * This branch intentionally handles only pipe tables with a header delimiter;
+ * other table syntaxes should keep using the ordinary literal paragraph hover.
+ *
+ * @param {string} text Raw paragraph text.
+ * @returns {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]} | undefined}
+ */
+function parseMarkdownPipeTable(text) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+  const separatorIndex = lines.findIndex(isPipeTableSeparatorLine);
+  if (separatorIndex !== 1) {
+    return undefined;
+  }
+
+  const rows = [];
+  let lineIndex = 0;
+  while (lineIndex < lines.length && isPipeTableRowLine(lines[lineIndex])) {
+    const cells = splitMarkdownPipeTableRow(lines[lineIndex]).map((cell) => cell.trim());
+    if (cells.length < 2) {
+      return undefined;
+    }
+    rows.push({ cells });
+    lineIndex += 1;
+  }
+
+  const expectedCellCount = rows[separatorIndex].cells.length;
+  if (rows.length < 2 || rows.some((row) => row.cells.length !== expectedCellCount)) {
+    return undefined;
+  }
+
+  const captionLines = lines.slice(lineIndex);
+  if (captionLines.some((line) => !line.startsWith(":"))) {
+    return undefined;
+  }
+
+  return { rows, separatorIndex, captionLines };
+}
+
+/**
+ * Checks whether a line can be parsed as a Markdown pipe-table row.
+ *
+ * @param {string} line Trimmed Markdown line.
+ * @returns {boolean}
+ */
+function isPipeTableRowLine(line) {
+  return line.includes("|") && splitMarkdownPipeTableRow(line).length >= 2;
+}
+
+/**
+ * Checks whether a line is the required Markdown table delimiter row.
+ *
+ * @param {string} line Trimmed Markdown line.
+ * @returns {boolean}
+ */
+function isPipeTableSeparatorLine(line) {
+  if (!isPipeTableRowLine(line)) {
+    return false;
+  }
+
+  return splitMarkdownPipeTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+/**
+ * Splits a pipe-table row without treating escaped pipes as cell separators.
+ *
+ * @param {string} line Trimmed Markdown table row.
+ * @returns {string[]}
+ */
+function splitMarkdownPipeTableRow(line) {
+  const row = stripOuterPipe(line.trim());
+  const cells = [];
+  let cell = "";
+  for (let index = 0; index < row.length; index += 1) {
+    const character = row[index];
+    if (character === "|" && !isEscapedMarkdownCharacter(row, index)) {
+      cells.push(cell);
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  cells.push(cell);
+  return cells;
+}
+
+/**
+ * Removes optional leading and trailing pipe-table fences.
+ *
+ * @param {string} row Trimmed Markdown table row.
+ * @returns {string}
+ */
+function stripOuterPipe(row) {
+  let stripped = row;
+  if (stripped.startsWith("|")) {
+    stripped = stripped.slice(1);
+  }
+  if (stripped.endsWith("|") && !isEscapedMarkdownCharacter(stripped, stripped.length - 1)) {
+    stripped = stripped.slice(0, -1);
+  }
+  return stripped;
+}
+
+/**
+ * Checks whether a Markdown character is escaped by an odd number of slashes.
+ *
+ * @param {string} value Markdown source.
+ * @param {number} index Character index to inspect.
+ * @returns {boolean}
+ */
+function isEscapedMarkdownCharacter(value, index) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+/**
+ * Formats already-escaped cells as one Markdown pipe-table row.
+ *
+ * @param {string[]} cells Escaped table cells.
+ * @returns {string}
+ */
+function formatPipeTableRow(cells) {
+  return `| ${cells.map((cell) => cell.trim()).join(" | ")} |`;
+}
+
+/**
+ * Escapes table text before embedding it in protected translation HTML.
+ *
+ * @param {string} value Raw table cell or caption text.
+ * @returns {string}
+ */
+function escapeHtmlText(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Normalizes translated text recovered from protected table HTML.
+ *
+ * @param {string} value HTML text content from a translated cell or caption.
+ * @returns {string}
+ */
+function normalizeTranslatedTableHtmlText(value) {
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
