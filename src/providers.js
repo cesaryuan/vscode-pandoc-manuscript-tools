@@ -753,7 +753,7 @@ function parseMarkdownPipeTable(text) {
   let lineIndex = 0;
   while (lineIndex < lines.length && isPipeTableRowLine(lines[lineIndex])) {
     const cells = splitMarkdownPipeTableRow(lines[lineIndex]).map((cell) => cell.trim());
-    if (cells.length < 2) {
+    if (cells.length < 1) {
       return undefined;
     }
     rows.push({ cells });
@@ -780,7 +780,10 @@ function parseMarkdownPipeTable(text) {
  * @returns {boolean}
  */
 function isPipeTableRowLine(line) {
-  return line.includes("|") && splitMarkdownPipeTableRow(line).length >= 2;
+  const cells = splitMarkdownPipeTableRow(line);
+  // Single-column pipe tables such as `|---|` need outer fences; otherwise a
+  // lone pipe in prose would be too easy to misclassify as a table row.
+  return cells.length >= 2 || (hasOuterPipeTableFences(line) && cells.length === 1);
 }
 
 /**
@@ -835,6 +838,19 @@ function stripOuterPipe(row) {
     stripped = stripped.slice(0, -1);
   }
   return stripped;
+}
+
+/**
+ * Checks whether a row has unescaped leading and trailing table pipes.
+ *
+ * @param {string} line Trimmed Markdown table row.
+ * @returns {boolean}
+ */
+function hasOuterPipeTableFences(line) {
+  const trimmed = line.trim();
+  return trimmed.startsWith("|")
+    && trimmed.endsWith("|")
+    && !isEscapedMarkdownCharacter(trimmed, trimmed.length - 1);
 }
 
 /**
