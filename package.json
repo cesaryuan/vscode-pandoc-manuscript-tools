@@ -2,7 +2,7 @@
   "name": "pandoc-manuscript-tools",
   "displayName": "Pandoc Manuscript Tools",
   "description": "Local VS Code helpers for Pandoc Markdown labels, cross references, math hovers, and outline symbols.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "cesaryuan",
   "license": "GPL-3.0-or-later",
   "repository": {
