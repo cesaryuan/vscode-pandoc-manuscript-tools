@@ -19,6 +19,8 @@ const {
   isMarkdownDocument,
 } = require("./vscodeUtils");
 
+const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
+
 class PandocDefinitionProvider {
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
@@ -913,13 +915,14 @@ function normalizeTranslatedTableHtmlText(value) {
 function isLikelyEnglishParagraph(text) {
   const latinLetters = text.match(/[A-Za-z]/g) || [];
   const cjkCharacters = text.match(/[\u3400-\u9FFF]/g) || [];
-  const nonAsciiLetters = text.match(/[^\x00-\x7F]/g) || [];
   const wordMatches = text.match(/[A-Za-z]{2,}/g) || [];
+  const languageCharacterCount = latinLetters.length + cjkCharacters.length;
+  // Allow English-heavy manuscript paragraphs that include brief Chinese notes.
+  const cjkRatio = languageCharacterCount === 0 ? 0 : cjkCharacters.length / languageCharacterCount;
 
   return latinLetters.length >= 20
     && wordMatches.length >= 4
-    && cjkCharacters.length === 0
-    && latinLetters.length >= nonAsciiLetters.length * 3;
+    && cjkRatio < MAX_TRANSLATABLE_CJK_RATIO;
 }
 
 /**
