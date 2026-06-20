@@ -40,7 +40,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
 - `pandocManuscriptTools.enableInlineMathParagraphHover`: show a paragraph-level hover preview for Markdown paragraphs that contain inline math.
 - `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters`: maximum paragraph length, in characters, that can show an inline-math paragraph hover preview.
-- `pandocManuscriptTools.enableParagraphHoverTranslation`: show a Google Translate-powered Chinese translation for eligible English paragraph hovers.
+- `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback.
 - `pandocManuscriptTools.paragraphHoverTranslationMaxCharacters`: maximum English paragraph length, in characters, that can request a paragraph hover translation.
 - `pandocManuscriptTools.paragraphHoverTranslationTargetLanguage`: target language code for paragraph hover translations, for example `zh` or `zh-TW`.
 
@@ -48,6 +48,6 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 This extension is intentionally a small language-service layer rather than a full Markdown parser. It scans the Pandoc-crossref syntax used by this manuscript template and avoids code fences and YAML front matter to reduce false positives.
 
-The math hover uses MathJax's Node component loader to convert TeX into SVG and embeds the SVG as a hover image. Raw TeX is shown only as a fallback when rendering fails. Display math and inline math are rendered separately, and inline math is not treated as a cross-reference source. Paragraph-level inline math hovers and optional Google Translate-powered English-to-Chinese paragraph translations are disabled by default because they produce larger hover cards and may make network requests. If the preview is unavailable, run `npm install` in this folder and reload the Extension Development Host.
+The math hover uses MathJax's Node component loader to convert TeX into SVG and embeds the SVG as a hover image. Raw TeX is shown only as a fallback when rendering fails. Display math and inline math are rendered separately, and inline math is not treated as a cross-reference source. Paragraph-level inline math hovers are disabled by default because they produce larger hover cards. Paragraph translations may make network requests; the extension probes Google Translate on startup and falls back to Microsoft Translator if Google is unavailable. If the preview is unavailable, run `npm install` in this folder and reload the Extension Development Host.
 
 The DOCX build button is shown only when the active saved Markdown file belongs to a workspace folder that looks like this Pandoc manuscript template: it has `scripts/build.py` or `scripts/build`, the DOCX post-processing scripts, and `pandoc/pandoc-docx.yml`. The command runs `uv run <build-script> docx <markdown-file>` from the detected project root, then opens the generated file from `output/docx/`.

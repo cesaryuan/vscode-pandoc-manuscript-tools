@@ -5,7 +5,8 @@ const { EXTENSION_NAME, MARKDOWN_SELECTOR, BUILD_DOCX_COMMAND } = require("./con
 const { PandocWorkspaceIndex } = require("./workspaceIndex");
 const { PandocBuildRunner } = require("./docxBuild");
 const { MathJaxRenderer } = require("./mathJaxRenderer");
-const { GoogleParagraphTranslator } = require("./paragraphTranslator");
+const { ParagraphTranslator } = require("./paragraphTranslator");
+const { getConfiguration } = require("./configuration");
 const { isMarkdownDocument } = require("./vscodeUtils");
 const {
   PandocDefinitionProvider,
@@ -27,10 +28,13 @@ function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
-  const paragraphTranslator = new GoogleParagraphTranslator(output);
+  const paragraphTranslator = new ParagraphTranslator(output);
   const buildRunner = new PandocBuildRunner(output);
 
   output.appendLine("Activated Pandoc Manuscript Tools.");
+  if (getConfiguration().get("enableParagraphHoverTranslation", false)) {
+    void paragraphTranslator.initialize();
+  }
 
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(MARKDOWN_SELECTOR, new PandocDefinitionProvider(index)));

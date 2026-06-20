@@ -100,7 +100,7 @@
         "pandocManuscriptTools.enableParagraphHoverTranslation": {
           "type": "boolean",
           "default": true,
-          "description": "Show a Google Translate-powered Chinese translation for eligible English paragraph hovers."
+          "description": "Show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback."
         },
         "pandocManuscriptTools.paragraphHoverTranslationMaxCharacters": {
           "type": "number",
@@ -111,7 +111,7 @@
         "pandocManuscriptTools.paragraphHoverTranslationTargetLanguage": {
           "type": "string",
           "default": "zh",
-          "description": "Target language code for paragraph hover translations sent to Google Translate, for example zh or zh-TW."
+          "description": "Target language code for paragraph hover translations, for example zh or zh-TW."
         }
       }
     }

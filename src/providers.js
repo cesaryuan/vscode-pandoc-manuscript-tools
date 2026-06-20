@@ -78,7 +78,7 @@ class PandocHoverProvider {
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
-   * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+   * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
    */
   constructor(index, mathRenderer, paragraphTranslator) {
     this.index = index;
@@ -483,7 +483,7 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
  *
  * @param {ParagraphHover} paragraph Paragraph hover data.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<vscode.MarkdownString | undefined>}
  */
 async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator) {
@@ -512,13 +512,13 @@ async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator)
 /**
  * Builds the optional translated paragraph preview.
  *
- * The full paragraph, including any TeX, is sent to Google Translate because
+ * The full paragraph, including any TeX, is sent to the translation engine because
  * the user wants translation to see the same text that appears in the editor;
  * any inline TeX that survives translation is rendered before showing the hover.
  *
  * @param {ParagraphHover} paragraph Paragraph hover data.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<string | undefined>}
  */
 async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator) {
@@ -546,7 +546,7 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
  *
  * @param {string} text Raw paragraph text.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<string | undefined>} Undefined means "not a table"; empty string means table translation failed.
  */
 async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator) {
@@ -600,7 +600,7 @@ async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator
  * @param {string} text Raw Markdown table text.
  * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} sourceTable Source table shape.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {GoogleParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<string | undefined>}
  */
 async function buildDirectMarkdownPipeTableTranslation(text, sourceTable, mathRenderer, paragraphTranslator) {
