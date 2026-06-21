@@ -533,11 +533,46 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
     return translatedTable;
   }
 
+  const translatedList = await buildMarkdownListTranslation(paragraph.text, mathRenderer, paragraphTranslator);
+  if (translatedList !== undefined) {
+    return translatedList;
+  }
+
   const translatedText = await paragraphTranslator.translateText(normalizeParagraphText(paragraph.text));
   if (translatedText === undefined) {
     return undefined;
   }
   return renderInlineMathTextMarkdown(translatedText, mathRenderer);
+}
+
+/**
+ * Builds a translated Markdown list while preserving one preview line per item.
+ *
+ * Normal paragraph translation intentionally folds prose, but list hovers need
+ * their source line boundaries kept so VS Code does not show every item inline.
+ *
+ * @param {string} text Raw paragraph text.
+ * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
+ * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
+ * @returns {Promise<string | undefined>} Undefined means "not a simple list"; empty string means translation failed.
+ */
+async function buildMarkdownListTranslation(text, mathRenderer, paragraphTranslator) {
+  const list = parseSimpleMarkdownList(text);
+  if (!list) {
+    return undefined;
+  }
+
+  const translatedLines = [];
+  for (const item of list.items) {
+    const translatedText = await paragraphTranslator.translateText(normalizeParagraphText(item.text));
+    if (translatedText === undefined) {
+      return "";
+    }
+
+    translatedLines.push(`${item.prefix}${await renderInlineMathTextMarkdown(translatedText, mathRenderer)}`);
+  }
+
+  return translatedLines.join("\n").trim();
 }
 
 /**
@@ -776,6 +811,57 @@ function parseMarkdownPipeTable(text) {
 }
 
 /**
+ * Parses a paragraph that is entirely made of simple one-line Markdown items.
+ *
+ * Nested item markers are allowed, but continuation lines are skipped so the
+ * translator never flattens structure it cannot reconstruct safely in preview.
+ *
+ * @param {string} text Raw paragraph text.
+ * @returns {{items: {prefix: string, text: string}[]} | undefined}
+ */
+function parseSimpleMarkdownList(text) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.replace(/[ \t]+$/g, "")).filter((line) => line.trim().length > 0);
+  if (lines.length < 2) {
+    return undefined;
+  }
+
+  const items = [];
+  for (const line of lines) {
+    const item = parseSimpleMarkdownListItem(line);
+    if (!item) {
+      return undefined;
+    }
+    items.push(item);
+  }
+
+  if (!items.some((item) => item.prefix.search(/\S/) === 0)) {
+    return undefined;
+  }
+
+  return { items };
+}
+
+/**
+ * Parses one bullet or ordered-list item, keeping its original indentation.
+ *
+ * @param {string} line Markdown line without trailing whitespace.
+ * @returns {{prefix: string, text: string} | undefined}
+ */
+function parseSimpleMarkdownListItem(line) {
+  const unorderedMatch = line.match(/^([ \t]*[-+*]\s+)(.+)$/);
+  if (unorderedMatch) {
+    return { prefix: unorderedMatch[1], text: unorderedMatch[2].trim() };
+  }
+
+  const orderedMatch = line.match(/^([ \t]*\d{1,9}[.)]\s+)(.+)$/);
+  if (orderedMatch) {
+    return { prefix: orderedMatch[1], text: orderedMatch[2].trim() };
+  }
+
+  return undefined;
+}
+
+/**
  * Checks whether a line can be parsed as a Markdown pipe-table row.
  *
  * @param {string} line Trimmed Markdown line.
@@ -998,9 +1084,9 @@ function escapeMarkdownText(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/[ \t]*\r?\n[ \t]*/g, " ")
     .replace(/\\/g, "\\\\")
-    .replace(/([`*_{}\[\]()#+\-.!|])/g, "\\$1");
+    .replace(/([`*_{}\[\]()#+\-.!|])/g, "\\$1")
+    .replace(/[ \t]*\r?\n[ \t]*/g, "  \n");
 }
 
 /**
