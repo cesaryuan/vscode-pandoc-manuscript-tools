@@ -10,7 +10,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Optional paragraph translation hovers that show whether Google Translate or Microsoft Translator handled the current translation.
 - Optional paragraph-level hover previews for Markdown paragraphs that contain inline math.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
-- Whole-line highlighting for Pandoc `fenced_divs` blocks, with subtle background colors and left borders that alternate by nesting depth.
+- Whole-line highlighting for Pandoc `fenced_divs` blocks, with subtle background colors that alternate by nesting depth.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
@@ -41,7 +41,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.enableDiagnostics`: report undefined references and duplicate labels.
 - `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document.
 - `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
-- `pandocManuscriptTools.highlightFencedDivs`: highlight Pandoc `fenced_divs` blocks with whole-line background colors and left borders.
+- `pandocManuscriptTools.highlightFencedDivs`: highlight Pandoc `fenced_divs` blocks with whole-line background colors.
 - `pandocManuscriptTools.enableInlineMathParagraphHover`: show a paragraph-level hover preview for Markdown paragraphs that contain inline math.
 - `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters`: maximum paragraph length, in characters, that can show an inline-math paragraph hover preview.
 - `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback.

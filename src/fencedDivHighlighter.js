@@ -7,19 +7,19 @@ const { isMarkdownDocument } = require("./vscodeUtils");
 const DECORATION_COLORS = [
   {
     backgroundColor: "rgba(86, 156, 214, 0.10)",
-    borderColor: "rgba(86, 156, 214, 0.80)",
+    markerColor: "rgba(86, 156, 214, 0.80)",
   },
   {
     backgroundColor: "rgba(78, 201, 176, 0.10)",
-    borderColor: "rgba(78, 201, 176, 0.80)",
+    markerColor: "rgba(78, 201, 176, 0.80)",
   },
   {
     backgroundColor: "rgba(220, 220, 170, 0.11)",
-    borderColor: "rgba(220, 220, 170, 0.85)",
+    markerColor: "rgba(220, 220, 170, 0.85)",
   },
   {
     backgroundColor: "rgba(197, 134, 192, 0.10)",
-    borderColor: "rgba(197, 134, 192, 0.85)",
+    markerColor: "rgba(197, 134, 192, 0.85)",
   },
 ];
 
@@ -126,17 +126,14 @@ class FencedDivHighlighter {
 /**
  * Creates a whole-line decoration style for one nesting level.
  *
- * @param {{backgroundColor: string, borderColor: string}} colors Decoration colors.
+ * @param {{backgroundColor: string, markerColor: string}} colors Decoration colors.
  * @returns {vscode.TextEditorDecorationType}
  */
 function createFencedDivDecorationType(colors) {
   return vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: colors.backgroundColor,
-    borderWidth: "0 0 0 3px",
-    borderStyle: "solid",
-    borderColor: colors.borderColor,
-    overviewRulerColor: colors.borderColor,
+    overviewRulerColor: colors.markerColor,
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
 }
