@@ -765,9 +765,19 @@ function parseTranslatedPipeTableHtml(html, table) {
 async function renderMarkdownTableCells(cells, mathRenderer) {
   const renderedCells = [];
   for (const cell of cells) {
-    renderedCells.push(await renderInlineMathTextMarkdown(cell, mathRenderer));
+    renderedCells.push(escapeMarkdownTableCellPipes(await renderInlineMathTextMarkdown(cell, mathRenderer)));
   }
   return renderedCells;
+}
+
+/**
+ * Escapes table-cell pipes after Markdown rendering choices are preserved.
+ *
+ * @param {string} value Markdown table cell content.
+ * @returns {string}
+ */
+function escapeMarkdownTableCellPipes(value) {
+  return value.replace(/(^|[^\\])\|/g, "$1\\|");
 }
 
 /**
@@ -1038,8 +1048,8 @@ async function renderInlineMathParagraphMarkdown(paragraph, mathRenderer) {
 /**
  * Renders inline math spans inside arbitrary hover text.
  *
- * Translated text is parsed after Google returns it so preserved TeX delimiters
- * are rendered even when the original paragraph preview is not enabled.
+ * The non-math chunks remain Markdown so the hover acts like a Markdown preview
+ * with VS Code's missing inline-math rendering filled in by MathJax images.
  *
  * @param {string} text Hover text.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
@@ -1059,7 +1069,7 @@ async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath, star
       continue;
     }
 
-    parts.push(escapeMarkdownText(text.slice(cursor, formulaStart)));
+    parts.push(normalizeMarkdownLineBreaks(text.slice(cursor, formulaStart)));
     const renderedSvg = await mathRenderer.renderToDataUri(inlineMathEntry.tex, false);
     if (renderedSvg) {
       parts.push(`![Rendered inline equation preview](${renderedSvg})`);
@@ -1069,24 +1079,18 @@ async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath, star
     cursor = formulaEnd;
   }
 
-  parts.push(escapeMarkdownText(text.slice(cursor)));
+  parts.push(normalizeMarkdownLineBreaks(text.slice(cursor)));
   return parts.join("").trim();
 }
 
 /**
- * Escapes paragraph text so the hover previews literal prose plus rendered math.
+ * Normalizes line endings without escaping Markdown syntax.
  *
- * @param {string} value Raw paragraph text chunk.
+ * @param {string} value Markdown text.
  * @returns {string}
  */
-function escapeMarkdownText(value) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\\/g, "\\\\")
-    .replace(/([`*_{}\[\]()#+\-.!|])/g, "\\$1")
-    .replace(/[ \t]*\r?\n[ \t]*/g, "  \n");
+function normalizeMarkdownLineBreaks(value) {
+  return value.replace(/\r\n/g, "\n");
 }
 
 /**
