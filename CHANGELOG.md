@@ -6,6 +6,7 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 
 ### Added
 
+- Show the actual Google Translate or Microsoft Translator engine used in paragraph translation hovers.
 - Add an opt-in `pandocManuscriptTools.enableInlineMathParagraphHover` setting that shows a paragraph-level hover preview for Markdown paragraphs containing inline math.
 - Add `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters` to suppress paragraph-level inline math hover previews for long paragraphs.
 - Add opt-in Chinese translations for short English paragraph hovers.

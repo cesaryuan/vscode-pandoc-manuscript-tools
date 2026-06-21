@@ -493,9 +493,9 @@ async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator)
   let hasContent = false;
 
   const translation = await buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator);
-  if (translation) {
-    markdown.appendMarkdown("**Chinese translation**\n\n");
-    markdown.appendMarkdown(translation);
+  if (translation && translation.markdown) {
+    markdown.appendMarkdown(`**Chinese translation** (${formatTranslationEngineName(translation.engine)})\n\n`);
+    markdown.appendMarkdown(translation.markdown);
     hasContent = true;
   }
 
@@ -521,7 +521,7 @@ async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator)
  * @param {ParagraphHover} paragraph Paragraph hover data.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<string | undefined>}
+ * @returns {Promise<RenderedTranslation | undefined>}
  */
 async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator) {
   if (!paragraph.showTranslation) {
@@ -542,7 +542,10 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
   if (translatedText === undefined) {
     return undefined;
   }
-  return renderInlineMathTextMarkdown(translatedText, mathRenderer);
+  return {
+    markdown: await renderInlineMathTextMarkdown(translatedText.text, mathRenderer),
+    engine: translatedText.engine,
+  };
 }
 
 /**
@@ -554,7 +557,7 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
  * @param {string} text Raw paragraph text.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<string | undefined>} Undefined means "not a simple list"; empty string means translation failed.
+ * @returns {Promise<RenderedTranslation | undefined>} Undefined means "not a simple list"; empty markdown means translation failed.
  */
 async function buildMarkdownListTranslation(text, mathRenderer, paragraphTranslator) {
   const list = parseSimpleMarkdownList(text);
@@ -563,16 +566,18 @@ async function buildMarkdownListTranslation(text, mathRenderer, paragraphTransla
   }
 
   const translatedLines = [];
+  let translationEngine;
   for (const item of list.items) {
     const translatedText = await paragraphTranslator.translateText(normalizeMarkdownLineBreaks(item.text).trim());
     if (translatedText === undefined) {
-      return "";
+      return createRenderedTranslation("", translationEngine || await paragraphTranslator.ensurePreferredEngine());
     }
 
-    translatedLines.push(`${item.prefix}${await renderInlineMathTextMarkdown(translatedText, mathRenderer)}`);
+    translationEngine = translatedText.engine;
+    translatedLines.push(`${item.prefix}${await renderInlineMathTextMarkdown(translatedText.text, mathRenderer)}`);
   }
 
-  return translatedLines.join("\n").trim();
+  return createRenderedTranslation(translatedLines.join("\n").trim(), translationEngine);
 }
 
 /**
@@ -584,7 +589,7 @@ async function buildMarkdownListTranslation(text, mathRenderer, paragraphTransla
  * @param {string} text Raw paragraph text.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<string | undefined>} Undefined means "not a table"; empty string means table translation failed.
+ * @returns {Promise<RenderedTranslation | undefined>} Undefined means "not a table"; empty markdown means table translation failed.
  */
 async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator) {
   const table = parseMarkdownPipeTable(text);
@@ -599,12 +604,12 @@ async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator
 
   const translatedHtml = await paragraphTranslator.translateText(formatPipeTableTranslationHtml(table));
   if (translatedHtml === undefined) {
-    return "";
+    return createRenderedTranslation("", await paragraphTranslator.ensurePreferredEngine());
   }
 
-  const translatedTable = parseTranslatedPipeTableHtml(translatedHtml, table);
+  const translatedTable = parseTranslatedPipeTableHtml(translatedHtml.text, table);
   if (!translatedTable) {
-    return "";
+    return createRenderedTranslation("", translatedHtml.engine);
   }
 
   const translatedRows = [];
@@ -625,7 +630,7 @@ async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator
     translatedRows.push("", await renderInlineMathTextMarkdown(translatedTable.caption, mathRenderer));
   }
 
-  return translatedRows.join("\n").trim();
+  return createRenderedTranslation(translatedRows.join("\n").trim(), translatedHtml.engine);
 }
 
 /**
@@ -638,7 +643,7 @@ async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator
  * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} sourceTable Source table shape.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<string | undefined>}
+ * @returns {Promise<RenderedTranslation | undefined>}
  */
 async function buildDirectMarkdownPipeTableTranslation(text, sourceTable, mathRenderer, paragraphTranslator) {
   const translatedMarkdown = await paragraphTranslator.translateText(text);
@@ -646,12 +651,36 @@ async function buildDirectMarkdownPipeTableTranslation(text, sourceTable, mathRe
     return undefined;
   }
 
-  const translatedTable = parseMarkdownPipeTable(translatedMarkdown);
+  const translatedTable = parseMarkdownPipeTable(translatedMarkdown.text);
   if (!translatedTable || !hasMatchingPipeTableShape(translatedTable, sourceTable)) {
     return undefined;
   }
 
-  return renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathRenderer);
+  return createRenderedTranslation(await renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathRenderer), translatedMarkdown.engine);
+}
+
+/**
+ * Creates a rendered translation object when an engine is known.
+ *
+ * Failed structured translations keep an empty markdown string so callers can
+ * stop fallback attempts without showing a partial table or list preview.
+ *
+ * @param {string} markdown Rendered hover Markdown.
+ * @param {"google" | "microsoft" | undefined} engine Translation engine.
+ * @returns {RenderedTranslation | undefined}
+ */
+function createRenderedTranslation(markdown, engine) {
+  return engine ? { markdown, engine } : undefined;
+}
+
+/**
+ * Formats the engine label shown in paragraph translation hovers.
+ *
+ * @param {"google" | "microsoft"} engine Translation engine id.
+ * @returns {string}
+ */
+function formatTranslationEngineName(engine) {
+  return engine === "microsoft" ? "Microsoft Translator" : "Google Translate";
 }
 
 /**
@@ -1341,4 +1370,5 @@ module.exports = {
 
 /**
  * @typedef {{range: vscode.Range, text: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[], showMathPreview: boolean, showTranslation: boolean}} ParagraphHover
+ * @typedef {{markdown: string, engine: "google" | "microsoft"}} RenderedTranslation
  */

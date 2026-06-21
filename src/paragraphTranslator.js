@@ -41,22 +41,23 @@ class ParagraphTranslator {
    * Translates one short English paragraph to the configured target language.
    *
    * @param {string} text English paragraph text.
-   * @returns {Promise<string | undefined>}
+   * @returns {Promise<TranslationResult | undefined>}
    */
   async translateText(text) {
-    if (!text) {
-      return "";
-    }
-
     const targetLanguage = getConfiguration().get("paragraphHoverTranslationTargetLanguage", "zh");
     const engine = await this.ensurePreferredEngine();
     if (!engine) {
       return undefined;
     }
 
+    if (!text) {
+      return { text: "", engine };
+    }
+
     const cacheKey = `${engine}:${targetLanguage}:${text}`;
     if (!this.translationCache.has(cacheKey)) {
-      this.translationCache.set(cacheKey, this.translateTextWithEngine(text, targetLanguage, engine));
+      this.translationCache.set(cacheKey, this.translateTextWithEngine(text, targetLanguage, engine)
+        .then((translatedText) => translatedText === undefined ? undefined : { text: translatedText, engine }));
     }
 
     return this.translationCache.get(cacheKey);
@@ -330,3 +331,7 @@ function formatTranslationTextForLog(text) {
 module.exports = {
   ParagraphTranslator,
 };
+
+/**
+ * @typedef {{text: string, engine: "google" | "microsoft"}} TranslationResult
+ */
