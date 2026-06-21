@@ -2,6 +2,12 @@
 
 All notable changes to Pandoc Manuscript Tools are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Highlight Pandoc `fenced_divs` blocks in Markdown editors with subtle whole-line backgrounds and nesting-aware left borders.
+
 ## 0.2.0 - 2026-06-13
 
 ### Added

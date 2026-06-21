@@ -7,6 +7,7 @@ const DIV_ID_PATTERN = new RegExp("<div\\s+[^>]*\\bid=[\"'](" + LABEL_SOURCE + "
 const REF_PATTERN = new RegExp("(?<![A-Za-z0-9_])@(" + LABEL_SOURCE + ")\\b", "g");
 const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_PATTERN = /^\s*(```+|~~~+)/;
+const FENCED_DIV_LINE_PATTERN = /^\s*(:{3,})(.*)$/;
 const DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\$\$\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+\b[^}]*\})?\s*$/;
 
 /**
@@ -27,6 +28,7 @@ function parsePandocDocument(text, uriText = "") {
   const headings = [];
   const mathBlocks = [];
   const inlineMath = [];
+  const fencedDivs = scanFencedDivs(lines, uriText);
   const labelMap = new Map();
   const referenceMap = new Map();
 
@@ -112,6 +114,7 @@ function parsePandocDocument(text, uriText = "") {
     headings,
     mathBlocks,
     inlineMath,
+    fencedDivs,
     labelMap,
     referenceMap,
   };
@@ -157,6 +160,165 @@ function splitLines(text) {
  */
 function createLine(text, number, startOffset, endOffset) {
   return { text, number, startOffset, endOffset };
+}
+
+/**
+ * Finds Pandoc fenced div blocks and preserves their nested depth.
+ *
+ * Fenced divs use colon fences that look like ordinary prose in VS Code's
+ * Markdown grammar, so we parse them explicitly for editor decorations.
+ *
+ * @param {ParsedLine[]} lines Parsed document lines.
+ * @param {string} uriText URI string for resulting entries.
+ * @returns {FencedDivEntry[]}
+ */
+function scanFencedDivs(lines, uriText) {
+  const blocks = [];
+  const stack = [];
+  let inYaml = lines[0] && lines[0].text.trim() === "---";
+  let inFence = false;
+  let fenceMarker = "";
+  let inMath = false;
+
+  for (const line of lines) {
+    const trimmed = line.text.trim();
+
+    if (inYaml) {
+      if (line.number > 0 && trimmed === "---") {
+        inYaml = false;
+      }
+      continue;
+    }
+
+    const codeFenceMatch = line.text.match(FENCE_PATTERN);
+    if (codeFenceMatch) {
+      const marker = codeFenceMatch[1][0];
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker;
+      } else if (marker === fenceMarker) {
+        inFence = false;
+        fenceMarker = "";
+      }
+      continue;
+    }
+
+    if (inFence) {
+      continue;
+    }
+
+    if (inMath) {
+      if (DISPLAY_MATH_BOUNDARY_PATTERN.test(line.text)) {
+        inMath = false;
+      }
+      continue;
+    }
+
+    if (isDisplayMathStart(line.text)) {
+      inMath = true;
+      continue;
+    }
+
+    const marker = parseFencedDivMarker(line.text);
+    if (!marker) {
+      continue;
+    }
+
+    if (marker.type === "open") {
+      stack.push({ line, marker, depth: stack.length });
+      continue;
+    }
+
+    const opening = stack.pop();
+    if (opening) {
+      blocks.push(createFencedDivEntry(uriText, opening, line, true));
+    }
+  }
+
+  const finalLine = lines[lines.length - 1];
+  while (finalLine && stack.length > 0) {
+    blocks.push(createFencedDivEntry(uriText, stack.pop(), finalLine, false));
+  }
+
+  return blocks.sort((left, right) => left.range.start.line - right.range.start.line);
+}
+
+/**
+ * Parses a single Pandoc fenced div delimiter line.
+ *
+ * Opening fences must have attributes; attribute-less colon fences are always
+ * closers, which matches Pandoc's fenced_divs rule and prevents prose-like
+ * colon runs from becoming accidental block starts.
+ *
+ * @param {string} lineText Line text without newline.
+ * @returns {FencedDivMarker | undefined}
+ */
+function parseFencedDivMarker(lineText) {
+  const match = lineText.match(FENCED_DIV_LINE_PATTERN);
+  if (!match) {
+    return undefined;
+  }
+
+  const fenceLength = match[1].length;
+  const attributeText = match[2].trim();
+  if (attributeText.length === 0) {
+    return { type: "close", fenceLength };
+  }
+
+  const normalizedAttributeText = stripTrailingFencedDivColons(attributeText);
+  if (!isFencedDivAttributeText(normalizedAttributeText)) {
+    return undefined;
+  }
+
+  return {
+    type: "open",
+    fenceLength,
+    attributeText: normalizedAttributeText,
+  };
+}
+
+/**
+ * Checks whether text after a colon fence is a Pandoc fenced div attribute.
+ *
+ * This intentionally accepts Pandoc's `{...}` attributes and the single
+ * unbraced class shorthand, plus Pandoc's optional trailing colon run.
+ *
+ * @param {string} attributeText Text after the opening colon run.
+ * @returns {boolean}
+ */
+function isFencedDivAttributeText(attributeText) {
+  return /^(?:\{[^}]*\S[^}]*\}|[^\s{}:]+)$/.test(attributeText);
+}
+
+/**
+ * Removes Pandoc's optional trailing colon run from opening attributes.
+ *
+ * @param {string} attributeText Raw opening attribute text.
+ * @returns {string}
+ */
+function stripTrailingFencedDivColons(attributeText) {
+  return attributeText.replace(/\s*:{3,}\s*$/, "").trim();
+}
+
+/**
+ * Creates a parsed fenced div entry for decoration and future language features.
+ *
+ * @param {string} uriText URI string for the entry.
+ * @param {{line: ParsedLine, marker: FencedDivMarker, depth: number}} opening Opening fence state.
+ * @param {ParsedLine} closing Closing fence or final document line.
+ * @param {boolean} closed Whether a real closing fence was found.
+ * @returns {FencedDivEntry}
+ */
+function createFencedDivEntry(uriText, opening, closing, closed) {
+  return {
+    uriText,
+    depth: opening.depth,
+    attributes: opening.marker.attributeText || "",
+    closed,
+    openingFenceLength: opening.marker.fenceLength,
+    closingFenceLength: closed ? closing.text.trim().length : undefined,
+    range: createRange(opening.line.number, 0, closing.number, closing.text.length),
+  };
 }
 
 /**
@@ -747,5 +909,7 @@ module.exports = {
  * @typedef {{label?: string, display: true, uriText: string, line: number, endLine: number, range: PlainRange, selectionRange: PlainRange, tex: string}} MathBlockEntry
  * @typedef {{tex: string, display: false, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} InlineMathEntry
  * @typedef {{start: number, end: number}} CodeSpanRange
- * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], inlineMath: InlineMathEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
+ * @typedef {{type: "open" | "close", fenceLength: number, attributeText?: string}} FencedDivMarker
+ * @typedef {{uriText: string, depth: number, attributes: string, closed: boolean, openingFenceLength: number, closingFenceLength?: number, range: PlainRange}} FencedDivEntry
+ * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], inlineMath: InlineMathEntry[], fencedDivs: FencedDivEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
  */

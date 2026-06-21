@@ -4,6 +4,7 @@ const vscode = require("vscode");
 const { EXTENSION_NAME, MARKDOWN_SELECTOR, BUILD_DOCX_COMMAND } = require("./constants");
 const { PandocWorkspaceIndex } = require("./workspaceIndex");
 const { PandocBuildRunner } = require("./docxBuild");
+const { FencedDivHighlighter } = require("./fencedDivHighlighter");
 const { MathJaxRenderer } = require("./mathJaxRenderer");
 const { ParagraphTranslator } = require("./paragraphTranslator");
 const { getConfiguration } = require("./configuration");
@@ -30,6 +31,7 @@ function activate(context) {
   const mathRenderer = new MathJaxRenderer(output);
   const paragraphTranslator = new ParagraphTranslator(output);
   const buildRunner = new PandocBuildRunner(output);
+  const fencedDivHighlighter = new FencedDivHighlighter(index, output);
 
   output.appendLine("Activated Pandoc Manuscript Tools.");
   if (getConfiguration().get("enableParagraphHoverTranslation", false)) {
@@ -43,6 +45,7 @@ function activate(context) {
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(MARKDOWN_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(MARKDOWN_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
+  context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
     await index.refreshWorkspace();
@@ -56,10 +59,21 @@ function activate(context) {
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
     void buildRunner.refreshContext();
+    fencedDivHighlighter.updateVisibleEditors();
+  }));
+
+  context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
+    fencedDivHighlighter.updateVisibleEditors();
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
     void buildRunner.refreshContext();
+  }));
+
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("pandocManuscriptTools.highlightFencedDivs")) {
+      fencedDivHighlighter.updateVisibleEditors();
+    }
   }));
 
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
@@ -74,6 +88,7 @@ function activate(context) {
     if (isMarkdownDocument(event.document)) {
       index.updateDocument(event.document);
       updateDiagnostics(event.document, index, diagnostics);
+      fencedDivHighlighter.updateVisibleEditors(event.document);
     }
   }));
 
@@ -87,6 +102,7 @@ function activate(context) {
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
   void buildRunner.refreshContext();
+  fencedDivHighlighter.updateVisibleEditors();
 }
 
 /**
