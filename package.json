@@ -25,11 +25,10 @@
   "icon": "assets/icon.png",
   "scripts": {
     "bundle": "esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
-    "check": "node --check src/extension.js && node --check src/constants.js && node --check src/configuration.js && node --check src/vscodeUtils.js && node --check src/workspaceIndex.js && node --check src/providers.js && node --check src/mathJaxRenderer.js && node --check src/paragraphTranslator.js && node --check src/docxBuild.js && node --check src/parser.js && node --check scripts/profile-test-md.js",
     "check:bundle": "node --check dist/extension.js",
-    "package:vsix": "npm run check && npm run bundle && npm run check:bundle && vsce package",
-    "publish:marketplace": "npm run check && npm run bundle && npm run check:bundle && vsce publish",
-    "publish:patch": "npm run check && npm run bundle && npm run check:bundle && vsce publish patch",
+    "package:vsix": "npm run bundle && npm run check:bundle && vsce package",
+    "publish:marketplace": "npm run bundle && npm run check:bundle && vsce publish",
+    "publish:patch": "npm run bundle && npm run check:bundle && vsce publish patch",
     "profile:test-md": "node scripts/profile-test-md.js test.md"
   },
   "activationEvents": [
