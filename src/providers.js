@@ -538,7 +538,7 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
     return translatedList;
   }
 
-  const translatedText = await paragraphTranslator.translateText(normalizeParagraphText(paragraph.text));
+  const translatedText = await paragraphTranslator.translateText(normalizeMarkdownLineBreaks(paragraph.text).trim());
   if (translatedText === undefined) {
     return undefined;
   }
@@ -564,7 +564,7 @@ async function buildMarkdownListTranslation(text, mathRenderer, paragraphTransla
 
   const translatedLines = [];
   for (const item of list.items) {
-    const translatedText = await paragraphTranslator.translateText(normalizeParagraphText(item.text));
+    const translatedText = await paragraphTranslator.translateText(normalizeMarkdownLineBreaks(item.text).trim());
     if (translatedText === undefined) {
       return "";
     }
@@ -689,7 +689,7 @@ async function renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathR
     translatedRows.push(formatPipeTableRow(translatedCells));
   }
 
-  const captionText = normalizeParagraphText(translatedTable.captionLines.map((line) => line.replace(/^:\s*/, "")).join("\n"));
+  const captionText = normalizeMarkdownLineBreaks(translatedTable.captionLines.map((line) => line.replace(/^:\s*/, "")).join("\n")).trim();
   if (captionText) {
     translatedRows.push("", await renderInlineMathTextMarkdown(captionText, mathRenderer));
   }
@@ -714,12 +714,12 @@ function formatPipeTableTranslationHtml(table) {
     }
 
     const cells = table.rows[rowIndex].cells
-      .map((cell) => `<td>${escapeHtmlText(normalizeParagraphText(cell))}</td>`)
+      .map((cell) => `<td>${escapeHtmlText(normalizeMarkdownLineBreaks(cell).trim())}</td>`)
       .join("");
     htmlRows.push(`<tr>${cells}</tr>`);
   }
 
-  const captionText = normalizeParagraphText(table.captionLines.map((line) => line.replace(/^:\s*/, "")).join("\n"));
+  const captionText = normalizeMarkdownLineBreaks(table.captionLines.map((line) => line.replace(/^:\s*/, "")).join("\n")).trim();
   const captionHtml = captionText ? `<caption>${escapeHtmlText(captionText)}</caption>` : "";
   return `<table>${captionHtml}${htmlRows.join("\n")}</table>`;
 }
@@ -1019,16 +1019,6 @@ function isLikelyEnglishParagraph(text) {
   return latinLetters.length >= 20
     && wordMatches.length >= 4
     && cjkRatio < MAX_TRANSLATABLE_CJK_RATIO;
-}
-
-/**
- * Normalizes a paragraph before translation.
- *
- * @param {string} value Raw paragraph text.
- * @returns {string}
- */
-function normalizeParagraphText(value) {
-  return value.replace(/[ \t]*\r?\n[ \t]*/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
