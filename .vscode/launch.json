@@ -10,7 +10,7 @@
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}/test_project",
         "--goto",
-        "${workspaceFolder}/README.md:1:1"
+        "${workspaceFolder}/test_project/README.md:1:1"
       ]
     }
   ]

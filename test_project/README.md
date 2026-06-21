@@ -1,53 +1,166 @@
-# Pandoc Manuscript Tools
+# Pandoc Manuscript Tools F5 Test Document {#sec:test-document}
 
-Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
+This file is the smoke-test manuscript opened from the Extension Development Host. It intentionally contains many small Markdown and Pandoc-crossref patterns so each extension feature can be tested in one place.
 
-## Features
+## Quick Test Checklist {#sec:quick-test}
 
-- Go to definition for `@sec:*`, `@fig:*`, `@tbl:*`, and `@eq:*` references.
-- Find all references for Pandoc labels and reference tokens.
-- Hover cards for labels, references, display math blocks, and inline math spans with MathJax-rendered SVG previews.
-- Optional paragraph-level hover previews for Markdown paragraphs that contain inline math.
-- A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
-- Completion suggestions after `@` using labels found in the current Markdown document.
-- Diagnostics for undefined references and duplicate labels in the current Markdown document.
-- A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
+Use these targets after pressing F5:
 
-## Try It Locally
+1. Ctrl-click or run Go to Definition on @sec:methods, @fig:single-panel, @fig:multi-panel, @tbl:metrics, and @eq:objective.
+2. Run Find All References on `{#eq:objective}` or any `@eq:objective` reference.
+3. Hover over @eq:objective, @tbl:metrics, image labels, table labels, and section labels.
+4. Hover inside the display equation in @eq:objective and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
+5. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
+6. Type `@` in the completion sandbox below and confirm labels from this document appear.
+7. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
 
-1. Open this repository folder in VS Code.
-2. Run `npm install` once so the MathJax renderer is available.
-3. Press `F5` to launch an Extension Development Host.
-4. In the Extension Development Host, open the manuscript repository folder.
-5. Open `manuscript.md` and try:
-   - Ctrl-click `@eq:loss` or `@tbl:results`.
-   - Run `Find All References` on `{#eq:loss}`.
-   - Hover over an equation block or inline math span such as `$f(x)$` to see the rendered MathJax SVG preview.
-   - Click the editor-title build button in `manuscript.md` to run the DOCX build and open `output/docx/manuscript.docx`.
-   - Check the Outline after `## Mathematical Formulation`.
+Completion sandbox:
 
-For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
+@
 
-## Commands
+## Front Matter Is Ignored {#sec:front-matter-note}
 
-- `Pandoc Manuscript Tools: Rebuild Index`
-- `Pandoc Manuscript Tools: Build DOCX and Open in Word`
+The parser should ignore labels and references in YAML front matter. This section is here as a visible reminder; the actual YAML-style block below is fenced as code so it must also be ignored.
 
-## Settings
+```yaml
+---
+title: Hidden fixture
+hidden_label: "{#sec:hidden-yaml-label}"
+hidden_reference: "@sec:hidden-yaml-label"
+---
+```
 
-- `pandocManuscriptTools.enableDiagnostics`: report undefined references and duplicate labels.
-- `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document.
-- `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
-- `pandocManuscriptTools.enableInlineMathParagraphHover`: show a paragraph-level hover preview for Markdown paragraphs that contain inline math.
-- `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters`: maximum paragraph length, in characters, that can show an inline-math paragraph hover preview.
-- `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback.
-- `pandocManuscriptTools.paragraphHoverTranslationMaxCharacters`: maximum English paragraph length, in characters, that can request a paragraph hover translation.
-- `pandocManuscriptTools.paragraphHoverTranslationTargetLanguage`: target language code for paragraph hover translations, for example `zh` or `zh-TW`.
+## Methods {#sec:methods}
 
-## Notes
+This English paragraph is intentionally long enough to trigger the paragraph translation hover when `pandocManuscriptTools.enableParagraphHoverTranslation` is enabled. It also includes inline math such as $f(x)=x^2+1$ and \( \alpha + \beta \) so the optional paragraph-level math preview can be checked after enabling `pandocManuscriptTools.enableInlineMathParagraphHover`.
 
-This extension is intentionally a small language-service layer rather than a full Markdown parser. It scans the Pandoc-crossref syntax used by this manuscript template and avoids code fences and YAML front matter to reduce false positives.
+The current method uses the section reference @sec:methods, the table reference @tbl:metrics, the figure reference @fig:single-panel, and the equation reference @eq:objective in one paragraph. Bracketed references should behave the same: [@sec:results; @tbl:metrics; @eq:normal-equation].
 
-The math hover uses MathJax's Node component loader to convert TeX into SVG and embeds the SVG as a hover image. Raw TeX is shown only as a fallback when rendering fails. Display math and inline math are rendered separately, and inline math is not treated as a cross-reference source. Paragraph-level inline math hovers are disabled by default because they produce larger hover cards. Paragraph translations may make network requests; the extension probes Google Translate on startup and falls back to Microsoft Translator if Google is unavailable. If the preview is unavailable, run `npm install` in this folder and reload the Extension Development Host.
+Inline code spans should not become math hovers: `$not_math$`, `\(not_math\)`, `@sec:not-a-reference-in-code`, and `{#fig:not-a-label-in-code}`.
 
-The DOCX build button is shown only when the active saved Markdown file belongs to a workspace folder that looks like this Pandoc manuscript template: it has `scripts/build.py` or `scripts/build`, the DOCX post-processing scripts, and `pandoc/pandoc-docx.yml`. The command runs `uv run <build-script> docx <markdown-file>` from the detected project root, then opens the generated file from `output/docx/`.
+### Display Math {#sec:display-math}
+
+The next equation uses the Pandoc-crossref closing-delimiter label style.
+
+$$
+J(\theta) = \frac{1}{n}\sum_{i=1}^{n}\left(y_i - x_i^\top\theta\right)^2 + \lambda\lVert\theta\rVert_2^2
+$$ {#eq:objective}
+
+The normal equation in @eq:normal-equation checks a second display math label and another Go to Definition target.
+
+$$
+\hat{\theta} = \left(X^\top X + \lambda I\right)^{-1}X^\top y
+$$ {#eq:normal-equation}
+
+An unlabeled display equation should still render a hover preview, but it should not create a cross-reference target.
+
+$$
+\int_0^1 x^2\,dx = \frac{1}{3}
+$$
+
+### Lists For Paragraph Hover Translation {#sec:list-hover}
+
+- This first item contains inline math $p < 0.05$ and should keep list shape in the translated hover.
+- This second item references @eq:objective and @tbl:metrics.
+  - This nested item checks indentation preservation for simple list translation.
+
+1. Ordered item one uses \( \mu = 0 \).
+2. Ordered item two points back to @sec:methods.
+
+## Tables {#sec:tables}
+
+The main table in @tbl:metrics checks table labels, table hovers, completion, references, and the Outline.
+
+| Method | Accuracy | Loss |
+|---|---:|---:|
+| Baseline | 0.812 | 0.431 |
+| Proposed | **0.934** | **0.128** |
+
+: Metrics table with inline math in the caption, $L_2$, and a Pandoc label. {#tbl:metrics}
+
+The next one-column table is a compact pseudocode-style fixture. It should still parse the table caption label and preserve escaped pipes inside cells.
+
+| Algorithm step |
+|---|
+| 1.\ \ Load records and remove rows where `status \| flag` is missing. |
+| 2.\ \ Compute score $s_i = w^\top x_i$. |
+| 3.\ \ Report results through @tbl:metrics. |
+
+: Pseudocode-style one-column table fixture. {#tbl:pseudocode}
+
+The table below intentionally has a pipe-table shape suitable for paragraph translation hover tests.
+
+| Field | Meaning |
+|---|---|
+| sample | The current observation with value $x_i$. |
+| score | The computed value used by @eq:objective. |
+
+: Translation-friendly table paragraph fixture. {#tbl:hover-translation-table}
+
+## Figures {#sec:figures}
+
+The single image below uses a real local file from the extension repository so Markdown preview can render it while the parser sees `{#fig:single-panel}`.
+
+![Extension icon used as a single-panel figure fixture.](../assets/icon.png){#fig:single-panel width=30%}
+
+The HTML div below checks parent figure labels and nested subfigure labels. In the Outline, @fig:subfigure-a and @fig:subfigure-b should be children of @fig:multi-panel.
+
+<div id="fig:multi-panel">
+
+![Left subfigure fixture.](../assets/icon.png){#fig:subfigure-a width=30%}
+
+![Right subfigure fixture.](../assets/icon.png){#fig:subfigure-b width=30%}
+
+Multi-panel figure caption fixture.
+
+</div>
+
+## Fenced Divs {#sec:fenced-divs}
+
+The parser tracks Pandoc fenced div ranges. This block also checks that normal references inside fenced div content still work.
+
+::: {.note}
+This fenced div references @sec:methods, @fig:multi-panel, @tbl:pseudocode, and @eq:objective.
+
+:::: {.nested}
+Nested fenced div content references @fig:subfigure-a.
+::::
+:::
+
+## Ignored Regions {#sec:ignored-regions}
+
+Labels and references inside code fences should not affect diagnostics, completions, references, or duplicate detection.
+
+```markdown
+# Hidden Heading {#sec:hidden-code-heading}
+
+This fake reference @sec:hidden-code-heading and fake equation label {#eq:hidden-code-equation} should be ignored.
+
+$$
+x = y
+$$ {#eq:hidden-code-equation}
+```
+
+The fake labels above should not appear in completion after `@`.
+
+## Results {#sec:results}
+
+This results paragraph references @sec:methods, @tbl:metrics, @tbl:pseudocode, @fig:single-panel, @fig:multi-panel, @fig:subfigure-a, @fig:subfigure-b, @eq:objective, and @eq:normal-equation. It gives Find All References enough matches to be useful.
+
+Another paragraph checks repeated references: @eq:objective appears again, @eq:objective appears a third time, and @tbl:metrics appears again.
+
+## Diagnostics Playground {#sec:diagnostics}
+
+The next reference is deliberately undefined and should show a warning in Problems: @fig:missing-panel.
+
+The next two labels are deliberately duplicated and should show information diagnostics:
+
+![First duplicate label fixture.](../assets/icon.png){#fig:duplicate-fixture width=20%}
+
+![Second duplicate label fixture.](../assets/icon.png){#fig:duplicate-fixture width=20%}
+
+The duplicated label is referenced here so hover counts can also be checked: @fig:duplicate-fixture.
+
+## Final Cross-Reference Sweep {#sec:final-sweep}
+
+Use this dense sentence for quick navigation checks: @sec:test-document, @sec:quick-test, @sec:display-math, @sec:tables, @sec:figures, @sec:fenced-divs, @sec:ignored-regions, @sec:results, @sec:diagnostics, @tbl:metrics, @tbl:pseudocode, @tbl:hover-translation-table, @fig:single-panel, @fig:multi-panel, @fig:subfigure-a, @fig:subfigure-b, @eq:objective, and @eq:normal-equation.
