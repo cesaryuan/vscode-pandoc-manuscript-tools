@@ -104,7 +104,7 @@
         },
         "pandocManuscriptTools.paragraphHoverTranslationMaxCharacters": {
           "type": "number",
-          "default": 1200,
+          "default": 2000,
           "minimum": 1,
           "description": "Maximum English paragraph length, in characters, that can request a paragraph hover translation."
         },
