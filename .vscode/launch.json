@@ -8,7 +8,7 @@
       "preLaunchTask": "bundle",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}/../pandoc-manuscript-template",
+        "${workspaceFolder}/test_project",
         // "--goto",
         // "${workspaceFolder}/test.md:1:1"
       ]
