@@ -7,6 +7,7 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 ### Added
 
 - Highlight Pandoc `fenced_divs` blocks in Markdown editors with subtle nesting-aware whole-line backgrounds.
+- Highlight Pandoc bracketed spans such as `[Get out]{custom-style="Emphatically"}` with subtle inline backgrounds.
 
 ## 0.2.0 - 2026-06-13
 

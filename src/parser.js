@@ -29,6 +29,7 @@ function parsePandocDocument(text, uriText = "") {
   const mathBlocks = [];
   const inlineMath = [];
   const fencedDivs = scanFencedDivs(lines, uriText);
+  const spans = [];
   const labelMap = new Map();
   const referenceMap = new Map();
 
@@ -88,6 +89,7 @@ function parsePandocDocument(text, uriText = "") {
     addAllLabels(lineLabels, labels, labelMap);
     addAllReferences(scanReferences(line, uriText), references, referenceMap);
     inlineMath.push(...scanInlineMath(line, uriText));
+    spans.push(...scanPandocSpans(line, uriText));
 
     const heading = scanHeading(line, uriText);
     if (heading) {
@@ -115,6 +117,7 @@ function parsePandocDocument(text, uriText = "") {
     mathBlocks,
     inlineMath,
     fencedDivs,
+    spans,
     labelMap,
     referenceMap,
   };
@@ -319,6 +322,101 @@ function createFencedDivEntry(uriText, opening, closing, closed) {
     closingFenceLength: closed ? closing.text.trim().length : undefined,
     range: createRange(opening.line.number, 0, closing.number, closing.text.length),
   };
+}
+
+/**
+ * Finds Pandoc bracketed spans with inline attributes.
+ *
+ * This highlights `[text]{custom-style="..."}` and related bracketed span
+ * attributes without confusing ordinary Markdown links or images for spans.
+ *
+ * @param {ParsedLine} line Parsed line.
+ * @param {string} uriText URI string for resulting entries.
+ * @returns {SpanEntry[]}
+ */
+function scanPandocSpans(line, uriText) {
+  const spans = [];
+  const codeSpanRanges = collectMarkdownCodeSpanRanges(line.text);
+  const openingBrackets = [];
+
+  for (let index = 0; index < line.text.length; index += 1) {
+    if (isIndexInRanges(index, codeSpanRanges) || isEscaped(line.text, index)) {
+      continue;
+    }
+
+    const character = line.text[index];
+    if (character === "[") {
+      if (index > 0 && line.text[index - 1] === "!") {
+        continue;
+      }
+      openingBrackets.push(index);
+      continue;
+    }
+
+    if (character !== "]" || line.text[index + 1] !== "{") {
+      continue;
+    }
+
+    const openingBracket = openingBrackets.pop();
+    if (openingBracket === undefined) {
+      continue;
+    }
+
+    const closingBrace = findClosingAttributeBrace(line.text, index + 2);
+    if (closingBrace === -1) {
+      continue;
+    }
+
+    const attributes = line.text.slice(index + 2, closingBrace).trim();
+    if (!isPandocSpanAttributeText(attributes)) {
+      continue;
+    }
+
+    spans.push({
+      uriText,
+      attributes,
+      line: line.number,
+      text: line.text.slice(openingBracket + 1, index),
+      range: createRange(line.number, openingBracket, line.number, closingBrace + 1),
+      contentRange: createRange(line.number, openingBracket + 1, line.number, index),
+      offset: line.startOffset + openingBracket,
+      endOffset: line.startOffset + closingBrace + 1,
+      preview: line.text.trim(),
+    });
+
+    index = closingBrace;
+  }
+
+  return spans;
+}
+
+/**
+ * Finds the closing brace for one inline attribute block.
+ *
+ * Escaped braces are kept literal so `\}` inside an attribute value does not
+ * prematurely end the span decoration.
+ *
+ * @param {string} text Line text.
+ * @param {number} start First character after the opening `{`.
+ * @returns {number}
+ */
+function findClosingAttributeBrace(text, start) {
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === "}" && !isEscaped(text, index)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Checks whether a bracketed span has real Pandoc attributes.
+ *
+ * @param {string} attributes Raw attribute text without surrounding braces.
+ * @returns {boolean}
+ */
+function isPandocSpanAttributeText(attributes) {
+  return attributes.length > 0;
 }
 
 /**
@@ -908,8 +1006,9 @@ module.exports = {
  * @typedef {{title: string, label?: string, level: number, uriText: string, line: number, character: number, range: PlainRange, selectionRange: PlainRange, preview: string}} HeadingEntry
  * @typedef {{label?: string, display: true, uriText: string, line: number, endLine: number, range: PlainRange, selectionRange: PlainRange, tex: string}} MathBlockEntry
  * @typedef {{tex: string, display: false, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} InlineMathEntry
+ * @typedef {{uriText: string, attributes: string, line: number, text: string, range: PlainRange, contentRange: PlainRange, offset: number, endOffset: number, preview: string}} SpanEntry
  * @typedef {{start: number, end: number}} CodeSpanRange
  * @typedef {{type: "open" | "close", fenceLength: number, attributeText?: string}} FencedDivMarker
  * @typedef {{uriText: string, depth: number, attributes: string, closed: boolean, openingFenceLength: number, closingFenceLength?: number, range: PlainRange}} FencedDivEntry
- * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], inlineMath: InlineMathEntry[], fencedDivs: FencedDivEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
+ * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], inlineMath: InlineMathEntry[], fencedDivs: FencedDivEntry[], spans: SpanEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
  */

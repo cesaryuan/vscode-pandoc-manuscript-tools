@@ -71,7 +71,10 @@ function activate(context) {
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("pandocManuscriptTools.highlightFencedDivs")) {
+    if (
+      event.affectsConfiguration("pandocManuscriptTools.highlightFencedDivs")
+      || event.affectsConfiguration("pandocManuscriptTools.highlightBracketedSpans")
+    ) {
       fencedDivHighlighter.updateVisibleEditors();
     }
   }));

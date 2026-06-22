@@ -11,6 +11,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Optional paragraph-level hover previews for Markdown paragraphs that contain inline math.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
 - Whole-line highlighting for Pandoc `fenced_divs` blocks, with subtle background colors that alternate by nesting depth.
+- Inline highlighting for Pandoc bracketed spans such as `[Get out]{custom-style="Emphatically"}`.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
@@ -26,6 +27,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
    - Run `Find All References` on `{#eq:loss}`.
    - Hover over an equation block or inline math span such as `$f(x)$` to see the rendered MathJax SVG preview.
    - Add a Pandoc fenced div such as `::: note` or `:::: {#special .sidebar}` and confirm the block is highlighted in the editor.
+   - Add a Pandoc bracketed span such as `[Get out]{custom-style="Emphatically"}` and confirm the span is highlighted inline.
    - Click the editor-title build button in `manuscript.md` to run the DOCX build and open `output/docx/manuscript.docx`.
    - Check the Outline after `## Mathematical Formulation`.
 
@@ -42,6 +44,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document.
 - `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
 - `pandocManuscriptTools.highlightFencedDivs`: highlight Pandoc `fenced_divs` blocks with whole-line background colors.
+- `pandocManuscriptTools.highlightBracketedSpans`: highlight Pandoc bracketed spans with inline background colors.
 - `pandocManuscriptTools.enableInlineMathParagraphHover`: show a paragraph-level hover preview for Markdown paragraphs that contain inline math.
 - `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters`: maximum paragraph length, in characters, that can show an inline-math paragraph hover preview.
 - `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback.

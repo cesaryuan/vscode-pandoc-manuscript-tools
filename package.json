@@ -90,6 +90,11 @@
           "default": true,
           "description": "Highlight Pandoc fenced div blocks with subtle whole-line background colors."
         },
+        "pandocManuscriptTools.highlightBracketedSpans": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight Pandoc bracketed spans with subtle inline background colors."
+        },
         "pandocManuscriptTools.enableInlineMathParagraphHover": {
           "type": "boolean",
           "default": false,
