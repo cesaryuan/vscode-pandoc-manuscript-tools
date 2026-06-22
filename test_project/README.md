@@ -12,7 +12,8 @@ Use these targets after pressing F5:
 4. Hover inside the display equation in @eq:objective and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
 5. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
 6. Type `@` in the completion sandbox below and confirm labels from this document appear.
-7. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
+7. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
+8. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
 
 Completion sandbox:
 
@@ -117,7 +118,7 @@ Multi-panel figure caption fixture.
 
 ## Fenced Divs {#sec:fenced-divs}
 
-The parser tracks Pandoc fenced div ranges. This block also checks that normal references inside fenced div content still work.
+The parser tracks Pandoc fenced div ranges for editor highlighting. This block also checks that normal references inside fenced div content still work.
 
 ::: {.note}
 This fenced div references @sec:methods, @fig:multi-panel, @tbl:pseudocode, and @eq:objective.
@@ -126,6 +127,12 @@ This fenced div references @sec:methods, @fig:multi-panel, @tbl:pseudocode, and 
 Nested fenced div content references @fig:subfigure-a.
 ::::
 :::
+
+## Bracketed Spans {#sec:bracketed-spans}
+
+The parser tracks Pandoc bracketed spans for inline editor highlighting. This sentence contains [Get out]{custom-style="*"} as a compact custom-style fixture and [an emphatic phrase]{custom-style="Emphatically"} as a named-style fixture.
+
+The ordinary Markdown link [Pandoc](https://pandoc.org){#not-a-span-highlight}, the image fixture ![Inline image span decoy.](../assets/icon.png){custom-style="NotASpan"}, and the code span `[Code text]{custom-style="NotASpan"}` should not receive the bracketed span highlight.
 
 ## Ignored Regions {#sec:ignored-regions}
 
@@ -163,4 +170,4 @@ The duplicated label is referenced here so hover counts can also be checked: @fi
 
 ## Final Cross-Reference Sweep {#sec:final-sweep}
 
-Use this dense sentence for quick navigation checks: @sec:test-document, @sec:quick-test, @sec:display-math, @sec:tables, @sec:figures, @sec:fenced-divs, @sec:ignored-regions, @sec:results, @sec:diagnostics, @tbl:metrics, @tbl:pseudocode, @tbl:hover-translation-table, @fig:single-panel, @fig:multi-panel, @fig:subfigure-a, @fig:subfigure-b, @eq:objective, and @eq:normal-equation.
+Use this dense sentence for quick navigation checks: @sec:test-document, @sec:quick-test, @sec:display-math, @sec:tables, @sec:figures, @sec:fenced-divs, @sec:bracketed-spans, @sec:ignored-regions, @sec:results, @sec:diagnostics, @tbl:metrics, @tbl:pseudocode, @tbl:hover-translation-table, @fig:single-panel, @fig:multi-panel, @fig:subfigure-a, @fig:subfigure-b, @eq:objective, and @eq:normal-equation.
