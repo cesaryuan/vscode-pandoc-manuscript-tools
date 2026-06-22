@@ -5,3 +5,4 @@ scripts/**
 test.md
 src/**
 *.vsix
+test_project/**
