@@ -1,47 +1,12 @@
 "use strict";
 
-const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS = {
-  "accents-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js"),
-  accents: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js"),
-  arabic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/arabic.js"),
-  arrows: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/arrows.js"),
-  "braille-d": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/braille-d.js"),
-  braille: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/braille.js"),
-  calligraphic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js"),
-  cherokee: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/cherokee.js"),
-  "cyrillic-ss": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/cyrillic-ss.js"),
-  cyrillic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/cyrillic.js"),
-  devanagari: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/devanagari.js"),
-  "double-struck": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/double-struck.js"),
-  fraktur: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/fraktur.js"),
-  "greek-ss": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/greek-ss.js"),
-  greek: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/greek.js"),
-  hebrew: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/hebrew.js"),
-  "latin-b": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin-b.js"),
-  "latin-bi": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin-bi.js"),
-  "latin-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin-i.js"),
-  latin: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/latin.js"),
-  marrows: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/marrows.js"),
-  math: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/math.js"),
-  "monospace-ex": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/monospace-ex.js"),
-  "monospace-l": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/monospace-l.js"),
-  monospace: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/monospace.js"),
-  mshapes: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/mshapes.js"),
-  "phonetics-ss": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/phonetics-ss.js"),
-  phonetics: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/phonetics.js"),
-  PUA: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/PUA.js"),
-  "sans-serif-b": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-b.js"),
-  "sans-serif-bi": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-bi.js"),
-  "sans-serif-ex": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-ex.js"),
-  "sans-serif-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-i.js"),
-  "sans-serif-r": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif-r.js"),
-  "sans-serif": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/sans-serif.js"),
-  script: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/script.js"),
-  shapes: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/shapes.js"),
-  "symbols-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols-b-i.js"),
-  symbols: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols.js"),
-  variants: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/variants.js"),
-};
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const MATHJAX_NEWCM_DYNAMIC_FONT_DIR = path.join(__dirname, "..", "assets", "mathjax-newcm-font", "cjs", "svg", "dynamic");
+const MATHJAX_DYNAMIC_CHUNK_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+const loadedMathJaxDynamicChunks = new Map();
 
 class MathJaxRenderer {
   /**
@@ -225,31 +190,92 @@ function getTopLevelSvgNodes(adaptor, node) {
 }
 
 /**
- * Registers bundled dynamic loaders for MathJax v4 SVG font chunks.
+ * Registers external dynamic loaders for MathJax v4 SVG font chunks.
  *
- * VSIX packaging excludes node_modules, so the common \mathcal path must resolve
- * through literal require calls that esbuild can include in dist/extension.js.
+ * The NewCM dynamic font files are packaged beside the bundle so large glyph
+ * tables do not inflate `dist/extension.js`.
  *
  * @param {any} mathjax MathJax direct API namespace.
  */
 function configureMathJaxAsyncLoad(mathjax) {
-  mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
+  mathjax.asyncLoad = loadPackagedMathJaxDynamicModule;
   mathjax.asyncIsSynchronous = true;
 }
 
 /**
- * Loads dynamic MathJax modules, keeping known NewCM SVG chunks bundled.
+ * Loads dynamic MathJax modules from the packaged extension assets.
  *
  * @param {string} name Module name requested by MathJax.
  * @returns {any}
  */
-function loadBundledMathJaxDynamicModule(name) {
+function loadPackagedMathJaxDynamicModule(name) {
   const normalizedName = name.replace(/\\/g, "/");
   const dynamicChunkMatch = normalizedName.match(/@mathjax\/mathjax-newcm-font\/js\/svg\/dynamic\/([^/]+)\.js$/);
-  if (dynamicChunkMatch && MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS[dynamicChunkMatch[1]]) {
-    return MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS[dynamicChunkMatch[1]]();
+  if (dynamicChunkMatch) {
+    return loadPackagedNewcmDynamicChunk(dynamicChunkMatch[1]);
   }
   return require(name);
+}
+
+/**
+ * Executes a packaged NewCM dynamic font chunk against the bundled font class.
+ *
+ * MathJax's generated chunks call `require("../../svg.js")`; evaluating them
+ * with a tiny local require shim keeps the chunk external without pulling the
+ * whole font package into the bundle.
+ *
+ * @param {string} chunkName NewCM SVG dynamic chunk name.
+ * @returns {any}
+ */
+function loadPackagedNewcmDynamicChunk(chunkName) {
+  if (loadedMathJaxDynamicChunks.has(chunkName)) {
+    return loadedMathJaxDynamicChunks.get(chunkName);
+  }
+
+  const chunkPath = getPackagedNewcmDynamicChunkPath(chunkName);
+  const code = fs.readFileSync(chunkPath, "utf8");
+  const module = { exports: {} };
+  const exports = module.exports;
+  const { Font } = require("@mathjax/mathjax-newcm-font/js/svg/default.js");
+  const context = {
+    exports,
+    module,
+    require: (request) => requireMathJaxDynamicChunkDependency(request, Font.DefaultFont),
+  };
+
+  vm.runInNewContext(code, context, { filename: chunkPath });
+  loadedMathJaxDynamicChunks.set(chunkName, module.exports);
+  return module.exports;
+}
+
+/**
+ * Returns the packaged chunk path after checking the generated file name.
+ *
+ * MathJax controls the module name, but this guard keeps the asset loader from
+ * accepting path separators or traversal if a future request format changes.
+ *
+ * @param {string} chunkName NewCM SVG dynamic chunk name.
+ * @returns {string}
+ */
+function getPackagedNewcmDynamicChunkPath(chunkName) {
+  if (!MATHJAX_DYNAMIC_CHUNK_NAME_PATTERN.test(chunkName)) {
+    throw new Error(`Unsupported MathJax dynamic font chunk name: ${chunkName}`);
+  }
+  return path.join(MATHJAX_NEWCM_DYNAMIC_FONT_DIR, `${chunkName}.js`);
+}
+
+/**
+ * Resolves the limited dependency surface used by generated NewCM chunks.
+ *
+ * @param {string} request Require path from the generated chunk.
+ * @param {any} MathJaxNewcmFont Bundled NewCM font class.
+ * @returns {any}
+ */
+function requireMathJaxDynamicChunkDependency(request, MathJaxNewcmFont) {
+  if (request === "../../svg.js") {
+    return { MathJaxNewcmFont };
+  }
+  throw new Error(`Unsupported MathJax dynamic font dependency: ${request}`);
 }
 
 /**

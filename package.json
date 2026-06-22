@@ -24,7 +24,7 @@
   ],
   "icon": "assets/icon.png",
   "scripts": {
-    "bundle": "esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
+    "bundle": "node scripts/copy-mathjax-fonts.js && esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
     "check:bundle": "node --check dist/extension.js",
     "package:vsix": "npm run bundle && npm run check:bundle && vsce package",
     "publish:marketplace": "npm run bundle && npm run check:bundle && vsce publish",
