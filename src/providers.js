@@ -171,17 +171,19 @@ function findMathBlockForEquationLabelHover(parsed, token, position) {
  * @returns {ParagraphHover | undefined}
  */
 function findParagraphHover(document, parsed, position) {
-  if (isParagraphBoundaryLine(document, position.line)) {
+  if (isBlankParagraphLine(document, position.line)) {
     return undefined;
   }
 
-  const range = findParagraphRange(document, position.line);
+  const commentRange = findStandaloneHtmlCommentBlockRange(document, position.line);
+  const range = commentRange || findParagraphRange(document, position.line);
   const paragraphText = document.getText(range);
+  const translationText = commentRange ? extractStandaloneHtmlCommentText(paragraphText) : paragraphText;
   const startOffset = document.offsetAt(range.start);
   const endOffset = document.offsetAt(range.end);
   const inlineMath = parsed.inlineMath.filter((entry) => entry.fullOffset >= startOffset && entry.fullEndOffset <= endOffset);
   const showMathPreview = shouldShowInlineMathParagraphPreview(paragraphText, inlineMath);
-  const showTranslation = shouldTranslateParagraphHover(paragraphText);
+  const showTranslation = shouldTranslateParagraphHover(translationText);
 
   if (!showMathPreview && !showTranslation) {
     return undefined;
@@ -190,6 +192,7 @@ function findParagraphHover(document, parsed, position) {
   return {
     range,
     text: paragraphText,
+    translationText,
     startOffset,
     inlineMath,
     showMathPreview,
@@ -275,8 +278,19 @@ function findParagraphRange(document, lineNumber) {
  * @returns {boolean}
  */
 function isParagraphBoundaryLine(document, lineNumber) {
-  return document.lineAt(lineNumber).text.trim().length === 0
+  return isBlankParagraphLine(document, lineNumber)
     || isStandaloneHtmlCommentLine(document, lineNumber);
+}
+
+/**
+ * Checks whether a line is blank enough to split paragraph hover ranges.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} lineNumber Zero-based line number.
+ * @returns {boolean}
+ */
+function isBlankParagraphLine(document, lineNumber) {
+  return document.lineAt(lineNumber).text.trim().length === 0;
 }
 
 /**
@@ -284,22 +298,58 @@ function isParagraphBoundaryLine(document, lineNumber) {
  *
  * Standalone comments often hold review notes such as `<!-- Revision... -->`.
  * Treating them as boundaries keeps hidden editorial text out of paragraph
- * translation and inline-math preview hovers.
+ * translation and inline-math preview hovers, while comment hovers can still
+ * translate the comment block itself.
  *
  * @param {vscode.TextDocument} document Markdown document.
  * @param {number} lineNumber Zero-based line number.
  * @returns {boolean}
  */
 function isStandaloneHtmlCommentLine(document, lineNumber) {
+  return findStandaloneHtmlCommentBlockRange(document, lineNumber) !== undefined;
+}
+
+/**
+ * Finds the complete standalone HTML comment block around one line.
+ *
+ * This special case lets review-note comments be translated when hovered
+ * directly, without letting hidden comment text merge into nearby prose.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} lineNumber Zero-based line number.
+ * @returns {vscode.Range | undefined}
+ */
+function findStandaloneHtmlCommentBlockRange(document, lineNumber) {
+  const startLine = findStandaloneHtmlCommentStartLine(document, lineNumber);
+  if (startLine === undefined) {
+    return undefined;
+  }
+
+  const endLine = findStandaloneHtmlCommentEndLine(document, startLine);
+  if (endLine === undefined || lineNumber > endLine) {
+    return undefined;
+  }
+
+  return new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length);
+}
+
+/**
+ * Finds the opening line for a standalone HTML comment block.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} lineNumber Zero-based line number inside the comment.
+ * @returns {number | undefined}
+ */
+function findStandaloneHtmlCommentStartLine(document, lineNumber) {
   for (let currentLine = lineNumber; currentLine >= 0; currentLine -= 1) {
     const trimmed = document.lineAt(currentLine).text.trim();
     if (trimmed.length === 0) {
-      return false;
+      return undefined;
     }
 
     const commentEnd = trimmed.lastIndexOf("-->");
     if (commentEnd !== -1 && currentLine !== lineNumber) {
-      return false;
+      return undefined;
     }
 
     const commentStart = trimmed.lastIndexOf("<!--");
@@ -311,10 +361,56 @@ function isStandaloneHtmlCommentLine(document, lineNumber) {
     const sameLineCommentEnd = trimmed.indexOf("-->", commentStart + 4);
     const hasProseAfterComment = sameLineCommentEnd !== -1
       && trimmed.slice(sameLineCommentEnd + 3).trim().length > 0;
-    return !hasProseBeforeComment && !hasProseAfterComment;
+    if (hasProseBeforeComment || hasProseAfterComment) {
+      return undefined;
+    }
+
+    return currentLine;
   }
 
-  return false;
+  return undefined;
+}
+
+/**
+ * Finds the closing line for a standalone HTML comment block.
+ *
+ * @param {vscode.TextDocument} document Markdown document.
+ * @param {number} startLine Zero-based comment opening line.
+ * @returns {number | undefined}
+ */
+function findStandaloneHtmlCommentEndLine(document, startLine) {
+  for (let currentLine = startLine; currentLine < document.lineCount; currentLine += 1) {
+    const trimmed = document.lineAt(currentLine).text.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+
+    const commentEnd = trimmed.indexOf("-->");
+    if (commentEnd === -1) {
+      continue;
+    }
+
+    const hasProseAfterComment = trimmed.slice(commentEnd + 3).trim().length > 0;
+    return hasProseAfterComment ? undefined : currentLine;
+  }
+
+  return undefined;
+}
+
+/**
+ * Removes standalone HTML comment markers before sending text to translation.
+ *
+ * Translation endpoints and VS Code Markdown hovers can treat `<!-- ... -->`
+ * as hidden HTML, so comment paragraphs need the visible review text only.
+ *
+ * @param {string} text Raw standalone HTML comment block.
+ * @returns {string}
+ */
+function extractStandaloneHtmlCommentText(text) {
+  return text
+    .replace(/^\s*<!--[ \t]?/, "")
+    .replace(/[ \t]?-->\s*$/, "")
+    .trim();
 }
 
 class PandocDocumentSymbolProvider {
@@ -528,17 +624,18 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
     return undefined;
   }
 
-  const translatedTable = await buildPipeTableTranslation(paragraph.text, mathRenderer, paragraphTranslator);
+  const sourceText = paragraph.translationText || paragraph.text;
+  const translatedTable = await buildPipeTableTranslation(sourceText, mathRenderer, paragraphTranslator);
   if (translatedTable !== undefined) {
-    return translatedTable;
+    return translatedTable; 
   }
 
-  const translatedList = await buildMarkdownListTranslation(paragraph.text, mathRenderer, paragraphTranslator);
+  const translatedList = await buildMarkdownListTranslation(sourceText, mathRenderer, paragraphTranslator);
   if (translatedList !== undefined) {
     return translatedList;
   }
 
-  const translatedText = await paragraphTranslator.translateText(normalizeMarkdownLineBreaks(paragraph.text).trim());
+  const translatedText = await paragraphTranslator.translateText(normalizeMarkdownLineBreaks(sourceText).trim());
   if (translatedText === undefined) {
     return undefined;
   }
@@ -1369,6 +1466,6 @@ module.exports = {
 };
 
 /**
- * @typedef {{range: vscode.Range, text: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[], showMathPreview: boolean, showTranslation: boolean}} ParagraphHover
+ * @typedef {{range: vscode.Range, text: string, translationText: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[], showMathPreview: boolean, showTranslation: boolean}} ParagraphHover
  * @typedef {{markdown: string, engine: "google" | "microsoft"}} RenderedTranslation
  */

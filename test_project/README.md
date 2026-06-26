@@ -35,6 +35,11 @@ hidden_reference: "@sec:hidden-yaml-label"
 
 This English paragraph is intentionally long enough to trigger the paragraph translation hover when `pandocManuscriptTools.enableParagraphHoverTranslation` is enabled. It also includes inline math such as $f(x)=x^2+1$ and \( \alpha + \beta \) so the optional paragraph-level math preview can be checked after enabling `pandocManuscriptTools.enableInlineMathParagraphHover`.
 
+<!--
+This standalone HTML comment checks that hidden manuscript notes can still show
+a paragraph translation hover when the cursor is inside the comment block.
+-->
+
 The current method uses the section reference @sec:methods, the table reference @tbl:metrics, the figure reference @fig:single-panel, and the equation reference @eq:objective in one paragraph. Bracketed references should behave the same: [@sec:results; @tbl:metrics; @eq:normal-equation].
 
 Inline code spans should not become math hovers: `$not_math$`, `\(not_math\)`, `@sec:not-a-reference-in-code`, and `{#fig:not-a-label-in-code}`.
