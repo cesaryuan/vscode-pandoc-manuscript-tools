@@ -353,12 +353,19 @@ function scanPandocSpans(line, uriText) {
       continue;
     }
 
-    if (character !== "]" || line.text[index + 1] !== "{") {
+    if (character !== "]") {
       continue;
     }
 
     const openingBracket = openingBrackets.pop();
     if (openingBracket === undefined) {
+      continue;
+    }
+
+    // Bug fix: nested bracket content such as Pandoc citations `[@a; @b]`
+    // must consume their own `[` / `]` pair, or the outer span highlight
+    // would incorrectly start at the citation instead of the real span start.
+    if (line.text[index + 1] !== "{") {
       continue;
     }
 
