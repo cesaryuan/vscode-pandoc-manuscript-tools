@@ -519,6 +519,26 @@ function isDefinitionHover(tokenType) {
 }
 
 /**
+ * Returns a MathJax SVG foreground color for the current VS Code theme.
+ *
+ * Data-URI SVG images cannot reliably inherit the hover foreground. Dark
+ * themes therefore need an explicit light color; light themes keep MathJax's
+ * default black glyphs.
+ *
+ * @returns {string | undefined}
+ */
+function getMathPreviewForegroundColor() {
+  const themeKind = vscode.window.activeColorTheme.kind;
+  if (themeKind === vscode.ColorThemeKind.HighContrast) {
+    return "#ffffff";
+  }
+  if (themeKind === vscode.ColorThemeKind.Dark) {
+    return "#f2f2f2";
+  }
+  return undefined;
+}
+
+/**
  * Builds a hover body for display math blocks with a rendered SVG preview.
  *
  * @param {import("./parser").MathBlockEntry} mathBlock Math block entry.
@@ -538,7 +558,7 @@ async function buildMathHover(mathBlock, index, document, mathRenderer) {
   }
 
   if (mathBlock.tex) {
-    const renderedSvg = await mathRenderer.renderToDataUri(mathBlock.tex, true);
+    const renderedSvg = await mathRenderer.renderToDataUri(mathBlock.tex, true, getMathPreviewForegroundColor());
     if (renderedSvg) {
       markdown.appendMarkdown(`\n\n![Rendered equation preview](${renderedSvg})\n\n`);
     } else {
@@ -563,7 +583,7 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown("**Inline math**");
 
-  const renderedSvg = await mathRenderer.renderToDataUri(inlineMath.tex, false);
+  const renderedSvg = await mathRenderer.renderToDataUri(inlineMath.tex, false, getMathPreviewForegroundColor());
   if (renderedSvg) {
     markdown.appendMarkdown(`\n\n![Rendered inline equation preview](${renderedSvg})\n\n`);
   } else {
@@ -1186,7 +1206,7 @@ async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath, star
     }
 
     parts.push(normalizeMarkdownLineBreaks(text.slice(cursor, formulaStart)));
-    const renderedSvg = await mathRenderer.renderToDataUri(inlineMathEntry.tex, false);
+    const renderedSvg = await mathRenderer.renderToDataUri(inlineMathEntry.tex, false, getMathPreviewForegroundColor());
     if (renderedSvg) {
       parts.push(`![Rendered inline equation preview](${renderedSvg})`);
     } else {

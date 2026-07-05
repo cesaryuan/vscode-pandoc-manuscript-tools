@@ -26,10 +26,11 @@ class MathJaxRenderer {
    *
    * @param {string} tex TeX source.
    * @param {boolean} display Whether to render in display style.
+   * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
    * @returns {Promise<string | undefined>}
    */
-  async renderToDataUri(tex, display) {
-    const svg = await this.renderToSvg(tex, display);
+  async renderToDataUri(tex, display, foregroundColor) {
+    const svg = await this.renderToSvg(tex, display, foregroundColor);
     if (!svg) {
       return undefined;
     }
@@ -41,17 +42,18 @@ class MathJaxRenderer {
    *
    * @param {string} tex TeX source.
    * @param {boolean} display Whether to render in display style.
+   * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
    * @returns {Promise<string | undefined>}
    */
-  async renderToSvg(tex, display) {
+  async renderToSvg(tex, display, foregroundColor) {
     const trimmedTex = tex.trim();
     if (!trimmedTex) {
       return undefined;
     }
 
-    const cacheKey = `${display ? "display" : "inline"}:${trimmedTex}`;
+    const cacheKey = `${display ? "display" : "inline"}:${foregroundColor || "default"}:${trimmedTex}`;
     if (!this.svgCache.has(cacheKey)) {
-      this.svgCache.set(cacheKey, this.renderToSvgUncached(trimmedTex, display));
+      this.svgCache.set(cacheKey, this.renderToSvgUncached(trimmedTex, display, foregroundColor));
     }
 
     return this.svgCache.get(cacheKey);
@@ -62,9 +64,10 @@ class MathJaxRenderer {
    *
    * @param {string} tex TeX source.
    * @param {boolean} display Whether to render in display style.
+   * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
    * @returns {Promise<string | undefined>}
    */
-  async renderToSvgUncached(tex, display) {
+  async renderToSvgUncached(tex, display, foregroundColor) {
     try {
       const renderer = await this.ensureMathJax();
       if (!renderer) {
@@ -97,7 +100,7 @@ class MathJaxRenderer {
         return undefined;
       }
 
-      return makeSvgHoverFriendly(serializedSvg);
+      return makeSvgHoverFriendly(serializedSvg, foregroundColor);
     } catch (error) {
       this.output.appendLine(`MathJax failed to render equation ${formatTexForLog(tex)}: ${String(error)}`);
       return undefined;
@@ -323,11 +326,15 @@ function formatTexForLog(tex) {
  * Makes a MathJax SVG fit inside hover images without clipping.
  *
  * @param {string} svg Raw MathJax SVG.
+ * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
  * @returns {string}
  */
-function makeSvgHoverFriendly(svg) {
+function makeSvgHoverFriendly(svg, foregroundColor) {
   const sizedSvg = setSvgPixelSize(svg, 720);
-  const hoverStyle = "background:transparent;";
+  const colorStyle = foregroundColor ? `color:${foregroundColor};` : "";
+  // Data-URI SVG images do not inherit VS Code hover foreground reliably, so
+  // dark themes need an explicit glyph color while light themes keep MathJax's default.
+  const hoverStyle = `background:transparent;${colorStyle}`;
   if (/<svg\b[^>]*\sstyle="/.test(sizedSvg)) {
     return sizedSvg.replace(/(<svg\b[^>]*\sstyle=")/, `$1${hoverStyle}`);
   }
