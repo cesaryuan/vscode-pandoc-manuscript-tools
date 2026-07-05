@@ -1,14 +1,14 @@
 "use strict";
 
 const vscode = require("vscode");
-const { EXTENSION_NAME, MARKDOWN_SELECTOR, BUILD_DOCX_COMMAND } = require("./constants");
+const { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND } = require("./constants");
 const { PandocWorkspaceIndex } = require("./workspaceIndex");
 const { PandocBuildRunner } = require("./docxBuild");
 const { FencedDivHighlighter } = require("./fencedDivHighlighter");
 const { MathJaxRenderer } = require("./mathJaxRenderer");
 const { ParagraphTranslator } = require("./paragraphTranslator");
 const { getConfiguration } = require("./configuration");
-const { isMarkdownDocument } = require("./vscodeUtils");
+const { isPandocDocument } = require("./vscodeUtils");
 const {
   PandocDefinitionProvider,
   PandocReferenceProvider,
@@ -39,11 +39,11 @@ function activate(context) {
   }
 
   context.subscriptions.push(output, diagnostics);
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(MARKDOWN_SELECTOR, new PandocDefinitionProvider(index)));
-  context.subscriptions.push(vscode.languages.registerReferenceProvider(MARKDOWN_SELECTOR, new PandocReferenceProvider(index)));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(MARKDOWN_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator)));
-  context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(MARKDOWN_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
-  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(MARKDOWN_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
+  context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator)));
+  context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
 
@@ -80,7 +80,7 @@ function activate(context) {
   }));
 
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
-    if (isMarkdownDocument(document)) {
+    if (isPandocDocument(document)) {
       index.updateDocument(document);
       updateDiagnostics(document, index, diagnostics);
       void buildRunner.refreshContext();
@@ -88,7 +88,7 @@ function activate(context) {
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
-    if (isMarkdownDocument(event.document)) {
+    if (isPandocDocument(event.document)) {
       index.updateDocument(event.document);
       updateDiagnostics(event.document, index, diagnostics);
       fencedDivHighlighter.updateVisibleEditors(event.document);
@@ -96,7 +96,7 @@ function activate(context) {
   }));
 
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (document) => {
-    if (isMarkdownDocument(document)) {
+    if (isPandocDocument(document)) {
       index.updateDocument(document);
       await index.refreshWorkspace();
       updateDiagnosticsForOpenDocuments(index, diagnostics);

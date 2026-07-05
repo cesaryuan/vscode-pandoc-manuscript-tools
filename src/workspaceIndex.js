@@ -3,7 +3,7 @@
 const vscode = require("vscode");
 const { parsePandocDocument } = require("./parser");
 const { getConfiguration } = require("./configuration");
-const { isMarkdownDocument } = require("./vscodeUtils");
+const { isPandocDocument } = require("./vscodeUtils");
 
 class PandocWorkspaceIndex {
   /**
@@ -26,29 +26,31 @@ class PandocWorkspaceIndex {
    */
   async refreshWorkspace() {
     const includeWorkspace = getConfiguration().get("includeWorkspaceReferences", false);
-    const openMarkdownDocuments = vscode.workspace.textDocuments.filter(isMarkdownDocument);
+    const openPandocDocuments = vscode.workspace.textDocuments.filter(isPandocDocument);
 
-    for (const document of openMarkdownDocuments) {
+    for (const document of openPandocDocuments) {
       this.updateDocument(document);
     }
 
     if (!includeWorkspace) {
-      this.output.appendLine(`Indexed ${openMarkdownDocuments.length} open Markdown document(s).`);
+      this.output.appendLine(`Indexed ${openPandocDocuments.length} open Pandoc document(s).`);
       return;
     }
 
     try {
-      const files = await vscode.workspace.findFiles("**/*.md", "**/{.git,node_modules,output,tmp}/**", 1000);
+      // `.mdx` shares the same parser/index behavior as Markdown for hover and
+      // cross-reference features, so workspace preloading should include both.
+      const files = await vscode.workspace.findFiles("**/*.{md,mdx}", "**/{.git,node_modules,output,tmp}/**", 1000);
       for (const uri of files) {
-        const openDocument = openMarkdownDocuments.find((document) => document.uri.toString() === uri.toString());
+        const openDocument = openPandocDocuments.find((document) => document.uri.toString() === uri.toString());
         if (openDocument) {
           continue;
         }
         await this.updateUri(uri);
       }
-      this.output.appendLine(`Indexed ${this.documents.size} Markdown document(s).`);
+      this.output.appendLine(`Indexed ${this.documents.size} Pandoc document(s).`);
     } catch (error) {
-      this.output.appendLine(`Failed to refresh Markdown index: ${String(error)}`);
+      this.output.appendLine(`Failed to refresh Pandoc document index: ${String(error)}`);
     }
   }
 

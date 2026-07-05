@@ -33,6 +33,8 @@
   },
   "activationEvents": [
     "onLanguage:markdown",
+    "onLanguage:mdx",
+    "onLanguage:latex",
     "onCommand:pandocManuscriptTools.rebuildIndex",
     "onCommand:pandocManuscriptTools.buildDocxAndOpen"
   ],

@@ -2,6 +2,8 @@
 
 const vscode = require("vscode");
 
+const PANDOC_LANGUAGE_IDS = new Set(["markdown", "mdx"]);
+
 /**
  * Converts a plain parser range into a VS Code range.
  *
@@ -74,13 +76,55 @@ function toSymbolKind(prefix) {
 }
 
 /**
- * Checks whether a document is a Markdown document.
+ * Checks whether a document can participate in editor-only language features.
+ *
+ * Untitled buffers are useful for hover and index behavior while editing, but
+ * build commands still require a saved file and use a stricter helper below.
  *
  * @param {vscode.TextDocument} document Text document.
  * @returns {boolean}
  */
-function isMarkdownDocument(document) {
-  return document.languageId === "markdown" && (document.uri.scheme === "file" || document.uri.scheme === "untitled");
+function isEditorBackedDocument(document) {
+  return document.uri.scheme === "file" || document.uri.scheme === "untitled";
+}
+
+/**
+ * Checks whether a document language is in one supported-language set.
+ *
+ * @param {vscode.TextDocument} document Text document.
+ * @param {Set<string>} languageIds Supported VS Code language IDs.
+ * @returns {boolean}
+ */
+function isSupportedLanguageDocument(document, languageIds) {
+  return languageIds.has(document.languageId);
+}
+
+/**
+ * Checks whether a document should get full Pandoc-style features.
+ *
+ * `.mdx` intentionally reuses the Markdown-oriented index and hover pipeline
+ * because the user asked for MDX support and its prose/math structure is close
+ * enough to Markdown for the current parser.
+ *
+ * @param {vscode.TextDocument} document Text document.
+ * @returns {boolean}
+ */
+function isPandocDocument(document) {
+  return isEditorBackedDocument(document) && isSupportedLanguageDocument(document, PANDOC_LANGUAGE_IDS);
+}
+
+/**
+ * Checks whether a document can use Pandoc text-oriented hover branches.
+ *
+ * `.tex` files are deliberately excluded here: they should gain formula
+ * previews without also inheriting paragraph-translation or label-summary
+ * behavior that is specific to Markdown/MDX manuscripts.
+ *
+ * @param {vscode.TextDocument} document Text document.
+ * @returns {boolean}
+ */
+function supportsPandocTextFeatures(document) {
+  return isSupportedLanguageDocument(document, PANDOC_LANGUAGE_IDS);
 }
 
 /**
@@ -102,6 +146,7 @@ module.exports = {
   toLocationLink,
   toPlainPosition,
   toSymbolKind,
-  isMarkdownDocument,
+  isPandocDocument,
+  supportsPandocTextFeatures,
   isBuildableMarkdownDocument,
 };

@@ -6,7 +6,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 
 - Go to definition for `@sec:*`, `@fig:*`, `@tbl:*`, and `@eq:*` references.
 - Find all references for Pandoc labels and reference tokens.
-- Hover cards for labels, references, display math blocks, and inline math spans with MathJax-rendered SVG previews.
+- Hover cards for labels, references, display math blocks, and inline math spans with MathJax-rendered SVG previews. Math hovers work in Markdown, MDX, and LaTeX (`.tex`) editors.
 - Optional paragraph translation hovers that show whether Google Translate or Microsoft Translator handled the current translation.
 - Optional paragraph-level hover previews for Markdown paragraphs that contain inline math.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.

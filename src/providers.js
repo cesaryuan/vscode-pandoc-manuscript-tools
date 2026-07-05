@@ -16,7 +16,8 @@ const {
   toLocationLink,
   toPlainPosition,
   toSymbolKind,
-  isMarkdownDocument,
+  isPandocDocument,
+  supportsPandocTextFeatures,
 } = require("./vscodeUtils");
 
 const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
@@ -98,31 +99,38 @@ class PandocHoverProvider {
   async provideHover(document, position) {
     const parsed = this.index.getParsedDocument(document);
     const plainPosition = toPlainPosition(position);
-    const token = findTokenAtPosition(parsed, plainPosition);
-    if (token) {
-      const labeledMathBlock = findMathBlockForEquationLabelHover(parsed, token, plainPosition);
-      if (labeledMathBlock) {
-        // Pandoc-crossref puts equation labels on the closing delimiter, so the
-        // token hover must opt into the formula preview before the generic label
-        // hover short-circuits it.
-        return new vscode.Hover(await buildMathHover(labeledMathBlock, this.index, document, this.mathRenderer), toRange(token.entry.fullRange));
+    if (supportsPandocTextFeatures(document)) {
+      const token = findTokenAtDocumentPosition(this.index, document, position);
+      if (token) {
+        const labeledMathBlock = findMathBlockForEquationLabelHover(parsed, token, plainPosition);
+        if (labeledMathBlock) {
+          // Pandoc-crossref puts equation labels on the closing delimiter, so the
+          // token hover must opt into the formula preview before the generic label
+          // hover short-circuits it.
+          return new vscode.Hover(await buildMathHover(labeledMathBlock, this.index, document, this.mathRenderer), toRange(token.entry.fullRange));
+        }
+        return new vscode.Hover(buildLabelHover(token.entry, this.index, document, token.type), toRange(token.entry.fullRange));
       }
-      return new vscode.Hover(buildLabelHover(token.entry, this.index, document, token.type), toRange(token.entry.fullRange));
+
+      const mathBlock = findMathBlockAtPosition(parsed, plainPosition);
+      if (mathBlock) {
+        // Math-block hovers should shade the whole display equation; label hovers
+        // are handled above so `{#eq:...}` still keeps its tighter range.
+        return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
+      }
+
+      const paragraphHover = findParagraphHover(document, parsed, position);
+      if (paragraphHover) {
+        const paragraphMarkdown = await buildParagraphHover(paragraphHover, this.mathRenderer, this.paragraphTranslator);
+        if (paragraphMarkdown) {
+          return new vscode.Hover(paragraphMarkdown, paragraphHover.range);
+        }
+      }
     }
 
     const mathBlock = findMathBlockAtPosition(parsed, plainPosition);
     if (mathBlock) {
-      // Math-block hovers should shade the whole display equation; label hovers
-      // are handled above so `{#eq:...}` still keeps its tighter range.
       return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
-    }
-
-    const paragraphHover = findParagraphHover(document, parsed, position);
-    if (paragraphHover) {
-      const paragraphMarkdown = await buildParagraphHover(paragraphHover, this.mathRenderer, this.paragraphTranslator);
-      if (paragraphMarkdown) {
-        return new vscode.Hover(paragraphMarkdown, paragraphHover.range);
-      }
     }
 
     const inlineMath = findInlineMathAtPosition(parsed, plainPosition);
@@ -1411,7 +1419,7 @@ function isRangeStartAfter(left, right) {
  */
 function updateDiagnosticsForOpenDocuments(index, diagnostics) {
   for (const document of vscode.workspace.textDocuments) {
-    if (isMarkdownDocument(document)) {
+    if (isPandocDocument(document)) {
       updateDiagnostics(document, index, diagnostics);
     }
   }
