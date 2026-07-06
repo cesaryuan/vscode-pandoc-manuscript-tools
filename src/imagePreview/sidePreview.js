@@ -187,7 +187,7 @@ function buildPreviewHtml(imagePath, extension, previewSource) {
     </header>
     <main class="viewport" data-preview-viewport>
       <div class="stage" data-preview-stage>
-        <img data-preview-image ${imageAttributes} alt="${escapeAttribute(label)}">
+        <img data-preview-image data-preview-frame="true" ${imageAttributes} alt="${escapeAttribute(label)}">
       </div>
     </main>
     <footer>${escapeHtml(imagePath)}</footer>
@@ -592,7 +592,6 @@ function buildPanelHtml(body, script = "") {
     main {
       height: calc(100vh - 118px);
       overflow: auto;
-      border: 1px solid var(--vscode-panel-border, transparent);
       background: var(--vscode-editor-background);
     }
     .stage {
@@ -609,6 +608,11 @@ function buildPanelHtml(body, script = "") {
       flex: 0 0 auto;
       max-width: none;
       max-height: none;
+    }
+    img[data-preview-frame="true"] {
+      box-shadow:
+        0 0 0 1px var(--vscode-panel-border, rgba(128, 128, 128, 0.55)),
+        0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.28));
     }
     footer {
       margin-top: 12px;
