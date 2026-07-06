@@ -4,6 +4,8 @@ const fs = require("fs/promises");
 const path = require("path");
 const { resolveLocalPath, isDataUri, isRemoteUrl } = require("./pathResolver");
 
+const MAX_NESTED_RASTER_DIMENSION = 100;
+
 const MIME_TYPES = new Map([
   [".avif", "image/avif"],
   [".bmp", "image/bmp"],
@@ -13,6 +15,14 @@ const MIME_TYPES = new Map([
   [".png", "image/png"],
   [".svg", "image/svg+xml"],
   [".webp", "image/webp"],
+]);
+
+const RESIZABLE_RASTER_MIME_TYPES = new Set([
+  "image/avif",
+  "image/bmp",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ]);
 
 /**
@@ -91,11 +101,78 @@ async function readImageAsDataUri(imagePath, output) {
 
   try {
     const imageBytes = await fs.readFile(imagePath);
-    return `data:${mimeType};base64,${imageBytes.toString("base64")}`;
+    const encodedImage = await prepareNestedImageForDataUri(imageBytes, mimeType, imagePath, output);
+    return `data:${encodedImage.mimeType};base64,${encodedImage.bytes.toString("base64")}`;
   } catch (error) {
     output.appendLine(`SVG image preview could not inline ${imagePath}: ${formatError(error)}`);
     return undefined;
   }
+}
+
+/**
+ * Shrinks large nested raster images before embedding them into hover SVG data URIs.
+ *
+ * This special case keeps VS Code hovers from falling back to plain text when a
+ * small SVG references a large local PNG/JPEG that would produce a huge data URI.
+ *
+ * @param {Buffer} imageBytes Source image bytes.
+ * @param {string} mimeType Source MIME type.
+ * @param {string} imagePath Absolute image path for diagnostics.
+ * @param {{appendLine(message: string): void}} output Output channel.
+ * @returns {Promise<{bytes: Buffer, mimeType: string}>}
+ */
+async function prepareNestedImageForDataUri(imageBytes, mimeType, imagePath, output) {
+  if (!RESIZABLE_RASTER_MIME_TYPES.has(mimeType)) {
+    return { bytes: imageBytes, mimeType };
+  }
+
+  try {
+    return await resizeNestedRasterImage(imageBytes, imagePath);
+  } catch (error) {
+    output.appendLine(`SVG image preview kept original nested image after resize failed for ${imagePath}: ${formatError(error)}`);
+    return { bytes: imageBytes, mimeType };
+  }
+}
+
+/**
+ * Resizes one raster image so both dimensions are at most MAX_NESTED_RASTER_DIMENSION.
+ *
+ * @param {Buffer} imageBytes Source image bytes.
+ * @param {string} imagePath Absolute image path for diagnostics.
+ * @returns {Promise<{bytes: Buffer, mimeType: string}>}
+ */
+async function resizeNestedRasterImage(imageBytes, imagePath) {
+  const canvas = require("@napi-rs/canvas");
+  const image = await canvas.loadImage(imageBytes);
+  const dimensions = fitWithinBounds(image.width, image.height, MAX_NESTED_RASTER_DIMENSION);
+  if (!dimensions) {
+    return { bytes: imageBytes, mimeType: MIME_TYPES.get(path.extname(imagePath).toLowerCase()) || "image/png" };
+  }
+
+  const target = canvas.createCanvas(dimensions.width, dimensions.height);
+  const context = target.getContext("2d");
+  context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+  return { bytes: target.toBuffer("image/png"), mimeType: "image/png" };
+}
+
+/**
+ * Computes dimensions that fit inside a square bound without upscaling.
+ *
+ * @param {number} width Source width.
+ * @param {number} height Source height.
+ * @param {number} maxDimension Maximum allowed width or height.
+ * @returns {{width: number, height: number} | undefined}
+ */
+function fitWithinBounds(width, height, maxDimension) {
+  if (!width || !height || width <= maxDimension && height <= maxDimension) {
+    return undefined;
+  }
+
+  const scale = Math.min(maxDimension / width, maxDimension / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 /**
