@@ -10,7 +10,7 @@ Use these targets after pressing F5:
 2. Run Find All References on `{#eq:objective}` or any `@eq:objective` reference.
 3. Hover over @eq:objective, @tbl:metrics, image labels, table labels, and section labels.
 4. Hover inside the display equation in @eq:objective and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
-5. Hover over the SVG and EMF image fixtures in @fig:svg-preview-fixture and @fig:emf-preview-fixture.
+5. Hover over the SVG and EMF image fixtures in @fig:svg-preview-fixture, @fig:svg-relative-image-fixture, and @fig:emf-preview-fixture.
 6. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
 7. Type `@` in the completion sandbox below and confirm labels from this document appear.
 8. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
@@ -113,6 +113,8 @@ The single image below uses a real local file from the extension repository so M
 The next two images exercise the SVG and EMF hover preview paths with small local assets from the extension repository.
 
 ![SVG document icon hover preview fixture.](../assets/document-icon.svg){#fig:svg-preview-fixture width=20%}
+
+![SVG hover preview fixture with a relative image href inside the SVG.](assets/svg-with-relative-image.svg){#fig:svg-relative-image-fixture width=20%}
 
 ![EMF document icon hover preview fixture.](../assets/document-icon.emf){#fig:emf-preview-fixture width=20%}
 
