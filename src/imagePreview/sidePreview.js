@@ -112,6 +112,7 @@ class ImagePreviewSidePanel {
     const key = imageUri.fsPath;
     const existing = this.panels.get(key);
     if (existing) {
+      existing.webview.options = createWebviewOptions(imageUri);
       return existing;
     }
 
@@ -119,7 +120,7 @@ class ImagePreviewSidePanel {
       "pandocManuscriptTools.imagePreview",
       `Preview ${path.basename(imageUri.fsPath)}`,
       vscode.ViewColumn.Beside,
-      { enableScripts: true },
+      createWebviewOptions(imageUri),
     );
     panel.onDidDispose(() => {
       this.panels.delete(key);
@@ -141,13 +142,12 @@ class ImagePreviewSidePanel {
     panel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
 
     try {
-      const documentLike = { uri: imageUri };
-      const dataUri = await this.imagePreviewRenderer.renderToDataUri(documentLike, imageUri.fsPath, extension);
-      if (!dataUri) {
+      const previewSource = await renderWebviewPreviewSource(panel.webview, this.imagePreviewRenderer, imageUri, imageUri.fsPath, extension);
+      if (!previewSource) {
         panel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Pandoc Manuscript Tools output for details.</p>`);
         return;
       }
-      panel.webview.html = buildPreviewHtml(imageUri.fsPath, extension, dataUri);
+      panel.webview.html = buildPreviewHtml(imageUri.fsPath, extension, previewSource);
     } catch (error) {
       this.output.appendLine(`Image side preview failed for ${imageUri.fsPath}: ${formatError(error)}`);
       panel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
@@ -160,11 +160,12 @@ class ImagePreviewSidePanel {
  *
  * @param {string} imagePath Absolute image path.
  * @param {string} extension Lowercase image extension.
- * @param {string} dataUri Rendered image data URI.
+ * @param {WebviewPreviewSource} previewSource Rendered image source.
  * @returns {string}
  */
-function buildPreviewHtml(imagePath, extension, dataUri) {
+function buildPreviewHtml(imagePath, extension, previewSource) {
   const label = path.basename(imagePath);
+  const imageAttributes = previewSourceToImageAttributes(previewSource);
   return buildPanelHtml(`
     <header>
       <div class="heading">
@@ -181,11 +182,102 @@ function buildPreviewHtml(imagePath, extension, dataUri) {
     </header>
     <main class="viewport" data-preview-viewport>
       <div class="stage" data-preview-stage>
-        <img data-preview-image src="${escapeAttribute(dataUri)}" alt="${escapeAttribute(label)}">
+        <img data-preview-image ${imageAttributes} alt="${escapeAttribute(label)}">
       </div>
     </main>
     <footer>${escapeHtml(imagePath)}</footer>
   `, getPreviewScript());
+}
+
+/**
+ * Creates the Webview-specific image source for preview panels.
+ *
+ * SVG files can be loaded directly through asWebviewUri. EMF/WMF are converted
+ * first, then passed to the Webview script as Blob URL input to avoid using a
+ * long data URI as the final image src.
+ *
+ * @param {vscode.Webview} webview Target webview.
+ * @param {import("./index").ImagePreviewRenderer} imagePreviewRenderer Shared preview renderer.
+ * @param {vscode.Uri} documentUri Document URI used for path resolution.
+ * @param {string} imagePath Absolute image path.
+ * @param {string} extension Lowercase image extension.
+ * @returns {Promise<WebviewPreviewSource | undefined>}
+ */
+async function renderWebviewPreviewSource(webview, imagePreviewRenderer, documentUri, imagePath, extension) {
+  if (extension === ".svg") {
+    return {
+      kind: "uri",
+      src: webview.asWebviewUri(vscode.Uri.file(imagePath)).toString(),
+    };
+  }
+
+  const documentLike = { uri: documentUri };
+  const dataUri = await imagePreviewRenderer.renderToDataUri(documentLike, imagePath, extension);
+  return dataUri ? dataUriToBlobPreviewSource(dataUri) : undefined;
+}
+
+/**
+ * Converts a data URI into Blob URL source data for the Webview script.
+ *
+ * @param {string} dataUri Rendered image data URI.
+ * @returns {WebviewPreviewSource | undefined}
+ */
+function dataUriToBlobPreviewSource(dataUri) {
+  const match = dataUri.match(/^data:([^;,]+);base64,(.*)$/s);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    kind: "blob",
+    mimeType: match[1],
+    base64: match[2],
+  };
+}
+
+/**
+ * Builds safe img attributes for a preview source.
+ *
+ * @param {WebviewPreviewSource} previewSource Rendered image source.
+ * @returns {string}
+ */
+function previewSourceToImageAttributes(previewSource) {
+  if (previewSource.kind === "uri") {
+    return `src="${escapeAttribute(previewSource.src)}"`;
+  }
+
+  return [
+    "src=\"\"",
+    `data-blob-mime="${escapeAttribute(previewSource.mimeType)}"`,
+    `data-blob-base64="${escapeAttribute(previewSource.base64)}"`,
+  ].join(" ");
+}
+
+/**
+ * Creates Webview options that allow direct SVG file loading from safe roots.
+ *
+ * @param {vscode.Uri} imageUri Image URI.
+ * @returns {vscode.WebviewPanelOptions & vscode.WebviewOptions}
+ */
+function createWebviewOptions(imageUri) {
+  return {
+    enableScripts: true,
+    localResourceRoots: getLocalResourceRoots(imageUri),
+  };
+}
+
+/**
+ * Returns local roots used by asWebviewUri for SVG preview files.
+ *
+ * @param {vscode.Uri} imageUri Image URI.
+ * @returns {vscode.Uri[]}
+ */
+function getLocalResourceRoots(imageUri) {
+  const roots = [vscode.Uri.file(path.dirname(imageUri.fsPath))];
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    roots.push(folder.uri);
+  }
+  return roots;
 }
 
 /**
@@ -318,6 +410,25 @@ function getPreviewScript() {
   let naturalHeight = 1;
   let scale = 1;
   let fitMode = true;
+  let blobUrl = "";
+
+  /** Creates a Blob URL for converted EMF/WMF preview data. */
+  function applyBlobSource() {
+    const mimeType = image.getAttribute("data-blob-mime");
+    const base64 = image.getAttribute("data-blob-base64");
+    if (!mimeType || !base64) {
+      return;
+    }
+
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    blobUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    image.src = blobUrl;
+    image.removeAttribute("data-blob-base64");
+  }
 
   /** Clamps a number to the allowed zoom range. */
   function clampScale(value) {
@@ -393,7 +504,13 @@ function getPreviewScript() {
       render();
     }
   });
+  window.addEventListener("unload", () => {
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+    }
+  });
 
+  applyBlobSource();
   if (image.complete) {
     refreshNaturalSize();
   } else {
@@ -441,4 +558,9 @@ module.exports = {
   ImagePreviewSidePanel,
   buildPanelHtml,
   buildPreviewHtml,
+  renderWebviewPreviewSource,
 };
+
+/**
+ * @typedef {{kind: "uri", src: string} | {kind: "blob", mimeType: string, base64: string}} WebviewPreviewSource
+ */

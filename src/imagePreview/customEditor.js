@@ -10,7 +10,7 @@
 
 const path = require("path");
 const vscode = require("vscode");
-const { buildPanelHtml, buildPreviewHtml } = require("./sidePreview");
+const { buildPanelHtml, buildPreviewHtml, renderWebviewPreviewSource } = require("./sidePreview");
 
 const SUPPORTED_METAFILE_EXTENSIONS = new Set([".emf", ".wmf"]);
 
@@ -61,14 +61,13 @@ class MetafilePreviewCustomEditorProvider {
     }
 
     try {
-      const documentLike = { uri: document.uri };
-      const dataUri = await this.imagePreviewRenderer.renderToDataUri(documentLike, imagePath, extension);
-      if (!dataUri) {
+      const previewSource = await renderWebviewPreviewSource(webviewPanel.webview, this.imagePreviewRenderer, document.uri, imagePath, extension);
+      if (!previewSource) {
         webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Pandoc Manuscript Tools output for details.</p>`);
         return;
       }
 
-      webviewPanel.webview.html = buildPreviewHtml(imagePath, extension, dataUri);
+      webviewPanel.webview.html = buildPreviewHtml(imagePath, extension, previewSource);
     } catch (error) {
       this.output.appendLine(`Metafile custom editor preview failed for ${imagePath}: ${formatError(error)}`);
       webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
