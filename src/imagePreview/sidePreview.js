@@ -178,10 +178,10 @@ function buildPreviewHtml(imagePath, extension, previewSource) {
         <div class="subtitle">${escapeHtml(extension.toUpperCase().slice(1))}</div>
       </div>
       <div class="toolbar" role="toolbar">
-        <button type="button" title="Zoom out" aria-label="Zoom out" data-zoom-action="out">−</button>
-        <button type="button" title="Zoom in" aria-label="Zoom in" data-zoom-action="in">+</button>
-        <button type="button" title="Actual size" aria-label="Actual size" data-zoom-action="actual">1:1</button>
-        <button type="button" title="Fit" aria-label="Fit" data-zoom-action="fit">□</button>
+        ${buildToolbarButton("out", "Zoom out", buildZoomOutIcon())}
+        ${buildToolbarButton("in", "Zoom in", buildZoomInIcon())}
+        ${buildToolbarButton("actual", "Actual size", buildActualSizeIcon())}
+        ${buildToolbarButton("fit", "Fit to window", buildFitIcon())}
         <span class="zoomValue" data-zoom-value>100%</span>
       </div>
     </header>
@@ -192,6 +192,86 @@ function buildPreviewHtml(imagePath, extension, previewSource) {
     </main>
     <footer>${escapeHtml(imagePath)}</footer>
   `, getPreviewScript());
+}
+
+/**
+ * Builds one icon-only toolbar button.
+ *
+ * @param {string} action Zoom action identifier.
+ * @param {string} label Accessible label and tooltip.
+ * @param {string} icon Inline SVG icon.
+ * @returns {string}
+ */
+function buildToolbarButton(action, label, icon) {
+  return `<button type="button" title="${escapeAttribute(label)}" aria-label="${escapeAttribute(label)}" data-zoom-action="${escapeAttribute(action)}">${icon}</button>`;
+}
+
+/**
+ * Builds a zoom-out icon.
+ *
+ * @returns {string}
+ */
+function buildZoomOutIcon() {
+  return buildIconSvg(`
+    <circle cx="10" cy="10" r="5.5"></circle>
+    <path d="M7.5 10h5"></path>
+    <path d="m14.5 14.5 4 4"></path>
+  `);
+}
+
+/**
+ * Builds a zoom-in icon.
+ *
+ * @returns {string}
+ */
+function buildZoomInIcon() {
+  return buildIconSvg(`
+    <circle cx="10" cy="10" r="5.5"></circle>
+    <path d="M10 7.5v5"></path>
+    <path d="M7.5 10h5"></path>
+    <path d="m14.5 14.5 4 4"></path>
+  `);
+}
+
+/**
+ * Builds an actual-size icon.
+ *
+ * @returns {string}
+ */
+function buildActualSizeIcon() {
+  return buildIconSvg(`
+    <path d="M6 6h12v12H6z"></path>
+    <path d="M9 10h1.5v5"></path>
+    <path d="M13.5 10h1.5v5"></path>
+  `);
+}
+
+/**
+ * Builds a fit-to-window icon.
+ *
+ * @returns {string}
+ */
+function buildFitIcon() {
+  return buildIconSvg(`
+    <path d="M4 9V4h5"></path>
+    <path d="M20 9V4h-5"></path>
+    <path d="M4 15v5h5"></path>
+    <path d="M20 15v5h-5"></path>
+    <path d="m9 9-4-4"></path>
+    <path d="m15 9 4-4"></path>
+    <path d="m9 15-4 4"></path>
+    <path d="m15 15 4 4"></path>
+  `);
+}
+
+/**
+ * Wraps icon paths in a common SVG shell.
+ *
+ * @param {string} body SVG child markup.
+ * @returns {string}
+ */
+function buildIconSvg(body) {
+  return `<svg class="toolbarIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
 /**
@@ -595,12 +675,15 @@ function buildPanelHtml(body, script = "") {
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 2px;
       flex: 0 0 auto;
     }
     button {
-      width: 26px;
-      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 26px;
       padding: 0;
       border: 1px solid var(--vscode-button-border, transparent);
       color: var(--vscode-button-secondaryForeground);
@@ -612,6 +695,20 @@ function buildPanelHtml(body, script = "") {
     }
     button:hover {
       background: var(--vscode-button-secondaryHoverBackground);
+    }
+    button:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+    }
+    .toolbarIcon {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
     }
     .zoomValue {
       min-width: 42px;
@@ -643,8 +740,8 @@ function buildPanelHtml(body, script = "") {
     }
     .svgPreview svg {
       display: block;
-      width: 100%;
-      height: 100%;
+      max-width: none;
+      max-height: none;
     }
     footer {
       margin-top: 12px;
@@ -681,6 +778,7 @@ function getPreviewScript() {
   let scale = 1;
   let fitMode = true;
   let blobUrl = "";
+  let pendingFitFrame = 0;
 
   /** Converts base64 converter output into bytes for fallback metafile previews. */
   function base64ToBytes(base64) {
@@ -718,18 +816,45 @@ function getPreviewScript() {
   function getFitScale() {
     const availableWidth = Math.max(1, viewport.clientWidth - 32);
     const availableHeight = Math.max(1, viewport.clientHeight - 32);
-    return clampScale(Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1));
+    return clampScale(Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight));
   }
 
   /** Applies the current scale to the preview image and stage. */
   function render() {
     const width = Math.max(1, Math.round(naturalWidth * scale));
     const height = Math.max(1, Math.round(naturalHeight * scale));
-    preview.style.width = width + "px";
-    preview.style.height = height + "px";
+
+    if (preview instanceof HTMLImageElement) {
+      preview.style.width = width + "px";
+      preview.style.height = height + "px";
+      preview.style.transform = "";
+    } else {
+      const inlineSvg = preview.querySelector("svg");
+      preview.style.width = width + "px";
+      preview.style.height = height + "px";
+      preview.style.overflow = "visible";
+      if (inlineSvg) {
+        inlineSvg.style.width = naturalWidth + "px";
+        inlineSvg.style.height = naturalHeight + "px";
+        inlineSvg.style.transformOrigin = "top left";
+        inlineSvg.style.transform = "scale(" + scale + ")";
+      }
+    }
+
     stage.style.width = Math.max(viewport.clientWidth, width + 32) + "px";
     stage.style.height = Math.max(viewport.clientHeight, height + 32) + "px";
     zoomValue.textContent = Math.round(scale * 100) + "%";
+  }
+
+  /** Defers fit until the Webview has reported stable viewport dimensions. */
+  function scheduleFit() {
+    if (pendingFitFrame) {
+      cancelAnimationFrame(pendingFitFrame);
+    }
+    pendingFitFrame = requestAnimationFrame(() => {
+      pendingFitFrame = 0;
+      setScale(getFitScale(), true);
+    });
   }
 
   /** Sets an absolute zoom scale. */
@@ -753,7 +878,7 @@ function getPreviewScript() {
       naturalWidth = Number(preview.getAttribute("data-natural-width")) || 1;
       naturalHeight = Number(preview.getAttribute("data-natural-height")) || 1;
     }
-    setScale(getFitScale(), true);
+    scheduleFit();
   }
 
   document.addEventListener("click", (event) => {
@@ -769,7 +894,7 @@ function getPreviewScript() {
     } else if (action === "actual") {
       setScale(1, false);
     } else if (action === "fit") {
-      setScale(getFitScale(), true);
+      scheduleFit();
     }
   });
 
@@ -783,12 +908,15 @@ function getPreviewScript() {
 
   window.addEventListener("resize", () => {
     if (fitMode) {
-      setScale(getFitScale(), true);
+      scheduleFit();
     } else {
       render();
     }
   });
   window.addEventListener("unload", () => {
+    if (pendingFitFrame) {
+      cancelAnimationFrame(pendingFitFrame);
+    }
     if (blobUrl) {
       URL.revokeObjectURL(blobUrl);
     }
