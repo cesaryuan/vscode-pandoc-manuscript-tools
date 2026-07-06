@@ -9,6 +9,7 @@ All notable changes to Pandoc Manuscript Tools are documented in this file.
 - Add hover previews for local SVG, EMF, and WMF image references in Markdown and MDX files.
 - Add a side-preview command and read-only metafile preview editor for SVG, EMF, and WMF files.
 - Support inline-SVG preview rendering for SVG assets, including local nested `<image href>` references, and keep WMF previews on the same inline-SVG display path.
+- Render WMF previews through the bundled libemf2svg WASM renderer instead of the older PNG wrapper path.
 - Support paragraph translation hovers inside standalone HTML comment blocks.
 - Highlight Pandoc `fenced_divs` blocks in Markdown editors with subtle nesting-aware whole-line backgrounds.
 - Highlight Pandoc bracketed spans such as `[Get out]{custom-style="Emphatically"}` with subtle inline backgrounds.

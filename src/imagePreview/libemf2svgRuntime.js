@@ -18,6 +18,33 @@ let modulePromise;
  * @returns {Promise<string | undefined>}
  */
 async function convertEmfToSvg(bytes, output) {
+  return convertMetafileToSvg(bytes, "EMF", output);
+}
+
+/**
+ * Converts one WMF byte buffer to SVG text through the bundled libemf2svg WASM module.
+ *
+ * WMF support was added after the first libemf2svg integration. Keeping this
+ * separate wrapper makes the format-specific wasm export explicit while sharing
+ * the same memory ownership path as EMF conversion.
+ *
+ * @param {Buffer | Uint8Array} bytes WMF file bytes.
+ * @param {{appendLine(message: string): void}} output Output channel.
+ * @returns {Promise<string | undefined>}
+ */
+async function convertWmfToSvg(bytes, output) {
+  return convertMetafileToSvg(bytes, "WMF", output);
+}
+
+/**
+ * Converts one metafile byte buffer to SVG text with the format-specific wasm export.
+ *
+ * @param {Buffer | Uint8Array} bytes Metafile bytes.
+ * @param {"EMF" | "WMF"} format Metafile format.
+ * @param {{appendLine(message: string): void}} output Output channel.
+ * @returns {Promise<string | undefined>}
+ */
+async function convertMetafileToSvg(bytes, format, output) {
   const module = await loadLibemf2svgModule(output);
   const inputPtr = module._malloc(bytes.byteLength);
   const outputPtrSlot = module._malloc(POINTER_SIZE);
@@ -29,21 +56,12 @@ async function convertEmfToSvg(bytes, output) {
     module.setValue(outputPtrSlot, 0, "*");
     module.setValue(outputLenSlot, 0, "i32");
 
-    const ok = module._emf2svg_wasm_convert(
-      inputPtr,
-      bytes.byteLength,
-      1,
-      1,
-      DEFAULT_MAX_WIDTH,
-      DEFAULT_MAX_HEIGHT,
-      outputPtrSlot,
-      outputLenSlot,
-    );
+    const ok = callMetafileConverter(module, format, inputPtr, bytes.byteLength, outputPtrSlot, outputLenSlot);
 
     svgPtr = module.getValue(outputPtrSlot, "*");
     const svgLength = module.getValue(outputLenSlot, "i32");
     if (!ok || !svgPtr || svgLength <= 0) {
-      output.appendLine("libemf2svg returned no SVG output for EMF image preview.");
+      output.appendLine(`libemf2svg returned no SVG output for ${format} image preview.`);
       return undefined;
     }
 
@@ -56,6 +74,42 @@ async function convertEmfToSvg(bytes, output) {
     module._free(outputPtrSlot);
     module._free(inputPtr);
   }
+}
+
+/**
+ * Calls the correct libemf2svg wasm export for the input metafile format.
+ *
+ * @param {any} module Loaded Emscripten module.
+ * @param {"EMF" | "WMF"} format Metafile format.
+ * @param {number} inputPtr Pointer to input bytes in wasm memory.
+ * @param {number} inputLength Input byte length.
+ * @param {number} outputPtrSlot Pointer slot receiving the SVG buffer pointer.
+ * @param {number} outputLenSlot Pointer slot receiving the SVG byte length.
+ * @returns {number} Native success flag.
+ */
+function callMetafileConverter(module, format, inputPtr, inputLength, outputPtrSlot, outputLenSlot) {
+  if (format === "WMF") {
+    return module._wmf2svg_wasm_convert(
+      inputPtr,
+      inputLength,
+      1,
+      DEFAULT_MAX_WIDTH,
+      DEFAULT_MAX_HEIGHT,
+      outputPtrSlot,
+      outputLenSlot,
+    );
+  }
+
+  return module._emf2svg_wasm_convert(
+    inputPtr,
+    inputLength,
+    1,
+    1,
+    DEFAULT_MAX_WIDTH,
+    DEFAULT_MAX_HEIGHT,
+    outputPtrSlot,
+    outputLenSlot,
+  );
 }
 
 /**
@@ -104,4 +158,5 @@ function resolveBundledWasmPath() {
 
 module.exports = {
   convertEmfToSvg,
+  convertWmfToSvg,
 };
