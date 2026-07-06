@@ -65,7 +65,7 @@ async function convertMetafileToSvg(bytes, format, output) {
       return undefined;
     }
 
-    return Buffer.from(module.HEAPU8.subarray(svgPtr, svgPtr + svgLength)).toString("utf8");
+    return addMissingSvgViewBox(Buffer.from(module.HEAPU8.subarray(svgPtr, svgPtr + svgLength)).toString("utf8"), format, output);
   } finally {
     if (svgPtr) {
       module._free(svgPtr);
@@ -74,6 +74,77 @@ async function convertMetafileToSvg(bytes, format, output) {
     module._free(outputPtrSlot);
     module._free(inputPtr);
   }
+}
+
+/**
+ * Adds a root viewBox to converted SVGs that only declare width and height.
+ *
+ * This fixes converted EMF/WMF previews whose contents did not scale as a
+ * single image in webviews because the generated SVG had viewport dimensions
+ * but no coordinate-system viewBox.
+ *
+ * @param {string} svg Converted SVG text.
+ * @param {"EMF" | "WMF"} format Metafile format used for logging.
+ * @param {{appendLine(message: string): void}} output Output channel.
+ * @returns {string}
+ */
+function addMissingSvgViewBox(svg, format, output) {
+  const openTag = svg.match(/<svg\b[^>]*>/i);
+  if (!openTag || /\bviewBox\s*=/i.test(openTag[0])) {
+    return svg;
+  }
+
+  const width = parseSvgLength(readSvgAttribute(openTag[0], "width"));
+  const height = parseSvgLength(readSvgAttribute(openTag[0], "height"));
+  if (!width || !height) {
+    output.appendLine(`libemf2svg ${format} output has no viewBox and no usable width/height for preview scaling.`);
+    return svg;
+  }
+
+  const replacement = openTag[0].replace(/>$/, ` viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}">`);
+  return `${svg.slice(0, openTag.index)}${replacement}${svg.slice((openTag.index || 0) + openTag[0].length)}`;
+}
+
+/**
+ * Reads one quoted attribute from an SVG start tag.
+ *
+ * @param {string} tag SVG start tag.
+ * @param {string} name Attribute name.
+ * @returns {string | undefined}
+ */
+function readSvgAttribute(tag, name) {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"));
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Parses simple SVG lengths that libemf2svg emits in user units or px.
+ *
+ * @param {string | undefined} value Raw SVG length.
+ * @returns {number | undefined}
+ */
+function parseSvgLength(value) {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(?:px)?$/i);
+  if (!match) {
+    return undefined;
+  }
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Formats viewBox numbers without unnecessary trailing zeroes.
+ *
+ * @param {number} value Numeric SVG coordinate.
+ * @returns {string}
+ */
+function formatSvgNumber(value) {
+  return Number(value.toFixed(4)).toString();
 }
 
 /**

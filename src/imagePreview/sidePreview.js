@@ -807,8 +807,11 @@ function getPreviewScript() {
     const width = Math.max(1, Math.round(naturalWidth * scale));
     const height = Math.max(1, Math.round(naturalHeight * scale));
 
-    preview.style.width = width + "px";
-    preview.style.height = height + "px";
+    preview.style.width = naturalWidth + "px";
+    preview.style.height = naturalHeight + "px";
+    // VS Code Webviews run on Chromium; zoom keeps layout, SVG filters, and
+    // frame shadows scaling together instead of resizing only the viewport.
+    preview.style.zoom = String(scale);
 
     stage.style.width = Math.max(viewport.clientWidth, width + 32) + "px";
     stage.style.height = Math.max(viewport.clientHeight, height + 32) + "px";
