@@ -112,11 +112,11 @@ The single image below uses a real local file from the extension repository so M
 
 The next two images exercise the SVG and EMF hover preview paths with small local assets from the extension repository.
 
-![SVG document icon hover preview fixture.](../assets/document-icon.svg){#fig:svg-preview-fixture width=20%}
+![SVG document icon hover preview fixture.](assets/document-icon.svg){#fig:svg-preview-fixture width=20%}
 
 ![SVG hover preview fixture with a relative image href inside the SVG.](assets/svg-with-relative-image.svg){#fig:svg-relative-image-fixture width=20%}
 
-![EMF document icon hover preview fixture.](../assets/document-icon.emf){#fig:emf-preview-fixture width=20%}
+![EMF document icon hover preview fixture.](assets/document-icon.emf){#fig:emf-preview-fixture width=20%}
 
 The HTML div below checks parent figure labels and nested subfigure labels. In the Outline, @fig:subfigure-a and @fig:subfigure-b should be children of @fig:multi-panel.
 
