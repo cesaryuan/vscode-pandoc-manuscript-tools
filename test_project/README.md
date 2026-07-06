@@ -10,10 +10,11 @@ Use these targets after pressing F5:
 2. Run Find All References on `{#eq:objective}` or any `@eq:objective` reference.
 3. Hover over @eq:objective, @tbl:metrics, image labels, table labels, and section labels.
 4. Hover inside the display equation in @eq:objective and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
-5. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
-6. Type `@` in the completion sandbox below and confirm labels from this document appear.
-7. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
-8. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
+5. Hover over the SVG and EMF image fixtures in @fig:svg-preview-fixture and @fig:emf-preview-fixture.
+6. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
+7. Type `@` in the completion sandbox below and confirm labels from this document appear.
+8. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
+9. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
 
 Completion sandbox:
 
@@ -108,6 +109,12 @@ The table below intentionally has a pipe-table shape suitable for paragraph tran
 The single image below uses a real local file from the extension repository so Markdown preview can render it while the parser sees `{#fig:single-panel}`.
 
 ![Extension icon used as a single-panel figure fixture.](../assets/icon.png){#fig:single-panel width=30%}
+
+The next two images exercise the SVG and EMF hover preview paths with small local assets from the extension repository.
+
+![SVG document icon hover preview fixture.](../assets/document-icon.svg){#fig:svg-preview-fixture width=20%}
+
+![EMF document icon hover preview fixture.](../assets/document-icon.emf){#fig:emf-preview-fixture width=20%}
 
 The HTML div below checks parent figure labels and nested subfigure labels. In the Outline, @fig:subfigure-a and @fig:subfigure-b should be children of @fig:multi-panel.
 

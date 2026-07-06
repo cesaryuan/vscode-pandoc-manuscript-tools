@@ -82,11 +82,15 @@ class PandocHoverProvider {
    * @param {PandocWorkspaceIndex} index Workspace index.
    * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
    * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
+   * @param {ImagePreviewRenderer} imagePreviewRenderer SVG/EMF/WMF image preview renderer.
+   * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
    */
-  constructor(index, mathRenderer, paragraphTranslator) {
+  constructor(index, mathRenderer, paragraphTranslator, imagePreviewRenderer, output) {
     this.index = index;
     this.mathRenderer = mathRenderer;
     this.paragraphTranslator = paragraphTranslator;
+    this.imagePreviewRenderer = imagePreviewRenderer;
+    this.output = output;
   }
 
   /**
@@ -97,10 +101,26 @@ class PandocHoverProvider {
    * @returns {Promise<vscode.Hover | undefined>}
    */
   async provideHover(document, position) {
+    try {
+      return await this.provideHoverUnchecked(document, position);
+    } catch (error) {
+      this.output.appendLine(`Hover provider failed at ${document.uri.toString()}:${position.line + 1}:${position.character + 1}: ${formatError(error)}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Provides hover information after the public wrapper has installed logging.
+   *
+   * @param {vscode.TextDocument} document Markdown document.
+   * @param {vscode.Position} position Cursor position.
+   * @returns {Promise<vscode.Hover | undefined>}
+   */
+  async provideHoverUnchecked(document, position) {
     const parsed = this.index.getParsedDocument(document);
     const plainPosition = toPlainPosition(position);
     if (supportsPandocTextFeatures(document)) {
-      const token = findTokenAtDocumentPosition(this.index, document, position);
+      const token = getTokenAtDocumentPosition(this.index, document, position);
       if (token) {
         const labeledMathBlock = findMathBlockForEquationLabelHover(parsed, token, plainPosition);
         if (labeledMathBlock) {
@@ -117,6 +137,11 @@ class PandocHoverProvider {
         // Math-block hovers should shade the whole display equation; label hovers
         // are handled above so `{#eq:...}` still keeps its tighter range.
         return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
+      }
+
+      const imageHover = await this.provideImageHover(document, position);
+      if (imageHover) {
+        return imageHover;
       }
 
       const paragraphHover = findParagraphHover(document, parsed, position);
@@ -140,6 +165,35 @@ class PandocHoverProvider {
 
     return undefined;
   }
+
+  /**
+   * Provides image hovers without allowing image-preview failures to hide other hovers.
+   *
+   * The image preview path is newer and touches local files plus optional EMF
+   * rasterization, so it is isolated from the older math and translation hovers.
+   *
+   * @param {vscode.TextDocument} document Markdown document.
+   * @param {vscode.Position} position Cursor position.
+   * @returns {Promise<vscode.Hover | undefined>}
+   */
+  async provideImageHover(document, position) {
+    try {
+      return await this.imagePreviewRenderer.provideHover(document, position);
+    } catch (error) {
+      this.output.appendLine(`Image hover preview failed at ${document.uri.toString()}:${position.line + 1}:${position.character + 1}: ${formatError(error)}`);
+      return undefined;
+    }
+  }
+}
+
+/**
+ * Formats an unknown hover error for the output channel.
+ *
+ * @param {unknown} error Error-like value.
+ * @returns {string}
+ */
+function formatError(error) {
+  return error instanceof Error ? error.stack || error.message : String(error);
 }
 
 /**

@@ -7,6 +7,7 @@ const { PandocBuildRunner } = require("./docxBuild");
 const { FencedDivHighlighter } = require("./fencedDivHighlighter");
 const { MathJaxRenderer } = require("./mathJaxRenderer");
 const { ParagraphTranslator } = require("./paragraphTranslator");
+const { ImagePreviewRenderer } = require("./imagePreview");
 const { getConfiguration } = require("./configuration");
 const { isPandocDocument } = require("./vscodeUtils");
 const {
@@ -30,6 +31,7 @@ function activate(context) {
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
   const paragraphTranslator = new ParagraphTranslator(output);
+  const imagePreviewRenderer = new ImagePreviewRenderer(output);
   const buildRunner = new PandocBuildRunner(output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
 
@@ -41,10 +43,11 @@ function activate(context) {
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, imagePreviewRenderer, output)));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
+  context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
