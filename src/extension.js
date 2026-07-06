@@ -14,6 +14,7 @@ const {
   PandocDefinitionProvider,
   PandocReferenceProvider,
   PandocHoverProvider,
+  ImagePreviewHoverProvider,
   PandocDocumentSymbolProvider,
   PandocCompletionProvider,
   updateDiagnosticsForOpenDocuments,
@@ -43,7 +44,8 @@ function activate(context) {
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, imagePreviewRenderer, output)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, output)));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });

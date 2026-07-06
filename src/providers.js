@@ -82,14 +82,12 @@ class PandocHoverProvider {
    * @param {PandocWorkspaceIndex} index Workspace index.
    * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
    * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
-   * @param {ImagePreviewRenderer} imagePreviewRenderer SVG/EMF/WMF image preview renderer.
    * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
    */
-  constructor(index, mathRenderer, paragraphTranslator, imagePreviewRenderer, output) {
+  constructor(index, mathRenderer, paragraphTranslator, output) {
     this.index = index;
     this.mathRenderer = mathRenderer;
     this.paragraphTranslator = paragraphTranslator;
-    this.imagePreviewRenderer = imagePreviewRenderer;
     this.output = output;
   }
 
@@ -139,11 +137,6 @@ class PandocHoverProvider {
         return new vscode.Hover(await buildMathHover(mathBlock, this.index, document, this.mathRenderer), toRange(mathBlock.range));
       }
 
-      const imageHover = await this.provideImageHover(document, position);
-      if (imageHover) {
-        return imageHover;
-      }
-
       const paragraphHover = findParagraphHover(document, parsed, position);
       if (paragraphHover) {
         const paragraphMarkdown = await buildParagraphHover(paragraphHover, this.mathRenderer, this.paragraphTranslator);
@@ -165,6 +158,22 @@ class PandocHoverProvider {
 
     return undefined;
   }
+}
+
+class ImagePreviewHoverProvider {
+  /**
+   * Creates a hover provider for standalone image previews.
+   *
+   * Registering this separately lets VS Code show image previews alongside the
+   * paragraph translation hover instead of forcing one branch to short-circuit.
+   *
+   * @param {ImagePreviewRenderer} imagePreviewRenderer SVG/EMF/WMF image preview renderer.
+   * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
+   */
+  constructor(imagePreviewRenderer, output) {
+    this.imagePreviewRenderer = imagePreviewRenderer;
+    this.output = output;
+  }
 
   /**
    * Provides image hovers without allowing image-preview failures to hide other hovers.
@@ -183,6 +192,17 @@ class PandocHoverProvider {
       this.output.appendLine(`Image hover preview failed at ${document.uri.toString()}:${position.line + 1}:${position.character + 1}: ${formatError(error)}`);
       return undefined;
     }
+  }
+
+  /**
+   * Provides image hovers through VS Code's HoverProvider API.
+   *
+   * @param {vscode.TextDocument} document Text document.
+   * @param {vscode.Position} position Hover position.
+   * @returns {Promise<vscode.Hover | undefined>}
+   */
+  async provideHover(document, position) {
+    return this.provideImageHover(document, position);
   }
 }
 
@@ -1541,6 +1561,7 @@ module.exports = {
   PandocDefinitionProvider,
   PandocReferenceProvider,
   PandocHoverProvider,
+  ImagePreviewHoverProvider,
   PandocDocumentSymbolProvider,
   PandocCompletionProvider,
   updateDiagnosticsForOpenDocuments,
