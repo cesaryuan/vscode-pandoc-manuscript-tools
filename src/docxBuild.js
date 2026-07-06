@@ -9,8 +9,7 @@ const vscode = require("vscode");
 const { CAN_BUILD_DOCX_CONTEXT } = require("./constants");
 const { isBuildableMarkdownDocument } = require("./vscodeUtils");
 
-const BUILD_SCRIPT_CANDIDATES = ["scripts/build.py", "scripts/build"];
-const POSTPROCESS_FEATURE_CANDIDATES = ["scripts/postprocess_docx.py", "scripts/postprocess"];
+const BUILD_SCRIPT_PATH = "scripts/build.py";
 
 class PandocBuildRunner {
   /**
@@ -171,48 +170,18 @@ async function findPandocManuscriptProject(markdownUri) {
 /**
  * Returns manuscript project metadata when a directory has the required layout.
  *
- * These features intentionally match the local template's DOCX path: a build
- * script, the Python post-processing pipeline, and Pandoc DOCX defaults.
+ * `style.yml` marks the main manuscript directory in current templates. The
+ * older Pandoc defaults path is no longer required for showing the DOCX button.
  *
  * @param {vscode.Uri} rootUri Candidate project root.
  * @returns {Promise<PandocManuscriptProject | undefined>}
  */
 async function readPandocManuscriptProject(rootUri) {
-  const buildScript = await firstExistingRelativePath(rootUri, BUILD_SCRIPT_CANDIDATES);
-  if (!buildScript) {
+  if (!(await pathExists(vscode.Uri.joinPath(rootUri, "style.yml")))) {
     return undefined;
   }
 
-  if (!(await firstExistingRelativePath(rootUri, POSTPROCESS_FEATURE_CANDIDATES))) {
-    return undefined;
-  }
-
-  if (!(await pathExists(vscode.Uri.joinPath(rootUri, "pandoc")))) {
-    return undefined;
-  }
-
-  if (!(await pathExists(vscode.Uri.joinPath(rootUri, "pandoc", "pandoc-docx.yml")))) {
-    return undefined;
-  }
-
-  return { rootUri, buildScript };
-}
-
-/**
- * Returns the first existing project-relative path from a candidate list.
- *
- * @param {vscode.Uri} rootUri Candidate project root.
- * @param {string[]} relativePaths Project-relative path candidates.
- * @returns {Promise<string | undefined>}
- */
-async function firstExistingRelativePath(rootUri, relativePaths) {
-  for (const relativePath of relativePaths) {
-    const parts = relativePath.split("/");
-    if (await pathExists(vscode.Uri.joinPath(rootUri, ...parts))) {
-      return relativePath;
-    }
-  }
-  return undefined;
+  return { rootUri, buildScript: BUILD_SCRIPT_PATH };
 }
 
 /**
