@@ -1,13 +1,14 @@
 "use strict";
 
 const vscode = require("vscode");
-const { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND } = require("./constants");
+const { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND } = require("./constants");
 const { PandocWorkspaceIndex } = require("./workspaceIndex");
 const { PandocBuildRunner } = require("./docxBuild");
 const { FencedDivHighlighter } = require("./fencedDivHighlighter");
 const { MathJaxRenderer } = require("./mathJaxRenderer");
 const { ParagraphTranslator } = require("./paragraphTranslator");
 const { ImagePreviewRenderer } = require("./imagePreview");
+const { ImagePreviewSidePanel } = require("./imagePreview/sidePreview");
 const { getConfiguration } = require("./configuration");
 const { isPandocDocument } = require("./vscodeUtils");
 const {
@@ -33,6 +34,7 @@ function activate(context) {
   const mathRenderer = new MathJaxRenderer(output);
   const paragraphTranslator = new ParagraphTranslator(output);
   const imagePreviewRenderer = new ImagePreviewRenderer(output);
+  const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
 
@@ -50,6 +52,7 @@ function activate(context) {
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
+  context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
@@ -60,6 +63,10 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand(BUILD_DOCX_COMMAND, async () => {
     await buildRunner.buildActiveMarkdownDocx();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
+    await imagePreviewSidePanel.open(uri);
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
@@ -106,6 +113,7 @@ function activate(context) {
       await index.refreshWorkspace();
       updateDiagnosticsForOpenDocuments(index, diagnostics);
     }
+    await imagePreviewSidePanel.refreshIfOpen(document);
   }));
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
@@ -117,7 +125,6 @@ function activate(context) {
  * Deactivates the extension.
  */
 function deactivate() {}
-
 
 module.exports = {
   activate,
