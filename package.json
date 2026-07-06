@@ -37,7 +37,8 @@
     "onLanguage:latex",
     "onCommand:pandocManuscriptTools.rebuildIndex",
     "onCommand:pandocManuscriptTools.buildDocxAndOpen",
-    "onCommand:pandocManuscriptTools.openImagePreviewToSide"
+    "onCommand:pandocManuscriptTools.openImagePreviewToSide",
+    "onCustomEditor:pandocManuscriptTools.metafilePreviewEditor"
   ],
   "main": "./dist/extension.js",
   "dependencies": {
@@ -86,6 +87,21 @@
         }
       ]
     },
+    "customEditors": [
+      {
+        "viewType": "pandocManuscriptTools.metafilePreviewEditor",
+        "displayName": "Metafile Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.emf"
+          },
+          {
+            "filenamePattern": "*.wmf"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "configuration": {
       "title": "Pandoc Manuscript Tools",
       "properties": {

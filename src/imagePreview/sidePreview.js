@@ -276,4 +276,6 @@ function formatError(error) {
 
 module.exports = {
   ImagePreviewSidePanel,
+  buildPanelHtml,
+  buildPreviewHtml,
 };
