@@ -119,7 +119,7 @@ class ImagePreviewSidePanel {
       "pandocManuscriptTools.imagePreview",
       `Preview ${path.basename(imageUri.fsPath)}`,
       vscode.ViewColumn.Beside,
-      { enableScripts: false },
+      { enableScripts: true },
     );
     panel.onDidDispose(() => {
       this.panels.delete(key);
@@ -167,23 +167,35 @@ function buildPreviewHtml(imagePath, extension, dataUri) {
   const label = path.basename(imagePath);
   return buildPanelHtml(`
     <header>
-      <div class="title">${escapeHtml(label)}</div>
-      <div class="subtitle">${escapeHtml(extension.toUpperCase().slice(1))}</div>
+      <div class="heading">
+        <div class="title">${escapeHtml(label)}</div>
+        <div class="subtitle">${escapeHtml(extension.toUpperCase().slice(1))}</div>
+      </div>
+      <div class="toolbar" role="toolbar">
+        <button type="button" title="Zoom out" aria-label="Zoom out" data-zoom-action="out">−</button>
+        <button type="button" title="Zoom in" aria-label="Zoom in" data-zoom-action="in">+</button>
+        <button type="button" title="Actual size" aria-label="Actual size" data-zoom-action="actual">1:1</button>
+        <button type="button" title="Fit" aria-label="Fit" data-zoom-action="fit">□</button>
+        <span class="zoomValue" data-zoom-value>100%</span>
+      </div>
     </header>
-    <main>
-      <img src="${escapeAttribute(dataUri)}" alt="${escapeAttribute(label)}">
+    <main class="viewport" data-preview-viewport>
+      <div class="stage" data-preview-stage>
+        <img data-preview-image src="${escapeAttribute(dataUri)}" alt="${escapeAttribute(label)}">
+      </div>
     </main>
     <footer>${escapeHtml(imagePath)}</footer>
-  `);
+  `, getPreviewScript());
 }
 
 /**
  * Builds the complete WebviewPanel HTML document.
  *
  * @param {string} body Body HTML.
+ * @param {string=} script Optional inline script.
  * @returns {string}
  */
-function buildPanelHtml(body) {
+function buildPanelHtml(body, script = "") {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,9 +210,18 @@ function buildPanelHtml(body) {
       background: var(--vscode-editor-background);
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size);
+      height: 100vh;
+      overflow: hidden;
     }
     header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
       margin-bottom: 12px;
+    }
+    .heading {
+      min-width: 0;
     }
     .title {
       font-weight: 600;
@@ -215,19 +236,53 @@ function buildPanelHtml(body) {
       margin-top: 2px;
       font-size: 0.9em;
     }
-    main {
+    .toolbar {
       display: flex;
       align-items: center;
-      justify-content: center;
-      min-height: calc(100vh - 120px);
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    button {
+      width: 26px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid var(--vscode-button-border, transparent);
+      color: var(--vscode-button-secondaryForeground);
+      background: var(--vscode-button-secondaryBackground);
+      border-radius: 3px;
+      font: inherit;
+      line-height: 1;
+      cursor: pointer;
+    }
+    button:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+    .zoomValue {
+      min-width: 42px;
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.85em;
+      text-align: right;
+    }
+    main {
+      height: calc(100vh - 118px);
+      overflow: auto;
       border: 1px solid var(--vscode-panel-border, transparent);
       background: var(--vscode-editor-background);
     }
+    .stage {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 100%;
+      min-height: 100%;
+      padding: 16px;
+    }
     img {
       display: block;
-      max-width: 100%;
-      max-height: calc(100vh - 140px);
-      object-fit: contain;
+      flex: 0 0 auto;
+      max-width: none;
+      max-height: none;
     }
     footer {
       margin-top: 12px;
@@ -236,8 +291,116 @@ function buildPanelHtml(body) {
     }
   </style>
 </head>
-<body>${body}</body>
+<body>${body}${script}</body>
 </html>`;
+}
+
+/**
+ * Builds the image zoom script used by preview webviews.
+ *
+ * @returns {string}
+ */
+function getPreviewScript() {
+  return `<script>
+(() => {
+  const viewport = document.querySelector("[data-preview-viewport]");
+  const stage = document.querySelector("[data-preview-stage]");
+  const image = document.querySelector("[data-preview-image]");
+  const zoomValue = document.querySelector("[data-zoom-value]");
+  if (!viewport || !stage || !image || !zoomValue) {
+    return;
+  }
+
+  const minScale = 0.1;
+  const maxScale = 8;
+  const zoomStep = 1.2;
+  let naturalWidth = 1;
+  let naturalHeight = 1;
+  let scale = 1;
+  let fitMode = true;
+
+  /** Clamps a number to the allowed zoom range. */
+  function clampScale(value) {
+    return Math.min(maxScale, Math.max(minScale, value));
+  }
+
+  /** Computes the scale that fits the image inside the visible viewport. */
+  function getFitScale() {
+    const availableWidth = Math.max(1, viewport.clientWidth - 32);
+    const availableHeight = Math.max(1, viewport.clientHeight - 32);
+    return clampScale(Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1));
+  }
+
+  /** Applies the current scale to the preview image and stage. */
+  function render() {
+    const width = Math.max(1, Math.round(naturalWidth * scale));
+    const height = Math.max(1, Math.round(naturalHeight * scale));
+    image.style.width = width + "px";
+    image.style.height = height + "px";
+    stage.style.width = Math.max(viewport.clientWidth, width + 32) + "px";
+    stage.style.height = Math.max(viewport.clientHeight, height + 32) + "px";
+    zoomValue.textContent = Math.round(scale * 100) + "%";
+  }
+
+  /** Sets an absolute zoom scale. */
+  function setScale(value, nextFitMode) {
+    scale = clampScale(value);
+    fitMode = nextFitMode;
+    render();
+  }
+
+  /** Changes the current zoom by a multiplicative factor. */
+  function zoomBy(factor) {
+    setScale(scale * factor, false);
+  }
+
+  /** Sets natural image dimensions after the image has loaded. */
+  function refreshNaturalSize() {
+    naturalWidth = image.naturalWidth || 1;
+    naturalHeight = image.naturalHeight || 1;
+    setScale(getFitScale(), true);
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-zoom-action]");
+    if (!button) {
+      return;
+    }
+    const action = button.getAttribute("data-zoom-action");
+    if (action === "in") {
+      zoomBy(zoomStep);
+    } else if (action === "out") {
+      zoomBy(1 / zoomStep);
+    } else if (action === "actual") {
+      setScale(1, false);
+    } else if (action === "fit") {
+      setScale(getFitScale(), true);
+    }
+  });
+
+  viewport.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey) {
+      return;
+    }
+    event.preventDefault();
+    zoomBy(event.deltaY < 0 ? zoomStep : 1 / zoomStep);
+  }, { passive: false });
+
+  window.addEventListener("resize", () => {
+    if (fitMode) {
+      setScale(getFitScale(), true);
+    } else {
+      render();
+    }
+  });
+
+  if (image.complete) {
+    refreshNaturalSize();
+  } else {
+    image.addEventListener("load", refreshNaturalSize, { once: true });
+  }
+})();
+</script>`;
 }
 
 /**

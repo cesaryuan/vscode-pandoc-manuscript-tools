@@ -51,7 +51,7 @@ class MetafilePreviewCustomEditorProvider {
     const label = path.basename(imagePath);
 
     webviewPanel.webview.options = {
-      enableScripts: false,
+      enableScripts: true,
     };
     webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
 
