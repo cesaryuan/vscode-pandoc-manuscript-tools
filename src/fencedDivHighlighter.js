@@ -2,7 +2,7 @@
 
 const vscode = require("vscode");
 const { getConfiguration } = require("./configuration");
-const { isMarkdownDocument } = require("./vscodeUtils");
+const { isPandocDocument } = require("./vscodeUtils");
 
 const DECORATION_COLORS = [
   {
@@ -65,7 +65,7 @@ class FencedDivHighlighter {
       return;
     }
 
-    if (!isMarkdownDocument(editor.document)) {
+    if (!isPandocDocument(editor.document)) {
       this.clearEditor(editor);
       return;
     }

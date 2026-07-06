@@ -1,0 +1,7 @@
+<svg width="220" height="150" viewBox="0 0 220 150" xmlns="http://www.w3.org/2000/svg">
+  <rect width="220" height="150" rx="10" fill="#f8fafc"/>
+  <rect x="12" y="12" width="196" height="126" rx="8" fill="#ffffff" stroke="#334155" stroke-width="3"/>
+  <image href="../../assets/icon.png" x="30" y="24" width="84" height="84" preserveAspectRatio="xMidYMid meet"/>
+  <text x="126" y="60" font-family="Arial, sans-serif" font-size="18" fill="#1f2937">relative</text>
+  <text x="126" y="84" font-family="Arial, sans-serif" font-size="18" fill="#1f2937">image href</text>
+</svg>

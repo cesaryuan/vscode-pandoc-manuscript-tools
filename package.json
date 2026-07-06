@@ -24,7 +24,7 @@
   ],
   "icon": "assets/icon.png",
   "scripts": {
-    "bundle": "node scripts/copy-mathjax-fonts.js && esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
+    "bundle": "node scripts/copy-mathjax-fonts.js && esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --external:@napi-rs/canvas --outfile=dist/extension.js --minify --legal-comments=none",
     "check:bundle": "node --check dist/extension.js",
     "package:vsix": "npm run bundle && npm run check:bundle && vsce package",
     "publish:marketplace": "npm run bundle && npm run check:bundle && vsce publish",
@@ -36,11 +36,15 @@
     "onLanguage:mdx",
     "onLanguage:latex",
     "onCommand:pandocManuscriptTools.rebuildIndex",
-    "onCommand:pandocManuscriptTools.buildDocxAndOpen"
+    "onCommand:pandocManuscriptTools.buildDocxAndOpen",
+    "onCommand:pandocManuscriptTools.openImagePreviewToSide",
+    "onCustomEditor:pandocManuscriptTools.metafilePreviewEditor"
   ],
   "main": "./dist/extension.js",
   "dependencies": {
-    "@mathjax/src": "^4.0.0"
+    "@mathjax/src": "^4.0.0",
+    "@napi-rs/canvas": "^1.0.2",
+    "emf-converter": "^1.5.0"
   },
   "contributes": {
     "commands": [
@@ -52,6 +56,11 @@
         "command": "pandocManuscriptTools.buildDocxAndOpen",
         "title": "Pandoc Manuscript Tools: Build DOCX and Open in Word",
         "icon": "$(play)"
+      },
+      {
+        "command": "pandocManuscriptTools.openImagePreviewToSide",
+        "title": "Pandoc Manuscript Tools: Open Image Preview to the Side",
+        "icon": "$(open-preview)"
       }
     ],
     "menus": {
@@ -60,15 +69,39 @@
           "command": "pandocManuscriptTools.buildDocxAndOpen",
           "when": "resourceLangId == markdown && pandocManuscriptTools.canBuildDocx",
           "group": "navigation"
+        },
+        {
+          "command": "pandocManuscriptTools.openImagePreviewToSide",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(svg|emf|wmf)$/i",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
         {
           "command": "pandocManuscriptTools.buildDocxAndOpen",
           "when": "pandocManuscriptTools.canBuildDocx"
+        },
+        {
+          "command": "pandocManuscriptTools.openImagePreviewToSide",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(svg|emf|wmf)$/i"
         }
       ]
     },
+    "customEditors": [
+      {
+        "viewType": "pandocManuscriptTools.metafilePreviewEditor",
+        "displayName": "Metafile Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.emf"
+          },
+          {
+            "filenamePattern": "*.wmf"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "configuration": {
       "title": "Pandoc Manuscript Tools",
       "properties": {

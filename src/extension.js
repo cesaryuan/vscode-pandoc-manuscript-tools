@@ -1,18 +1,22 @@
 "use strict";
 
 const vscode = require("vscode");
-const { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND } = require("./constants");
+const { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE } = require("./constants");
 const { PandocWorkspaceIndex } = require("./workspaceIndex");
 const { PandocBuildRunner } = require("./docxBuild");
 const { FencedDivHighlighter } = require("./fencedDivHighlighter");
 const { MathJaxRenderer } = require("./mathJaxRenderer");
 const { ParagraphTranslator } = require("./paragraphTranslator");
+const { ImagePreviewRenderer } = require("./imagePreview");
+const { ImagePreviewSidePanel } = require("./imagePreview/sidePreview");
+const { MetafilePreviewCustomEditorProvider } = require("./imagePreview/customEditor");
 const { getConfiguration } = require("./configuration");
 const { isPandocDocument } = require("./vscodeUtils");
 const {
   PandocDefinitionProvider,
   PandocReferenceProvider,
   PandocHoverProvider,
+  ImagePreviewHoverProvider,
   PandocDocumentSymbolProvider,
   PandocCompletionProvider,
   updateDiagnosticsForOpenDocuments,
@@ -30,6 +34,9 @@ function activate(context) {
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
   const paragraphTranslator = new ParagraphTranslator(output);
+  const imagePreviewRenderer = new ImagePreviewRenderer(output);
+  const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
+  const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
 
@@ -41,10 +48,18 @@ function activate(context) {
   context.subscriptions.push(output, diagnostics);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, output)));
+  context.subscriptions.push(vscode.window.registerCustomEditorProvider(METAFILE_PREVIEW_EDITOR_VIEW_TYPE, metafilePreviewEditorProvider, {
+    webviewOptions: {
+      retainContextWhenHidden: true,
+    },
+  }));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
+  context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
+  context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
@@ -55,6 +70,10 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand(BUILD_DOCX_COMMAND, async () => {
     await buildRunner.buildActiveMarkdownDocx();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
+    await imagePreviewSidePanel.open(uri);
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
@@ -101,6 +120,7 @@ function activate(context) {
       await index.refreshWorkspace();
       updateDiagnosticsForOpenDocuments(index, diagnostics);
     }
+    await imagePreviewSidePanel.refreshIfOpen(document);
   }));
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
@@ -112,7 +132,6 @@ function activate(context) {
  * Deactivates the extension.
  */
 function deactivate() {}
-
 
 module.exports = {
   activate,
