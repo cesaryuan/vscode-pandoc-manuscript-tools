@@ -2,9 +2,14 @@
 
 const fs = require("fs/promises");
 const path = require("path");
+const { createJimp } = require("@jimp/core");
+const jpeg = require("@jimp/js-jpeg").default;
+const png = require("@jimp/js-png").default;
+const resize = require("@jimp/plugin-resize");
 const { resolveLocalPath, isDataUri, isRemoteUrl } = require("./pathResolver");
 
 const MAX_NESTED_RASTER_DIMENSION = 100;
+const NESTED_RASTER_OUTPUT_MIME_TYPE = "image/png";
 
 const MIME_TYPES = new Map([
   [".avif", "image/avif"],
@@ -18,12 +23,14 @@ const MIME_TYPES = new Map([
 ]);
 
 const RESIZABLE_RASTER_MIME_TYPES = new Set([
-  "image/avif",
-  "image/bmp",
   "image/jpeg",
   "image/png",
-  "image/webp",
 ]);
+
+const NestedRasterJimp = createJimp({
+  plugins: [resize.methods],
+  formats: [png, jpeg],
+});
 
 /**
  * Creates a hover-safe SVG data URI with local `<image href>` assets inlined.
@@ -110,10 +117,11 @@ async function readImageAsDataUri(imagePath, output) {
 }
 
 /**
- * Shrinks large nested raster images before embedding them into hover SVG data URIs.
+ * Shrinks nested PNG/JPEG images before embedding them into hover SVG data URIs.
  *
- * This special case keeps VS Code hovers from falling back to plain text when a
- * small SVG references a large local PNG/JPEG that would produce a huge data URI.
+ * This special case keeps SVG hovers compact without shipping the previous
+ * native canvas runtime. Non-PNG/JPEG raster formats are left unchanged because
+ * this lightweight Jimp instance only includes the formats this extension needs.
  *
  * @param {Buffer} imageBytes Source image bytes.
  * @param {string} mimeType Source MIME type.
@@ -127,7 +135,7 @@ async function prepareNestedImageForDataUri(imageBytes, mimeType, imagePath, out
   }
 
   try {
-    return await resizeNestedRasterImage(imageBytes, imagePath);
+    return await resizeNestedRasterImage(imageBytes, mimeType);
   } catch (error) {
     output.appendLine(`SVG image preview kept original nested image after resize failed for ${imagePath}: ${formatError(error)}`);
     return { bytes: imageBytes, mimeType };
@@ -135,24 +143,25 @@ async function prepareNestedImageForDataUri(imageBytes, mimeType, imagePath, out
 }
 
 /**
- * Resizes one raster image so both dimensions are at most MAX_NESTED_RASTER_DIMENSION.
+ * Resizes one PNG/JPEG image so both dimensions are at most MAX_NESTED_RASTER_DIMENSION.
  *
  * @param {Buffer} imageBytes Source image bytes.
- * @param {string} imagePath Absolute image path for diagnostics.
+ * @param {string} mimeType Source MIME type.
  * @returns {Promise<{bytes: Buffer, mimeType: string}>}
  */
-async function resizeNestedRasterImage(imageBytes, imagePath) {
-  const canvas = require("@napi-rs/canvas");
-  const image = await canvas.loadImage(imageBytes);
+async function resizeNestedRasterImage(imageBytes, mimeType) {
+  const image = await NestedRasterJimp.fromBuffer(imageBytes);
   const dimensions = fitWithinBounds(image.width, image.height, MAX_NESTED_RASTER_DIMENSION);
   if (!dimensions) {
-    return { bytes: imageBytes, mimeType: MIME_TYPES.get(path.extname(imagePath).toLowerCase()) || "image/png" };
+    return { bytes: imageBytes, mimeType };
   }
 
-  const target = canvas.createCanvas(dimensions.width, dimensions.height);
-  const context = target.getContext("2d");
-  context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
-  return { bytes: target.toBuffer("image/png"), mimeType: "image/png" };
+  // Jimp v1's resize plugin uses short option names (`w`/`h`).
+  image.resize({ w: dimensions.width, h: dimensions.height });
+  return {
+    bytes: await image.getBuffer(NESTED_RASTER_OUTPUT_MIME_TYPE),
+    mimeType: NESTED_RASTER_OUTPUT_MIME_TYPE,
+  };
 }
 
 /**

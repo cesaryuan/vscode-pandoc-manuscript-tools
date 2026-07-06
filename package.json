@@ -24,7 +24,7 @@
   ],
   "icon": "assets/icon.png",
   "scripts": {
-    "bundle": "node scripts/copy-mathjax-fonts.js && esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --external:@napi-rs/canvas --outfile=dist/extension.js --minify --legal-comments=none",
+    "bundle": "node scripts/copy-mathjax-fonts.js && esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
     "check:bundle": "node --check dist/extension.js",
     "package:vsix": "npm run bundle && npm run check:bundle && vsce package",
     "publish:marketplace": "npm run bundle && npm run check:bundle && vsce publish",
@@ -43,8 +43,11 @@
   ],
   "main": "./dist/extension.js",
   "dependencies": {
-    "@mathjax/src": "^4.0.0",
-    "@napi-rs/canvas": "^1.0.2"
+    "@jimp/core": "^1.6.1",
+    "@jimp/js-jpeg": "^1.6.1",
+    "@jimp/js-png": "^1.6.1",
+    "@jimp/plugin-resize": "^1.6.1",
+    "@mathjax/src": "^4.0.0"
   },
   "contributes": {
     "commands": [
