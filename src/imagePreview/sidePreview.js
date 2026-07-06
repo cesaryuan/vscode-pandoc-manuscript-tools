@@ -170,7 +170,7 @@ class ImagePreviewSidePanel {
  */
 function buildPreviewHtml(imagePath, extension, previewSource) {
   const label = path.basename(imagePath);
-  const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
+  const imageAttributes = previewSourceToImageAttributes(previewSource);
   return buildPanelHtml(`
     <header>
       <div class="heading">
@@ -187,7 +187,7 @@ function buildPreviewHtml(imagePath, extension, previewSource) {
     </header>
     <main class="viewport" data-preview-viewport>
       <div class="stage" data-preview-stage>
-        ${previewMarkup}
+        <img data-preview-image ${imageAttributes} alt="${escapeAttribute(label)}">
       </div>
     </main>
     <footer>${escapeHtml(imagePath)}</footer>
@@ -291,32 +291,31 @@ function buildIconSvg(body) {
  */
 async function renderWebviewPreviewSource(webview, imagePreviewRenderer, documentUri, imagePath, extension) {
   if (extension === ".svg") {
-    return renderSvgInlinePreviewSource(webview, documentUri, imagePath);
+    return renderSvgBlobPreviewSource(webview, documentUri, imagePath);
   }
 
   const documentLike = { uri: documentUri };
   const dataUri = await imagePreviewRenderer.renderToDataUri(documentLike, imagePath, extension);
-  return dataUri ? dataUriToWebviewPreviewSource(dataUri) : undefined;
+  return dataUri ? dataUriToBlobPreviewSource(dataUri) : undefined;
 }
 
 /**
- * Rewrites a local SVG file into inline SVG for Webview preview.
+ * Rewrites a local SVG file and sends it through the simple Blob image path.
  *
- * This is needed because an SVG loaded as an `<img src="blob:...">` is treated
- * as an image document, and Chromium blocks or restricts its nested external
- * image loads. Inline SVG lets rewritten Webview URI hrefs load normally.
+ * This intentionally keeps side preview on the original Blob `<img>` model so
+ * zooming and sizing use one code path for SVG, EMF, and WMF.
  *
  * @param {vscode.Webview} webview Target webview.
  * @param {vscode.Uri} documentUri SVG document URI.
  * @param {string} imagePath Absolute SVG path.
  * @returns {Promise<WebviewPreviewSource>}
  */
-async function renderSvgInlinePreviewSource(webview, documentUri, imagePath) {
+async function renderSvgBlobPreviewSource(webview, documentUri, imagePath) {
   const svg = await fs.readFile(imagePath, "utf8");
   const documentLike = { uri: documentUri };
   const rewritten = rewriteSvgImageReferencesToWebviewUris(webview, documentLike, svg, path.dirname(imagePath));
   return {
-    ...createInlineSvgPreviewSource(rewritten.svg),
+    ...stringToBlobPreviewSource(rewritten.svg, "image/svg+xml"),
     localResourceRoots: rewritten.localResourceRoots,
   };
 }
@@ -411,76 +410,31 @@ function stringToBlobPreviewSource(value, mimeType) {
 }
 
 /**
- * Converts rendered data URI output into the best Webview preview source.
+ * Converts rendered data URI output into Blob source data for the Webview.
  *
- * SVG data URIs, including EMF results from libemf2svg, are decoded and shown
- * inline so nested SVG content behaves like normal Webview DOM. Raster data URI
- * output remains on the Blob image path.
+ * The data URI is only used as converter output. The Webview creates a Blob URL
+ * from this payload so the final image source stays compact.
  *
  * @param {string} dataUri Rendered image data URI.
  * @returns {WebviewPreviewSource | undefined}
  */
-function dataUriToWebviewPreviewSource(dataUri) {
+function dataUriToBlobPreviewSource(dataUri) {
   const match = dataUri.match(/^data:([^;,]+);base64,(.*)$/s);
   if (!match) {
     return undefined;
   }
 
-  const mimeType = match[1].toLowerCase();
-  if (mimeType === "image/svg+xml") {
-    const svg = Buffer.from(match[2], "base64").toString("utf8");
-    return createInlineSvgPreviewSource(svg);
-  }
-
   return {
     kind: "blob",
-    mimeType,
+    mimeType: match[1].toLowerCase(),
     base64: match[2],
   };
 }
 
 /**
- * Creates an inline SVG preview source from already-rendered SVG text.
- *
- * @param {string} svg Raw SVG text.
- * @returns {WebviewPreviewSource}
- */
-function createInlineSvgPreviewSource(svg) {
-  const dimensions = getSvgNaturalDimensions(svg);
-  return {
-    kind: "inlineSvg",
-    svg: sanitizeInlineSvgForWebview(svg),
-    width: dimensions.width,
-    height: dimensions.height,
-  };
-}
-
-/**
- * Builds the preview element for one rendered image source.
- *
- * @param {WebviewPreviewSource} previewSource Rendered image source.
- * @param {string} label Accessible preview label.
- * @returns {string}
- */
-function previewSourceToPreviewMarkup(previewSource, label) {
-  if (previewSource.kind === "inlineSvg") {
-    return [
-      `<div data-preview-image data-preview-kind="inline-svg" class="svgPreview" role="img" aria-label="${escapeAttribute(label)}"`,
-      ` data-natural-width="${escapeAttribute(String(previewSource.width))}"`,
-      ` data-natural-height="${escapeAttribute(String(previewSource.height))}">`,
-      previewSource.svg,
-      "</div>",
-    ].join("");
-  }
-
-  const imageAttributes = previewSourceToImageAttributes(previewSource);
-  return `<img data-preview-image ${imageAttributes} alt="${escapeAttribute(label)}">`;
-}
-
-/**
  * Builds safe img attributes for URI and Blob preview sources.
  *
- * @param {Extract<WebviewPreviewSource, {kind: "uri" | "blob"}>} previewSource Rendered image source.
+ * @param {WebviewPreviewSource} previewSource Rendered image source.
  * @returns {string}
  */
 function previewSourceToImageAttributes(previewSource) {
@@ -493,87 +447,6 @@ function previewSourceToImageAttributes(previewSource) {
     `data-blob-mime="${escapeAttribute(previewSource.mimeType)}"`,
     `data-blob-base64="${escapeAttribute(previewSource.base64)}"`,
   ].join(" ");
-}
-
-/**
- * Removes active SVG content before injecting the SVG inline.
- *
- * This preview-specific guard is needed because inline SVG lives in the Webview
- * DOM, unlike the previous Blob img path where SVG scripts could not execute.
- *
- * @param {string} svg Raw SVG text.
- * @returns {string}
- */
-function sanitizeInlineSvgForWebview(svg) {
-  return svg
-    .replace(/^\s*<\?xml\b[^?]*\?>/i, "")
-    .replace(/^\s*<!doctype\b[^>]*>/i, "")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
-    .replace(/<foreignObject\b[^>]*>[\s\S]*?<\/foreignObject\s*>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*"[^"]*"/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*'[^']*'/gi, "");
-}
-
-/**
- * Reads natural SVG dimensions from width/height or viewBox.
- *
- * @param {string} svg Raw SVG text.
- * @returns {{width: number, height: number}}
- */
-function getSvgNaturalDimensions(svg) {
-  const openTag = svg.match(/<svg\b[^>]*>/i);
-  if (!openTag) {
-    return { width: 300, height: 150 };
-  }
-
-  const width = parseSvgLength(readAttribute(openTag[0], "width"));
-  const height = parseSvgLength(readAttribute(openTag[0], "height"));
-  if (width && height) {
-    return { width, height };
-  }
-
-  const viewBox = readAttribute(openTag[0], "viewBox");
-  const viewBoxParts = viewBox ? viewBox.trim().split(/[\s,]+/).map(Number) : [];
-  if (viewBoxParts.length === 4 && viewBoxParts.every(Number.isFinite) && viewBoxParts[2] > 0 && viewBoxParts[3] > 0) {
-    return {
-      width: viewBoxParts[2],
-      height: viewBoxParts[3],
-    };
-  }
-
-  return { width: width || 300, height: height || 150 };
-}
-
-/**
- * Reads one quoted XML attribute from a tag.
- *
- * @param {string} tag XML start tag.
- * @param {string} name Attribute name.
- * @returns {string | undefined}
- */
-function readAttribute(tag, name) {
-  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"));
-  return match ? match[1] : undefined;
-}
-
-/**
- * Parses simple SVG length values in px/user units.
- *
- * @param {string | undefined} value Raw length value.
- * @returns {number | undefined}
- */
-function parseSvgLength(value) {
-  if (!value) {
-    return undefined;
-  }
-
-  const match = value.trim().match(/^(\d+(?:\.\d+)?)(?:px)?$/i);
-  if (!match) {
-    return undefined;
-  }
-
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 /**
@@ -731,15 +604,9 @@ function buildPanelHtml(body, script = "") {
       min-height: 100%;
       padding: 16px;
     }
-    img,
-    .svgPreview {
+    img {
       display: block;
       flex: 0 0 auto;
-      max-width: none;
-      max-height: none;
-    }
-    .svgPreview svg {
-      display: block;
       max-width: none;
       max-height: none;
     }
@@ -764,9 +631,9 @@ function getPreviewScript() {
 (() => {
   const viewport = document.querySelector("[data-preview-viewport]");
   const stage = document.querySelector("[data-preview-stage]");
-  const preview = document.querySelector("[data-preview-image]");
+  const image = document.querySelector("[data-preview-image]");
   const zoomValue = document.querySelector("[data-zoom-value]");
-  if (!viewport || !stage || !preview || !zoomValue) {
+  if (!(image instanceof HTMLImageElement) || !viewport || !stage || !zoomValue) {
     return;
   }
 
@@ -792,19 +659,15 @@ function getPreviewScript() {
 
   /** Creates a Blob URL for converted preview data. */
   function applyBlobSource() {
-    if (!(preview instanceof HTMLImageElement)) {
-      return;
-    }
-
-    const mimeType = preview.getAttribute("data-blob-mime");
-    const base64 = preview.getAttribute("data-blob-base64");
+    const mimeType = image.getAttribute("data-blob-mime");
+    const base64 = image.getAttribute("data-blob-base64");
     if (!mimeType || !base64) {
       return;
     }
 
     blobUrl = URL.createObjectURL(new Blob([base64ToBytes(base64)], { type: mimeType }));
-    preview.src = blobUrl;
-    preview.removeAttribute("data-blob-base64");
+    image.src = blobUrl;
+    image.removeAttribute("data-blob-base64");
   }
 
   /** Clamps a number to the allowed zoom range. */
@@ -824,22 +687,8 @@ function getPreviewScript() {
     const width = Math.max(1, Math.round(naturalWidth * scale));
     const height = Math.max(1, Math.round(naturalHeight * scale));
 
-    if (preview instanceof HTMLImageElement) {
-      preview.style.width = width + "px";
-      preview.style.height = height + "px";
-      preview.style.transform = "";
-    } else {
-      const inlineSvg = preview.querySelector("svg");
-      preview.style.width = width + "px";
-      preview.style.height = height + "px";
-      preview.style.overflow = "visible";
-      if (inlineSvg) {
-        inlineSvg.style.width = naturalWidth + "px";
-        inlineSvg.style.height = naturalHeight + "px";
-        inlineSvg.style.transformOrigin = "top left";
-        inlineSvg.style.transform = "scale(" + scale + ")";
-      }
-    }
+    image.style.width = width + "px";
+    image.style.height = height + "px";
 
     stage.style.width = Math.max(viewport.clientWidth, width + 32) + "px";
     stage.style.height = Math.max(viewport.clientHeight, height + 32) + "px";
@@ -871,13 +720,8 @@ function getPreviewScript() {
 
   /** Sets natural image dimensions after the image has loaded. */
   function refreshNaturalSize() {
-    if (preview instanceof HTMLImageElement) {
-      naturalWidth = preview.naturalWidth || 1;
-      naturalHeight = preview.naturalHeight || 1;
-    } else {
-      naturalWidth = Number(preview.getAttribute("data-natural-width")) || 1;
-      naturalHeight = Number(preview.getAttribute("data-natural-height")) || 1;
-    }
+    naturalWidth = image.naturalWidth || 1;
+    naturalHeight = image.naturalHeight || 1;
     scheduleFit();
   }
 
@@ -923,12 +767,10 @@ function getPreviewScript() {
   });
 
   applyBlobSource();
-  if (!(preview instanceof HTMLImageElement)) {
-    refreshNaturalSize();
-  } else if (preview.complete) {
+  if (image.complete) {
     refreshNaturalSize();
   } else {
-    preview.addEventListener("load", refreshNaturalSize, { once: true });
+    image.addEventListener("load", refreshNaturalSize, { once: true });
   }
 })();
 </script>`;
@@ -976,5 +818,5 @@ module.exports = {
 };
 
 /**
- * @typedef {({kind: "uri", src: string} | {kind: "blob", mimeType: string, base64: string} | {kind: "inlineSvg", svg: string, width: number, height: number}) & {localResourceRoots?: vscode.Uri[]}} WebviewPreviewSource
+ * @typedef {({kind: "uri", src: string} | {kind: "blob", mimeType: string, base64: string}) & {localResourceRoots?: vscode.Uri[]}} WebviewPreviewSource
  */
