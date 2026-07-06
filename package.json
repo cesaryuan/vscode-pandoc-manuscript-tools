@@ -29,6 +29,7 @@
     "package:vsix": "npm run bundle && npm run check:bundle && vsce package",
     "publish:marketplace": "npm run bundle && npm run check:bundle && vsce publish",
     "publish:patch": "npm run bundle && npm run check:bundle && vsce publish patch",
+    "publish:minor": "npm run bundle && npm run check:bundle && vsce publish minor",
     "profile:test-md": "node scripts/profile-test-md.js test.md"
   },
   "activationEvents": [
