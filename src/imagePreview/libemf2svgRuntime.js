@@ -5,7 +5,7 @@ const path = require("path");
 const createEmf2SvgModule = require("../../assets/libemf2svg/emf2svg.js");
 
 const DEFAULT_MAX_WIDTH = 450;
-const DEFAULT_MAX_HEIGHT = 200;
+const DEFAULT_MAX_HEIGHT = 150;
 const POINTER_SIZE = 4;
 
 let modulePromise;
