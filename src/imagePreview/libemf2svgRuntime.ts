@@ -23,9 +23,8 @@ let modulePromise: Promise<LibEmf2SvgModule> | undefined;
 /**
  * Converts one EMF byte buffer to SVG text through the bundled libemf2svg WASM module.
  *
- * @param {Buffer | Uint8Array} bytes EMF file bytes.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param bytes EMF file bytes.
+ * @param output Output channel.
  */
 export async function convertEmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike) {
   return convertMetafileToSvg(bytes, "EMF", output);
@@ -38,9 +37,8 @@ export async function convertEmfToSvg(bytes: Buffer | Uint8Array, output: Output
  * separate wrapper makes the format-specific wasm export explicit while sharing
  * the same memory ownership path as EMF conversion.
  *
- * @param {Buffer | Uint8Array} bytes WMF file bytes.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param bytes WMF file bytes.
+ * @param output Output channel.
  */
 export async function convertWmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike) {
   return convertMetafileToSvg(bytes, "WMF", output);
@@ -49,10 +47,9 @@ export async function convertWmfToSvg(bytes: Buffer | Uint8Array, output: Output
 /**
  * Converts one metafile byte buffer to SVG text with the format-specific wasm export.
  *
- * @param {Buffer | Uint8Array} bytes Metafile bytes.
- * @param {"EMF" | "WMF"} format Metafile format.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param bytes Metafile bytes.
+ * @param format Metafile format.
+ * @param output Output channel.
  */
 async function convertMetafileToSvg(bytes: Buffer | Uint8Array, format: "EMF" | "WMF", output: OutputChannelLike) {
   const module = await loadLibemf2svgModule(output);
@@ -93,10 +90,9 @@ async function convertMetafileToSvg(bytes: Buffer | Uint8Array, format: "EMF" | 
  * single image in webviews because the generated SVG had viewport dimensions
  * but no coordinate-system viewBox.
  *
- * @param {string} svg Converted SVG text.
- * @param {"EMF" | "WMF"} format Metafile format used for logging.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {string}
+ * @param svg Converted SVG text.
+ * @param format Metafile format used for logging.
+ * @param output Output channel.
  */
 function addMissingSvgViewBox(svg: string, format: "EMF" | "WMF", output: OutputChannelLike): string {
   const openTag = svg.match(/<svg\b[^>]*>/i);
@@ -118,9 +114,8 @@ function addMissingSvgViewBox(svg: string, format: "EMF" | "WMF", output: Output
 /**
  * Reads one quoted attribute from an SVG start tag.
  *
- * @param {string} tag SVG start tag.
- * @param {string} name Attribute name.
- * @returns {string | undefined}
+ * @param tag SVG start tag.
+ * @param name Attribute name.
  */
 function readSvgAttribute(tag: string, name: string) {
   const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"));
@@ -130,8 +125,7 @@ function readSvgAttribute(tag: string, name: string) {
 /**
  * Parses simple SVG lengths that libemf2svg emits in user units or px.
  *
- * @param {string | undefined} value Raw SVG length.
- * @returns {number | undefined}
+ * @param value Raw SVG length.
  */
 function parseSvgLength(value: string | undefined) {
   if (!value) {
@@ -150,8 +144,7 @@ function parseSvgLength(value: string | undefined) {
 /**
  * Formats viewBox numbers without unnecessary trailing zeroes.
  *
- * @param {number} value Numeric SVG coordinate.
- * @returns {string}
+ * @param value Numeric SVG coordinate.
  */
 function formatSvgNumber(value: number) {
   return Number(value.toFixed(4)).toString();
@@ -160,13 +153,13 @@ function formatSvgNumber(value: number) {
 /**
  * Calls the correct libemf2svg wasm export for the input metafile format.
  *
- * @param {LibEmf2SvgModule} module Loaded Emscripten module.
- * @param {"EMF" | "WMF"} format Metafile format.
- * @param {number} inputPtr Pointer to input bytes in wasm memory.
- * @param {number} inputLength Input byte length.
- * @param {number} outputPtrSlot Pointer slot receiving the SVG buffer pointer.
- * @param {number} outputLenSlot Pointer slot receiving the SVG byte length.
- * @returns {number} Native success flag.
+ * @param module Loaded Emscripten module.
+ * @param format Metafile format.
+ * @param inputPtr Pointer to input bytes in wasm memory.
+ * @param inputLength Input byte length.
+ * @param outputPtrSlot Pointer slot receiving the SVG buffer pointer.
+ * @param outputLenSlot Pointer slot receiving the SVG byte length.
+ * @returns Native success flag.
  */
 function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", inputPtr: number, inputLength: number, outputPtrSlot: number, outputLenSlot: number) {
   if (format === "WMF") {
@@ -196,8 +189,7 @@ function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", 
 /**
  * Loads the Emscripten module once and points it at the packaged WASM file.
  *
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<LibEmf2SvgModule>}
+ * @param output Output channel.
  */
 function loadLibemf2svgModule(output: OutputChannelLike): Promise<LibEmf2SvgModule> {
   if (!modulePromise) {
@@ -221,7 +213,6 @@ function loadLibemf2svgModule(output: OutputChannelLike): Promise<LibEmf2SvgModu
 /**
  * Resolves the WASM asset in both bundled extension runs and direct source runs.
  *
- * @returns {string}
  */
 function resolveBundledWasmPath() {
   const candidates = [

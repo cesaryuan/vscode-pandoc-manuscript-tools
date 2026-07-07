@@ -7,10 +7,9 @@ import { fileURLToPath } from "url";
  * Remote URLs are intentionally rejected because hover previews should not make
  * network requests for manuscript-local asset hovers.
  *
- * @param {vscode.TextDocument} document Document containing the image reference.
- * @param {string} target Image target from Markdown, HTML, or SVG.
- * @param {string=} baseDirectory Optional base directory for nested SVG images.
- * @returns {string | undefined}
+ * @param document Document containing the image reference.
+ * @param target Image target from Markdown, HTML, or SVG.
+ * @param baseDirectory Optional base directory for nested SVG images.
  */
 export function resolveLocalPath(document: { uri: import("vscode").Uri }, target: string, baseDirectory: string | undefined = undefined): string | undefined {
   if (!target || isDataUri(target) || isRemoteUrl(target)) {
@@ -38,8 +37,7 @@ export function resolveLocalPath(document: { uri: import("vscode").Uri }, target
 /**
  * Checks whether a value is already an embedded data URI.
  *
- * @param {string} value URI or path.
- * @returns {boolean}
+ * @param value URI or path.
  */
 export function isDataUri(value: string): boolean {
   return /^data:/i.test(value);
@@ -48,8 +46,7 @@ export function isDataUri(value: string): boolean {
 /**
  * Checks whether a value is a remote URL.
  *
- * @param {string} value URI or path.
- * @returns {boolean}
+ * @param value URI or path.
  */
 export function isRemoteUrl(value: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !/^file:\/\//i.test(value);
@@ -58,8 +55,7 @@ export function isRemoteUrl(value: string): boolean {
 /**
  * Parses a file URI into a platform path.
  *
- * @param {string} value URI or path.
- * @returns {string | undefined}
+ * @param value URI or path.
  */
 function tryParseFileUri(value: string) {
   if (!/^file:\/\//i.test(value)) {
@@ -75,8 +71,7 @@ function tryParseFileUri(value: string) {
 /**
  * Removes URL query and hash suffixes from a local path.
  *
- * @param {string} value URI or path.
- * @returns {string}
+ * @param value URI or path.
  */
 function stripQueryAndHash(value: string) {
   const suffixIndex = value.search(/[?#]/);
@@ -86,8 +81,7 @@ function stripQueryAndHash(value: string) {
 /**
  * Normalizes slash-separated Markdown paths for the host platform.
  *
- * @param {string} value Relative path.
- * @returns {string}
+ * @param value Relative path.
  */
 function normalizeRelativeSeparators(value: string) {
   return value.replace(/[\\/]+/g, path.sep);

@@ -66,9 +66,8 @@ let mathJaxReadyPromise: Promise<MathJaxProfileRenderer> | undefined;
 /**
  * Measures one synchronous or asynchronous profiler stage.
  *
- * @param {string} name Stage name shown in the report.
- * @param {() => unknown | Promise<unknown>} action Stage body.
- * @returns {Promise<{name: string, ms: number, result: unknown}>}
+ * @param name Stage name shown in the report.
+ * @param action Stage body.
  */
 async function measure<T>(name: string, action: () => T | Promise<T>) {
   const started = performance.now();
@@ -79,8 +78,7 @@ async function measure<T>(name: string, action: () => T | Promise<T>) {
 /**
  * Formats a duration with enough precision for sub-millisecond parser stages.
  *
- * @param {number} ms Duration in milliseconds.
- * @returns {string}
+ * @param ms Duration in milliseconds.
  */
 function formatMs(ms: number) {
   return `${ms.toFixed(3)} ms`;
@@ -89,8 +87,7 @@ function formatMs(ms: number) {
 /**
  * Builds the same label-to-definitions map used by diagnostics and hovers.
  *
- * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {Map<string, import("../src/parser").LabelEntry[]>}
+ * @param parsed Parsed document.
  */
 function buildDefinitionMap(parsed: import("../src/parser").ParsedPandocDocument) {
   const map = new Map();
@@ -106,8 +103,7 @@ function buildDefinitionMap(parsed: import("../src/parser").ParsedPandocDocument
 /**
  * Simulates the extension's diagnostics pass without the VS Code API objects.
  *
- * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {{undefinedReferences: number, duplicateLabels: number, total: number}}
+ * @param parsed Parsed document.
  */
 function buildDiagnostics(parsed: import("../src/parser").ParsedPandocDocument) {
   const definitionMap = buildDefinitionMap(parsed);
@@ -137,8 +133,7 @@ function buildDiagnostics(parsed: import("../src/parser").ParsedPandocDocument) 
 /**
  * Builds a lightweight outline tree matching the extension's symbol grouping.
  *
- * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {{roots: unknown[], totalSymbols: number}}
+ * @param parsed Parsed document.
  */
 function buildOutline(parsed: import("../src/parser").ParsedPandocDocument) {
   const roots: OutlineSymbol[] = [];
@@ -173,8 +168,7 @@ function buildOutline(parsed: import("../src/parser").ParsedPandocDocument) {
 /**
  * Formats a heading title like the extension's Outline provider.
  *
- * @param {import("../src/parser").HeadingEntry} heading Parsed heading.
- * @returns {string}
+ * @param heading Parsed heading.
  */
 function formatHeadingTitle(heading: import("../src/parser").HeadingEntry) {
   return `${"#".repeat(heading.level)} ${heading.title}`;
@@ -183,9 +177,8 @@ function formatHeadingTitle(heading: import("../src/parser").HeadingEntry) {
 /**
  * Finds the nearest outline heading before a label line.
  *
- * @param {Array<{line: number, children: unknown[]}>} symbols Candidate symbols.
- * @param {number} line Target line.
- * @returns {{line: number, children: unknown[]} | undefined}
+ * @param symbols Candidate symbols.
+ * @param line Target line.
  */
 function findNearestHeadingSymbol(symbols: OutlineSymbol[], line: number): OutlineSymbol | undefined {
   let nearest;
@@ -204,8 +197,7 @@ function findNearestHeadingSymbol(symbols: OutlineSymbol[], line: number): Outli
 /**
  * Counts all symbols in a tree.
  *
- * @param {Array<{children: unknown[]}>} symbols Root symbols.
- * @returns {number}
+ * @param symbols Root symbols.
  */
 function countSymbols(symbols: OutlineSymbol[]): number {
   let total = 0;
@@ -218,8 +210,7 @@ function countSymbols(symbols: OutlineSymbol[]): number {
 /**
  * Simulates the completion provider's unique sorted label list.
  *
- * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {string[]}
+ * @param parsed Parsed document.
  */
 function buildCompletions(parsed: import("../src/parser").ParsedPandocDocument) {
   const seen = new Set();
@@ -232,8 +223,7 @@ function buildCompletions(parsed: import("../src/parser").ParsedPandocDocument) 
 /**
  * Exercises token and math lookups at positions that exist in the fixture.
  *
- * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {{tokenLookups: number, displayMathLookups: number, inlineMathLookups: number}}
+ * @param parsed Parsed document.
  */
 function runHoverAndNavigationLookups(parsed: import("../src/parser").ParsedPandocDocument) {
   let tokenLookups = 0;
@@ -264,7 +254,6 @@ function runHoverAndNavigationLookups(parsed: import("../src/parser").ParsedPand
 /**
  * Loads MathJax the same way the extension does for hover preview timing.
  *
- * @returns {Promise<MathJaxProfileRenderer>}
  */
 async function loadMathJax() {
   if (mathJaxReadyPromise) {
@@ -300,7 +289,7 @@ async function loadMathJax() {
 /**
  * Registers the same bundled MathJax dynamic loader used by extension.ts.
  *
- * @param {MathJaxProfileNamespace} mathjax MathJax direct API namespace.
+ * @param mathjax MathJax direct API namespace.
  */
 function configureMathJaxAsyncLoad(mathjax: MathJaxProfileNamespace) {
   mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
@@ -310,8 +299,7 @@ function configureMathJaxAsyncLoad(mathjax: MathJaxProfileNamespace) {
 /**
  * Loads dynamic MathJax modules, keeping known NewCM SVG chunks bundle-friendly.
  *
- * @param {string} name Module name requested by MathJax.
- * @returns {unknown}
+ * @param name Module name requested by MathJax.
  */
 function loadBundledMathJaxDynamicModule(name: string) {
   const normalizedName = name.replace(/\\/g, "/");
@@ -325,8 +313,7 @@ function loadBundledMathJaxDynamicModule(name: string) {
 /**
  * Renders one display and one inline formula to capture cold/warm hover costs.
  *
- * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
- * @returns {Promise<{displaySvgLength: number, inlineSvgLength: number}>}
+ * @param parsed Parsed document.
  */
 async function renderMathSamples(parsed: import("../src/parser").ParsedPandocDocument) {
   const renderer = await loadMathJax();
@@ -352,8 +339,7 @@ async function renderMathSamples(parsed: import("../src/parser").ParsedPandocDoc
 /**
  * Runs repeated parses to smooth out one-off Node startup and JIT noise.
  *
- * @param {string} text Markdown source.
- * @returns {{iterations: number, totalMs: number, avgMs: number}}
+ * @param text Markdown source.
  */
 function benchmarkParse(text: string) {
   const started = performance.now();

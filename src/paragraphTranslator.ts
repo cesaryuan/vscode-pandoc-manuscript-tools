@@ -22,7 +22,7 @@ export class ParagraphTranslator {
   /**
    * Creates a small translator for paragraph hover previews.
    *
-   * @param {vscode.OutputChannel} output Output channel for translation failures.
+   * @param output Output channel for translation failures.
    */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -39,7 +39,6 @@ export class ParagraphTranslator {
    * Google is preferred because it was the original provider. Microsoft is used
    * only when the startup probe shows Google cannot be reached from this host.
    *
-   * @returns {Promise<void>}
    */
   async initialize() {
     await this.ensurePreferredEngine();
@@ -48,8 +47,7 @@ export class ParagraphTranslator {
   /**
    * Translates one short English paragraph to the configured target language.
    *
-   * @param {string} text English paragraph text.
-   * @returns {Promise<TranslationResult | undefined>}
+   * @param text English paragraph text.
    */
   async translateText(text: string) {
     const targetLanguage = getConfiguration().get("paragraphHoverTranslationTargetLanguage", "zh");
@@ -74,7 +72,6 @@ export class ParagraphTranslator {
   /**
    * Returns the preferred translation engine, probing once if needed.
    *
-   * @returns {Promise<TranslationEngine | undefined>}
    */
   async ensurePreferredEngine() {
     if (this.preferredEngine) {
@@ -98,7 +95,6 @@ export class ParagraphTranslator {
   /**
    * Probes Google first and falls back to Microsoft when Google is unavailable.
    *
-   * @returns {Promise<TranslationEngine | undefined>}
    */
   async probePreferredEngine() {
     const targetLanguage = getConfiguration().get("paragraphHoverTranslationTargetLanguage", "zh");
@@ -122,10 +118,9 @@ export class ParagraphTranslator {
   /**
    * Translates text with the selected engine.
    *
-   * @param {string} text English paragraph text.
-   * @param {string} targetLanguage Target language code.
-   * @param {TranslationEngine} engine Translation engine.
-   * @returns {Promise<string | undefined>}
+   * @param text English paragraph text.
+   * @param targetLanguage Target language code.
+   * @param engine Translation engine.
    */
   async translateTextWithEngine(text: string, targetLanguage: string, engine: TranslationEngine) {
     if (engine === "microsoft") {
@@ -140,10 +135,9 @@ export class ParagraphTranslator {
    * This mirrors read-frog's unofficial Google Translate provider and avoids
    * the official paid Cloud Translation API for lightweight hover previews.
    *
-   * @param {string} text English paragraph text.
-   * @param {string} targetLanguage Target language code accepted by Google Translate.
-   * @param {boolean} shouldLog Whether to log failures for user-triggered translations.
-   * @returns {Promise<string | undefined>}
+   * @param text English paragraph text.
+   * @param targetLanguage Target language code accepted by Google Translate.
+   * @param shouldLog Whether to log failures for user-triggered translations.
    */
   async translateWithGoogle(text: string, targetLanguage: string, shouldLog: boolean) {
     const controller = new AbortController();
@@ -196,10 +190,9 @@ export class ParagraphTranslator {
    * This mirrors read-frog's unofficial Microsoft provider and uses the Edge
    * translate auth endpoint to obtain the short-lived token.
    *
-   * @param {string} text English paragraph text.
-   * @param {string} targetLanguage Target language code accepted by Microsoft.
-   * @param {boolean} shouldLog Whether to log failures for user-triggered translations.
-   * @returns {Promise<string | undefined>}
+   * @param text English paragraph text.
+   * @param targetLanguage Target language code accepted by Microsoft.
+   * @param shouldLog Whether to log failures for user-triggered translations.
    */
   async translateWithMicrosoft(text: string, targetLanguage: string, shouldLog: boolean) {
     const controller = new AbortController();
@@ -254,7 +247,6 @@ export class ParagraphTranslator {
   /**
    * Fetches and caches the Edge translation token used by Microsoft Translator.
    *
-   * @returns {Promise<string | undefined>}
    */
   async getMicrosoftToken() {
     if (this.microsoftToken) {
@@ -278,7 +270,6 @@ export class ParagraphTranslator {
   /**
    * Fetches a short-lived Microsoft Translator token from Edge.
    *
-   * @returns {Promise<string | undefined>}
    */
   async fetchMicrosoftToken() {
     const controller = new AbortController();
@@ -307,8 +298,7 @@ export class ParagraphTranslator {
 /**
  * Decodes common HTML entities returned by translateHtml.
  *
- * @param {string} value Translated text.
- * @returns {string}
+ * @param value Translated text.
  */
 function decodeHtmlText(value: string) {
   return value
@@ -326,8 +316,7 @@ function decodeHtmlText(value: string) {
 /**
  * Formats translation text compactly for one-line output-channel diagnostics.
  *
- * @param {string} text Source text.
- * @returns {string}
+ * @param text Source text.
  */
 function formatTranslationTextForLog(text: string) {
   const compactText = text.replace(/\s+/g, " ").trim();
@@ -337,7 +326,4 @@ function formatTranslationTextForLog(text: string) {
 
 
 
-/**
- * @typedef {TranslationResult} TranslationResult
- */
 

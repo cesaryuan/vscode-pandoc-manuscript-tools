@@ -30,8 +30,8 @@ export class ImagePreviewSidePanel {
   /**
    * Creates a side-preview command handler.
    *
-   * @param {import("./index").ImagePreviewRenderer} imagePreviewRenderer Shared preview renderer.
-   * @param {{appendLine(message: string): void}} output Output channel.
+   * @param imagePreviewRenderer Shared preview renderer.
+   * @param output Output channel.
    */
   constructor(imagePreviewRenderer: import("./index").ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
@@ -42,7 +42,7 @@ export class ImagePreviewSidePanel {
   /**
    * Opens or refreshes a side preview panel for an SVG/EMF/WMF file.
    *
-   * @param {vscode.Uri=} uri Optional resource URI supplied by VS Code menus.
+   * @param uri Optional resource URI supplied by VS Code menus.
    */
   async open(uri: vscode.Uri | undefined) {
     const imageUri = this.resolveImageUri(uri);
@@ -75,7 +75,7 @@ export class ImagePreviewSidePanel {
   /**
    * Refreshes an already-open preview panel after its source file is saved.
    *
-   * @param {vscode.TextDocument} document Saved text document.
+   * @param document Saved text document.
    */
   async refreshIfOpen(document: vscode.TextDocument) {
     if (document.uri.scheme !== "file") {
@@ -98,8 +98,7 @@ export class ImagePreviewSidePanel {
   /**
    * Resolves the target image URI from command arguments or the active editor.
    *
-   * @param {vscode.Uri=} uri Optional command resource URI.
-   * @returns {vscode.Uri | undefined}
+   * @param uri Optional command resource URI.
    */
   resolveImageUri(uri: vscode.Uri | undefined) {
     if (uri && uri.scheme === "file") {
@@ -117,8 +116,7 @@ export class ImagePreviewSidePanel {
   /**
    * Gets an existing panel for one file, or creates a new side-preview panel.
    *
-   * @param {vscode.Uri} imageUri Image file URI.
-   * @returns {vscode.WebviewPanel}
+   * @param imageUri Image file URI.
    */
   getOrCreatePanel(imageUri: vscode.Uri) {
     const key = imageUri.fsPath;
@@ -144,9 +142,9 @@ export class ImagePreviewSidePanel {
   /**
    * Renders one image into a side-preview panel.
    *
-   * @param {vscode.WebviewPanel} panel Preview panel.
-   * @param {vscode.Uri} imageUri Image file URI.
-   * @param {string} extension Lowercase image extension.
+   * @param panel Preview panel.
+   * @param imageUri Image file URI.
+   * @param extension Lowercase image extension.
    */
   async renderPanel(panel: vscode.WebviewPanel, imageUri: vscode.Uri, extension: string) {
     const label = path.basename(imageUri.fsPath);
@@ -173,10 +171,9 @@ export class ImagePreviewSidePanel {
 /**
  * Builds the full image-preview panel HTML.
  *
- * @param {string} imagePath Absolute image path.
- * @param {string} extension Lowercase image extension.
- * @param {WebviewPreviewSource} previewSource Rendered image source.
- * @returns {string}
+ * @param imagePath Absolute image path.
+ * @param extension Lowercase image extension.
+ * @param previewSource Rendered image source.
  */
 export function buildPreviewHtml(imagePath: string, extension: string, previewSource: WebviewPreviewSource): string {
   const label = path.basename(imagePath);
@@ -207,10 +204,9 @@ export function buildPreviewHtml(imagePath: string, extension: string, previewSo
 /**
  * Builds one icon-only toolbar button.
  *
- * @param {string} action Zoom action identifier.
- * @param {string} label Accessible label and tooltip.
- * @param {string} icon Inline SVG icon.
- * @returns {string}
+ * @param action Zoom action identifier.
+ * @param label Accessible label and tooltip.
+ * @param icon Inline SVG icon.
  */
 function buildToolbarButton(action: string, label: string, icon: string) {
   return `<button type="button" title="${escapeAttribute(label)}" aria-label="${escapeAttribute(label)}" data-zoom-action="${escapeAttribute(action)}">${icon}</button>`;
@@ -219,7 +215,6 @@ function buildToolbarButton(action: string, label: string, icon: string) {
 /**
  * Builds a zoom-out icon.
  *
- * @returns {string}
  */
 function buildZoomOutIcon() {
   return buildIconSvg(`
@@ -232,7 +227,6 @@ function buildZoomOutIcon() {
 /**
  * Builds a zoom-in icon.
  *
- * @returns {string}
  */
 function buildZoomInIcon() {
   return buildIconSvg(`
@@ -246,7 +240,6 @@ function buildZoomInIcon() {
 /**
  * Builds an actual-size icon.
  *
- * @returns {string}
  */
 function buildActualSizeIcon() {
   return buildIconSvg(`
@@ -259,7 +252,6 @@ function buildActualSizeIcon() {
 /**
  * Builds a fit-to-window icon.
  *
- * @returns {string}
  */
 function buildFitIcon() {
   return buildIconSvg(`
@@ -277,8 +269,7 @@ function buildFitIcon() {
 /**
  * Wraps icon paths in a common SVG shell.
  *
- * @param {string} body SVG child markup.
- * @returns {string}
+ * @param body SVG child markup.
  */
 function buildIconSvg(body: string) {
   return `<svg class="toolbarIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
@@ -291,12 +282,11 @@ function buildIconSvg(body: string) {
  * can be converted to Webview URIs. EMF/WMF converter output is decoded here so
  * SVG data URIs can be inserted as inline SVG instead of Blob-backed images.
  *
- * @param {vscode.Webview} webview Target webview.
- * @param {import("./index").ImagePreviewRenderer} imagePreviewRenderer Shared preview renderer.
- * @param {vscode.Uri} documentUri Document URI used for path resolution.
- * @param {string} imagePath Absolute image path.
- * @param {string} extension Lowercase image extension.
- * @returns {Promise<WebviewPreviewSource | undefined>}
+ * @param webview Target webview.
+ * @param imagePreviewRenderer Shared preview renderer.
+ * @param documentUri Document URI used for path resolution.
+ * @param imagePath Absolute image path.
+ * @param extension Lowercase image extension.
  */
 export async function renderWebviewPreviewSource(webview: vscode.Webview, imagePreviewRenderer: import("./index").ImagePreviewRenderer, documentUri: vscode.Uri, imagePath: string, extension: string): Promise<WebviewPreviewSource | undefined> {
   if (extension === ".svg") {
@@ -314,10 +304,9 @@ export async function renderWebviewPreviewSource(webview: vscode.Webview, imageP
  * This is needed because SVG loaded as `<img src="blob:...">` cannot reliably
  * load nested local images, even after the hrefs are rewritten to Webview URIs.
  *
- * @param {vscode.Webview} webview Target webview.
- * @param {vscode.Uri} documentUri SVG document URI.
- * @param {string} imagePath Absolute SVG path.
- * @returns {Promise<WebviewPreviewSource>}
+ * @param webview Target webview.
+ * @param documentUri SVG document URI.
+ * @param imagePath Absolute SVG path.
  */
 async function renderSvgInlinePreviewSource(webview: vscode.Webview, documentUri: vscode.Uri, imagePath: string): Promise<WebviewPreviewSource> {
   const svg = await fs.readFile(imagePath, "utf8");
@@ -332,11 +321,10 @@ async function renderSvgInlinePreviewSource(webview: vscode.Webview, documentUri
 /**
  * Replaces local SVG image hrefs with Webview-safe resource URIs.
  *
- * @param {vscode.Webview} webview Target webview.
- * @param {{uri: vscode.Uri}} document Document-like object for path resolution.
- * @param {string} svg Raw SVG text.
- * @param {string} baseDirectory Directory used for relative nested images.
- * @returns {{svg: string, localResourceRoots: vscode.Uri[]}}
+ * @param webview Target webview.
+ * @param document Document-like object for path resolution.
+ * @param svg Raw SVG text.
+ * @param baseDirectory Directory used for relative nested images.
  */
 function rewriteSvgImageReferencesToWebviewUris(webview: vscode.Webview, document: DocumentLike, svg: string, baseDirectory: string) {
   const replacements = [];
@@ -366,11 +354,10 @@ function rewriteSvgImageReferencesToWebviewUris(webview: vscode.Webview, documen
 /**
  * Resolves one SVG href into a Webview URI while preserving query or hash.
  *
- * @param {vscode.Webview} webview Target webview.
- * @param {{uri: vscode.Uri}} document Document-like object for path resolution.
- * @param {string} rawHref Raw SVG href.
- * @param {string} baseDirectory Directory used for relative nested images.
- * @returns {{webviewUri: string, localPath: string} | undefined}
+ * @param webview Target webview.
+ * @param document Document-like object for path resolution.
+ * @param rawHref Raw SVG href.
+ * @param baseDirectory Directory used for relative nested images.
  */
 function resolveSvgHrefToWebviewUri(webview: vscode.Webview, document: DocumentLike, rawHref: string, baseDirectory: string) {
   if (!rawHref || rawHref.startsWith("#") || isDataUri(rawHref) || isRemoteUrl(rawHref)) {
@@ -392,8 +379,7 @@ function resolveSvgHrefToWebviewUri(webview: vscode.Webview, document: DocumentL
 /**
  * Returns the query or hash suffix from an SVG href.
  *
- * @param {string} value Raw SVG href.
- * @returns {string}
+ * @param value Raw SVG href.
  */
 function getQueryAndHashSuffix(value: string) {
   const suffixIndex = value.search(/[?#]/);
@@ -406,8 +392,7 @@ function getQueryAndHashSuffix(value: string) {
  * SVG data URIs, including EMF and WMF converter output, are decoded and shown
  * inline. Raster data URI output remains on the Blob image path.
  *
- * @param {string} dataUri Rendered image data URI.
- * @returns {WebviewPreviewSource | undefined}
+ * @param dataUri Rendered image data URI.
  */
 function dataUriToWebviewPreviewSource(dataUri: string): WebviewPreviewSource | undefined {
   const match = dataUri.match(/^data:([^;,]+);base64,(.*)$/s);
@@ -431,8 +416,7 @@ function dataUriToWebviewPreviewSource(dataUri: string): WebviewPreviewSource | 
 /**
  * Creates an inline SVG preview source from rendered SVG text.
  *
- * @param {string} svg Raw SVG text.
- * @returns {WebviewPreviewSource}
+ * @param svg Raw SVG text.
  */
 function createInlineSvgPreviewSource(svg: string): WebviewPreviewSource {
   const dimensions = getSvgNaturalDimensions(svg);
@@ -447,9 +431,8 @@ function createInlineSvgPreviewSource(svg: string): WebviewPreviewSource {
 /**
  * Builds the preview element for one rendered image source.
  *
- * @param {WebviewPreviewSource} previewSource Rendered image source.
- * @param {string} label Accessible preview label.
- * @returns {string}
+ * @param previewSource Rendered image source.
+ * @param label Accessible preview label.
  */
 function previewSourceToPreviewMarkup(previewSource: WebviewPreviewSource, label: string) {
   if (previewSource.kind === "inlineSvg") {
@@ -469,8 +452,7 @@ function previewSourceToPreviewMarkup(previewSource: WebviewPreviewSource, label
 /**
  * Builds safe img attributes for URI and Blob preview sources.
  *
- * @param {Extract<WebviewPreviewSource, {kind: "uri" | "blob"}>} previewSource Rendered image source.
- * @returns {string}
+ * @param previewSource Rendered image source.
  */
 function previewSourceToImageAttributes(previewSource: Extract<WebviewPreviewSource, {kind: "uri" | "blob"}>): string {
   if (previewSource.kind === "uri") {
@@ -490,8 +472,7 @@ function previewSourceToImageAttributes(previewSource: Extract<WebviewPreviewSou
  * This guard is needed because inline SVG lives in the Webview DOM; scripts or
  * event attributes that were inert through `<img>` would otherwise become DOM.
  *
- * @param {string} svg Raw SVG text.
- * @returns {string}
+ * @param svg Raw SVG text.
  */
 function sanitizeInlineSvgForWebview(svg: string) {
   return svg
@@ -506,8 +487,7 @@ function sanitizeInlineSvgForWebview(svg: string) {
 /**
  * Reads natural SVG dimensions from width/height or viewBox.
  *
- * @param {string} svg Raw SVG text.
- * @returns {{width: number, height: number}}
+ * @param svg Raw SVG text.
  */
 function getSvgNaturalDimensions(svg: string) {
   const openTag = svg.match(/<svg\b[^>]*>/i);
@@ -536,9 +516,8 @@ function getSvgNaturalDimensions(svg: string) {
 /**
  * Reads one quoted XML attribute from a tag.
  *
- * @param {string} tag XML start tag.
- * @param {string} name Attribute name.
- * @returns {string | undefined}
+ * @param tag XML start tag.
+ * @param name Attribute name.
  */
 function readAttribute(tag: string, name: string) {
   const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"));
@@ -548,8 +527,7 @@ function readAttribute(tag: string, name: string) {
 /**
  * Parses simple SVG length values in px/user units.
  *
- * @param {string | undefined} value Raw length value.
- * @returns {number | undefined}
+ * @param value Raw length value.
  */
 function parseSvgLength(value: string | undefined) {
   if (!value) {
@@ -568,9 +546,8 @@ function parseSvgLength(value: string | undefined) {
 /**
  * Applies non-overlapping string replacements from right to left.
  *
- * @param {string} value Source string.
- * @param {{start: number, end: number, value: string}[]} replacements Replacements.
- * @returns {string}
+ * @param value Source string.
+ * @param replacements Replacements.
  */
 function applyReplacements(value: string, replacements: Replacement[]): string {
   let result = value;
@@ -583,9 +560,8 @@ function applyReplacements(value: string, replacements: Replacement[]): string {
 /**
  * Creates Webview options that allow direct SVG file loading from safe roots.
  *
- * @param {vscode.Uri} imageUri Image URI.
- * @param {vscode.Uri[]=} additionalRoots Additional local resource roots.
- * @returns {vscode.WebviewPanelOptions & vscode.WebviewOptions}
+ * @param imageUri Image URI.
+ * @param additionalRoots Additional local resource roots.
  */
 function createWebviewOptions(imageUri: vscode.Uri, additionalRoots: vscode.Uri[] | undefined = []) {
   return {
@@ -597,9 +573,8 @@ function createWebviewOptions(imageUri: vscode.Uri, additionalRoots: vscode.Uri[
 /**
  * Returns local roots used by asWebviewUri for SVG preview files.
  *
- * @param {vscode.Uri} imageUri Image URI.
- * @param {vscode.Uri[]} additionalRoots Additional local resource roots.
- * @returns {vscode.Uri[]}
+ * @param imageUri Image URI.
+ * @param additionalRoots Additional local resource roots.
  */
 function getLocalResourceRoots(imageUri: vscode.Uri, additionalRoots: vscode.Uri[]) {
   const rootsByPath = new Map();
@@ -616,9 +591,8 @@ function getLocalResourceRoots(imageUri: vscode.Uri, additionalRoots: vscode.Uri
 /**
  * Builds the complete WebviewPanel HTML document.
  *
- * @param {string} body Body HTML.
- * @param {string=} script Optional inline script.
- * @returns {string}
+ * @param body Body HTML.
+ * @param script Optional inline script.
  */
 export function buildPanelHtml(body: string, script = ""): string {
   return `<!DOCTYPE html>
@@ -750,7 +724,6 @@ export function buildPanelHtml(body: string, script = ""): string {
 /**
  * Builds the image zoom script used by preview webviews.
  *
- * @returns {string}
  */
 function getPreviewScript() {
   return `<script>
@@ -919,8 +892,7 @@ function getPreviewScript() {
 /**
  * Escapes text for HTML body content.
  *
- * @param {string} value Raw text.
- * @returns {string}
+ * @param value Raw text.
  */
 function escapeHtml(value: string) {
   return String(value)
@@ -933,8 +905,7 @@ function escapeHtml(value: string) {
 /**
  * Escapes text for HTML attributes.
  *
- * @param {string} value Raw text.
- * @returns {string}
+ * @param value Raw text.
  */
 function escapeAttribute(value: string) {
   return escapeHtml(value).replace(/'/g, "&#39;");
@@ -943,16 +914,12 @@ function escapeAttribute(value: string) {
 /**
  * Formats an unknown error for diagnostics.
  *
- * @param {unknown} error Error-like value.
- * @returns {string}
+ * @param error Error-like value.
  */
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
 
-/**
- * @typedef {({kind: "uri", src: string} | {kind: "blob", mimeType: string, base64: string} | {kind: "inlineSvg", svg: string, width: number, height: number}) & {localResourceRoots?: vscode.Uri[]}} WebviewPreviewSource
- */
 
 

@@ -15,7 +15,7 @@ import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider,
 /**
  * Activates the local Pandoc Markdown helper extension.
  *
- * @param {vscode.ExtensionContext} context VS Code extension context.
+ * @param context VS Code extension context.
  */
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel(EXTENSION_NAME);

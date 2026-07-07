@@ -6,8 +6,7 @@ const PANDOC_LANGUAGE_IDS = new Set(["markdown", "mdx"]);
 /**
  * Converts a plain parser range into a VS Code range.
  *
- * @param {import("./parser").PlainRange} range Plain parser range.
- * @returns {vscode.Range}
+ * @param range Plain parser range.
  */
 export function toRange(range: PlainRange): vscode.Range {
   return new vscode.Range(
@@ -19,8 +18,7 @@ export function toRange(range: PlainRange): vscode.Range {
 /**
  * Converts a parser entry to a VS Code location.
  *
- * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Parsed entry.
- * @returns {vscode.Location}
+ * @param entry Parsed entry.
  */
 export function toLocation(entry: LabelEntry | ReferenceEntry): vscode.Location {
   return new vscode.Location(vscode.Uri.parse(entry.uriText), toRange(entry.range));
@@ -32,9 +30,8 @@ export function toLocation(entry: LabelEntry | ReferenceEntry): vscode.Location 
  * The origin range must cover the full Pandoc token; otherwise Ctrl-hover
  * falls back to VS Code word ranges and underlines only `sec` or `results`.
  *
- * @param {import("./parser").LabelEntry} target Definition target entry.
- * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} origin Origin token under the cursor.
- * @returns {vscode.LocationLink}
+ * @param target Definition target entry.
+ * @param origin Origin token under the cursor.
  */
 export function toLocationLink(target: LabelEntry, origin: LabelEntry | ReferenceEntry): vscode.LocationLink {
   return {
@@ -48,8 +45,7 @@ export function toLocationLink(target: LabelEntry, origin: LabelEntry | Referenc
 /**
  * Converts a VS Code position into a serializable parser position.
  *
- * @param {vscode.Position} position VS Code position.
- * @returns {{line: number, character: number}}
+ * @param position VS Code position.
  */
 export function toPlainPosition(position: vscode.Position): PlainPosition {
   return { line: position.line, character: position.character };
@@ -58,8 +54,7 @@ export function toPlainPosition(position: vscode.Position): PlainPosition {
 /**
  * Returns a VS Code symbol kind for a Pandoc label prefix.
  *
- * @param {string} prefix Pandoc label prefix.
- * @returns {vscode.SymbolKind}
+ * @param prefix Pandoc label prefix.
  */
 export function toSymbolKind(prefix: string): vscode.SymbolKind {
   if (prefix === "eq") {
@@ -80,8 +75,7 @@ export function toSymbolKind(prefix: string): vscode.SymbolKind {
  * Untitled buffers are useful for hover and index behavior while editing, but
  * build commands still require a saved file and use a stricter helper below.
  *
- * @param {vscode.TextDocument} document Text document.
- * @returns {boolean}
+ * @param document Text document.
  */
 function isEditorBackedDocument(document: vscode.TextDocument) {
   return document.uri.scheme === "file" || document.uri.scheme === "untitled";
@@ -90,9 +84,8 @@ function isEditorBackedDocument(document: vscode.TextDocument) {
 /**
  * Checks whether a document language is in one supported-language set.
  *
- * @param {vscode.TextDocument} document Text document.
- * @param {Set<string>} languageIds Supported VS Code language IDs.
- * @returns {boolean}
+ * @param document Text document.
+ * @param languageIds Supported VS Code language IDs.
  */
 function isSupportedLanguageDocument(document: vscode.TextDocument, languageIds: Set<string>) {
   return languageIds.has(document.languageId);
@@ -105,8 +98,7 @@ function isSupportedLanguageDocument(document: vscode.TextDocument, languageIds:
  * because the user asked for MDX support and its prose/math structure is close
  * enough to Markdown for the current parser.
  *
- * @param {vscode.TextDocument} document Text document.
- * @returns {boolean}
+ * @param document Text document.
  */
 export function isPandocDocument(document: vscode.TextDocument): boolean {
   return isEditorBackedDocument(document) && isSupportedLanguageDocument(document, PANDOC_LANGUAGE_IDS);
@@ -119,8 +111,7 @@ export function isPandocDocument(document: vscode.TextDocument): boolean {
  * previews without also inheriting paragraph-translation or label-summary
  * behavior that is specific to Markdown/MDX manuscripts.
  *
- * @param {vscode.TextDocument} document Text document.
- * @returns {boolean}
+ * @param document Text document.
  */
 export function supportsPandocTextFeatures(document: vscode.TextDocument): boolean {
   return isSupportedLanguageDocument(document, PANDOC_LANGUAGE_IDS);
@@ -132,8 +123,7 @@ export function supportsPandocTextFeatures(document: vscode.TextDocument): boole
  * Untitled Markdown is useful for language features, but the DOCX build needs
  * a concrete file path so the build script can derive the output filename.
  *
- * @param {vscode.TextDocument} document Text document.
- * @returns {boolean}
+ * @param document Text document.
  */
 export function isBuildableMarkdownDocument(document: vscode.TextDocument): boolean {
   return document.languageId === "markdown" && document.uri.scheme === "file";

@@ -18,8 +18,8 @@ export class MetafilePreviewCustomEditorProvider {
   /**
    * Creates a read-only custom editor provider for EMF/WMF previews.
    *
-   * @param {import("./index").ImagePreviewRenderer} imagePreviewRenderer Shared preview renderer.
-   * @param {{appendLine(message: string): void}} output Output channel.
+   * @param imagePreviewRenderer Shared preview renderer.
+   * @param output Output channel.
    */
   constructor(imagePreviewRenderer: import("./index").ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
@@ -29,8 +29,7 @@ export class MetafilePreviewCustomEditorProvider {
   /**
    * Opens the binary metafile as a lightweight custom document.
    *
-   * @param {vscode.Uri} uri Resource URI.
-   * @returns {vscode.CustomDocument}
+   * @param uri Resource URI.
    */
   async openCustomDocument(uri: vscode.Uri) {
     return {
@@ -42,8 +41,8 @@ export class MetafilePreviewCustomEditorProvider {
   /**
    * Resolves the custom editor webview for one EMF/WMF document.
    *
-   * @param {vscode.CustomDocument} document Custom document.
-   * @param {vscode.WebviewPanel} webviewPanel Preview webview panel.
+   * @param document Custom document.
+   * @param webviewPanel Preview webview panel.
    */
   async resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel) {
     const imagePath = document.uri.fsPath;
@@ -78,8 +77,7 @@ export class MetafilePreviewCustomEditorProvider {
 /**
  * Escapes text for HTML body content.
  *
- * @param {string} value Raw text.
- * @returns {string}
+ * @param value Raw text.
  */
 function escapeHtml(value: string) {
   return String(value)
@@ -92,8 +90,7 @@ function escapeHtml(value: string) {
 /**
  * Formats an unknown error for diagnostics.
  *
- * @param {unknown} error Error-like value.
- * @returns {string}
+ * @param error Error-like value.
  */
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);

@@ -21,7 +21,7 @@ type SimpleMarkdownList = { items: { prefix: string; text: string }[] };
 export class PandocDefinitionProvider {
   declare index: PandocWorkspaceIndex;
   /**
-   * @param {PandocWorkspaceIndex} index Workspace index.
+   * @param index Workspace index.
    */
   constructor(index: PandocWorkspaceIndex) {
     this.index = index;
@@ -30,9 +30,8 @@ export class PandocDefinitionProvider {
   /**
    * Provides go-to-definition for Pandoc cross references.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @param {vscode.Position} position Cursor position.
-   * @returns {vscode.LocationLink[] | undefined}
+   * @param document Markdown document.
+   * @param position Cursor position.
    */
   provideDefinition(document: vscode.TextDocument, position: vscode.Position) {
     const token = getTokenAtDocumentPosition(this.index, document, position);
@@ -47,7 +46,7 @@ export class PandocDefinitionProvider {
 export class PandocReferenceProvider {
   declare index: PandocWorkspaceIndex;
   /**
-   * @param {PandocWorkspaceIndex} index Workspace index.
+   * @param index Workspace index.
    */
   constructor(index: PandocWorkspaceIndex) {
     this.index = index;
@@ -56,10 +55,9 @@ export class PandocReferenceProvider {
   /**
    * Provides find-all-references for Pandoc labels and references.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @param {vscode.Position} position Cursor position.
-   * @param {{includeDeclaration: boolean}} options Reference options.
-   * @returns {vscode.Location[] | undefined}
+   * @param document Markdown document.
+   * @param position Cursor position.
+   * @param options Reference options.
    */
   provideReferences(document: vscode.TextDocument, position: vscode.Position, options: { includeDeclaration: boolean }) {
     const token = getTokenAtDocumentPosition(this.index, document, position);
@@ -81,10 +79,10 @@ export class PandocHoverProvider {
   declare paragraphTranslator: ParagraphTranslator;
   declare output: import("vscode").OutputChannel;
   /**
-   * @param {PandocWorkspaceIndex} index Workspace index.
-   * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
-   * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
-   * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
+   * @param index Workspace index.
+   * @param mathRenderer MathJax SVG renderer.
+   * @param paragraphTranslator Paragraph translation service.
+   * @param output Output channel for hover diagnostics.
    */
   constructor(index: PandocWorkspaceIndex, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator, output: vscode.OutputChannel) {
     this.index = index;
@@ -96,9 +94,8 @@ export class PandocHoverProvider {
   /**
    * Provides label, reference, math, and optional paragraph hover information.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @param {vscode.Position} position Cursor position.
-   * @returns {Promise<vscode.Hover | undefined>}
+   * @param document Markdown document.
+   * @param position Cursor position.
    */
   async provideHover(document: vscode.TextDocument, position: vscode.Position) {
     try {
@@ -112,9 +109,8 @@ export class PandocHoverProvider {
   /**
    * Provides hover information after the public wrapper has installed logging.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @param {vscode.Position} position Cursor position.
-   * @returns {Promise<vscode.Hover | undefined>}
+   * @param document Markdown document.
+   * @param position Cursor position.
    */
   async provideHoverUnchecked(document: vscode.TextDocument, position: vscode.Position) {
     const parsed = this.index.getParsedDocument(document);
@@ -171,8 +167,8 @@ export class ImagePreviewHoverProvider {
    * Registering this separately lets VS Code show image previews alongside the
    * paragraph translation hover instead of forcing one branch to short-circuit.
    *
-   * @param {ImagePreviewRenderer} imagePreviewRenderer SVG/EMF/WMF image preview renderer.
-   * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
+   * @param imagePreviewRenderer SVG/EMF/WMF image preview renderer.
+   * @param output Output channel for hover diagnostics.
    */
   constructor(imagePreviewRenderer: ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
@@ -185,9 +181,8 @@ export class ImagePreviewHoverProvider {
    * The image preview path is newer and touches local files plus optional EMF
    * rasterization, so it is isolated from the older math and translation hovers.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @param {vscode.Position} position Cursor position.
-   * @returns {Promise<vscode.Hover | undefined>}
+   * @param document Markdown document.
+   * @param position Cursor position.
    */
   async provideImageHover(document: vscode.TextDocument, position: vscode.Position) {
     try {
@@ -201,9 +196,8 @@ export class ImagePreviewHoverProvider {
   /**
    * Provides image hovers through VS Code's HoverProvider API.
    *
-   * @param {vscode.TextDocument} document Text document.
-   * @param {vscode.Position} position Hover position.
-   * @returns {Promise<vscode.Hover | undefined>}
+   * @param document Text document.
+   * @param position Hover position.
    */
   async provideHover(document: vscode.TextDocument, position: vscode.Position) {
     return this.provideImageHover(document, position);
@@ -213,8 +207,7 @@ export class ImagePreviewHoverProvider {
 /**
  * Formats an unknown hover error for the output channel.
  *
- * @param {unknown} error Error-like value.
- * @returns {string}
+ * @param error Error-like value.
  */
 function formatError(error: unknown) {
   return error instanceof Error ? error.stack || error.message : String(error);
@@ -227,10 +220,9 @@ function formatError(error: unknown) {
  * cross-reference hovers such as `@eq:linear` still need the generic label
  * summary instead of rendering the target equation inline.
  *
- * @param {import("./parser").ParsedPandocDocument} parsed Parsed document.
- * @param {{type: string, entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry}} token Token under the cursor.
- * @param {{line: number, character: number}} position Cursor position.
- * @returns {import("./parser").MathBlockEntry | undefined}
+ * @param parsed Parsed document.
+ * @param token Token under the cursor.
+ * @param position Cursor position.
  */
 function findMathBlockForEquationLabelHover(parsed: ParsedPandocDocument, token: PandocTokenAtPosition, position: PlainPosition): MathBlockEntry | undefined {
   if (token.type !== "label" || token.entry.prefix !== "eq" || token.entry.source !== "math") {
@@ -251,10 +243,9 @@ function findMathBlockForEquationLabelHover(parsed: ParsedPandocDocument, token:
  * Paragraph hovers can be triggered by inline-math preview or translation, so
  * English paragraphs without formulas can still show translation when enabled.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {import("./parser").ParsedPandocDocument} parsed Parsed document.
- * @param {vscode.Position} position Hover position.
- * @returns {ParagraphHover | undefined}
+ * @param document Markdown document.
+ * @param parsed Parsed document.
+ * @param position Hover position.
  */
 function findParagraphHover(document: vscode.TextDocument, parsed: import("./parser").ParsedPandocDocument, position: vscode.Position) {
   if (isBlankParagraphLine(document, position.line)) {
@@ -289,9 +280,8 @@ function findParagraphHover(document: vscode.TextDocument, parsed: import("./par
 /**
  * Checks whether the paragraph should show the rendered inline-math preview.
  *
- * @param {string} paragraphText Raw paragraph text.
- * @param {import("./parser").InlineMathEntry[]} inlineMath Inline math spans inside the paragraph.
- * @returns {boolean}
+ * @param paragraphText Raw paragraph text.
+ * @param inlineMath Inline math spans inside the paragraph.
  */
 function shouldShowInlineMathParagraphPreview(paragraphText: string, inlineMath: import("./parser").InlineMathEntry[]) {
   return getConfiguration().get("enableInlineMathParagraphHover", false)
@@ -305,8 +295,7 @@ function shouldShowInlineMathParagraphPreview(paragraphText: string, inlineMath:
  * Long paragraphs can make VS Code hovers noisy and expensive because each
  * inline formula may need MathJax rendering, so they opt out before rendering.
  *
- * @param {string} paragraphText Raw paragraph text.
- * @returns {boolean}
+ * @param paragraphText Raw paragraph text.
  */
 function isParagraphTooLongForHover(paragraphText: string) {
   const maxCharacters = getConfiguration().get("inlineMathParagraphHoverMaxCharacters", 1000);
@@ -316,8 +305,7 @@ function isParagraphTooLongForHover(paragraphText: string) {
 /**
  * Checks whether the paragraph should request a translation hover.
  *
- * @param {string} paragraphText Raw paragraph text.
- * @returns {boolean}
+ * @param paragraphText Raw paragraph text.
  */
 function shouldTranslateParagraphHover(paragraphText: string) {
   if (!getConfiguration().get("enableParagraphHoverTranslation", false)) {
@@ -338,9 +326,8 @@ function shouldTranslateParagraphHover(paragraphText: string) {
  * Paragraph hovers intentionally stop at standalone HTML comments because
  * manuscript revision notes are not prose and should not be sent to previews.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} lineNumber Zero-based line number inside the paragraph.
- * @returns {vscode.Range}
+ * @param document Markdown document.
+ * @param lineNumber Zero-based line number inside the paragraph.
  */
 function findParagraphRange(document: vscode.TextDocument, lineNumber: number) {
   let startLine = lineNumber;
@@ -359,9 +346,8 @@ function findParagraphRange(document: vscode.TextDocument, lineNumber: number) {
 /**
  * Checks whether a line should split paragraph hover ranges.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} lineNumber Zero-based line number.
- * @returns {boolean}
+ * @param document Markdown document.
+ * @param lineNumber Zero-based line number.
  */
 function isParagraphBoundaryLine(document: vscode.TextDocument, lineNumber: number) {
   return isBlankParagraphLine(document, lineNumber)
@@ -371,9 +357,8 @@ function isParagraphBoundaryLine(document: vscode.TextDocument, lineNumber: numb
 /**
  * Checks whether a line is blank enough to split paragraph hover ranges.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} lineNumber Zero-based line number.
- * @returns {boolean}
+ * @param document Markdown document.
+ * @param lineNumber Zero-based line number.
  */
 function isBlankParagraphLine(document: vscode.TextDocument, lineNumber: number) {
   return document.lineAt(lineNumber).text.trim().length === 0;
@@ -387,9 +372,8 @@ function isBlankParagraphLine(document: vscode.TextDocument, lineNumber: number)
  * translation and inline-math preview hovers, while comment hovers can still
  * translate the comment block itself.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} lineNumber Zero-based line number.
- * @returns {boolean}
+ * @param document Markdown document.
+ * @param lineNumber Zero-based line number.
  */
 function isStandaloneHtmlCommentLine(document: vscode.TextDocument, lineNumber: number) {
   return findStandaloneHtmlCommentBlockRange(document, lineNumber) !== undefined;
@@ -401,9 +385,8 @@ function isStandaloneHtmlCommentLine(document: vscode.TextDocument, lineNumber: 
  * This special case lets review-note comments be translated when hovered
  * directly, without letting hidden comment text merge into nearby prose.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} lineNumber Zero-based line number.
- * @returns {vscode.Range | undefined}
+ * @param document Markdown document.
+ * @param lineNumber Zero-based line number.
  */
 function findStandaloneHtmlCommentBlockRange(document: vscode.TextDocument, lineNumber: number) {
   const startLine = findStandaloneHtmlCommentStartLine(document, lineNumber);
@@ -422,9 +405,8 @@ function findStandaloneHtmlCommentBlockRange(document: vscode.TextDocument, line
 /**
  * Finds the opening line for a standalone HTML comment block.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} lineNumber Zero-based line number inside the comment.
- * @returns {number | undefined}
+ * @param document Markdown document.
+ * @param lineNumber Zero-based line number inside the comment.
  */
 function findStandaloneHtmlCommentStartLine(document: vscode.TextDocument, lineNumber: number) {
   for (let currentLine = lineNumber; currentLine >= 0; currentLine -= 1) {
@@ -460,9 +442,8 @@ function findStandaloneHtmlCommentStartLine(document: vscode.TextDocument, lineN
 /**
  * Finds the closing line for a standalone HTML comment block.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {number} startLine Zero-based comment opening line.
- * @returns {number | undefined}
+ * @param document Markdown document.
+ * @param startLine Zero-based comment opening line.
  */
 function findStandaloneHtmlCommentEndLine(document: vscode.TextDocument, startLine: number) {
   for (let currentLine = startLine; currentLine < document.lineCount; currentLine += 1) {
@@ -489,8 +470,7 @@ function findStandaloneHtmlCommentEndLine(document: vscode.TextDocument, startLi
  * Translation endpoints and VS Code Markdown hovers can treat `<!-- ... -->`
  * as hidden HTML, so comment paragraphs need the visible review text only.
  *
- * @param {string} text Raw standalone HTML comment block.
- * @returns {string}
+ * @param text Raw standalone HTML comment block.
  */
 function extractStandaloneHtmlCommentText(text: string) {
   return text
@@ -502,7 +482,7 @@ function extractStandaloneHtmlCommentText(text: string) {
 export class PandocDocumentSymbolProvider {
   declare index: PandocWorkspaceIndex;
   /**
-   * @param {PandocWorkspaceIndex} index Workspace index.
+   * @param index Workspace index.
    */
   constructor(index: PandocWorkspaceIndex) {
     this.index = index;
@@ -511,8 +491,7 @@ export class PandocDocumentSymbolProvider {
   /**
    * Provides a Pandoc-aware outline that is not confused by `$$ {#eq:...}`.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @returns {vscode.DocumentSymbol[]}
+   * @param document Markdown document.
    */
   provideDocumentSymbols(document: vscode.TextDocument) {
     const parsed = this.index.getParsedDocument(document);
@@ -527,7 +506,7 @@ export class PandocDocumentSymbolProvider {
 export class PandocCompletionProvider {
   declare index: PandocWorkspaceIndex;
   /**
-   * @param {PandocWorkspaceIndex} index Workspace index.
+   * @param index Workspace index.
    */
   constructor(index: PandocWorkspaceIndex) {
     this.index = index;
@@ -536,9 +515,8 @@ export class PandocCompletionProvider {
   /**
    * Provides label completions after `@`.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @param {vscode.Position} position Cursor position.
-   * @returns {vscode.CompletionItem[] | undefined}
+   * @param document Markdown document.
+   * @param position Cursor position.
    */
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
     const linePrefix = document.lineAt(position).text.slice(0, position.character);
@@ -568,11 +546,10 @@ export class PandocCompletionProvider {
 /**
  * Builds a hover body for a label or cross-reference token.
  *
- * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Label or reference entry.
- * @param {PandocWorkspaceIndex} index Workspace index.
- * @param {vscode.TextDocument} document Markdown document whose references should be counted.
- * @param {string} tokenType Parsed token type, for example `label` or `reference`.
- * @returns {vscode.MarkdownString}
+ * @param entry Label or reference entry.
+ * @param index Workspace index.
+ * @param document Markdown document whose references should be counted.
+ * @param tokenType Parsed token type, for example `label` or `reference`.
  */
 function buildLabelHover(entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry, index: PandocWorkspaceIndex, document: vscode.TextDocument, tokenType: string) {
   const definitions = index.getDefinitions(document, entry.label);
@@ -599,8 +576,7 @@ function buildLabelHover(entry: import("./parser").LabelEntry | import("./parser
  * Definitions are already at their own location, so repeating the current line
  * as "Defined at" makes the hover noisy without adding navigation value.
  *
- * @param {string} tokenType Parsed token type.
- * @returns {boolean}
+ * @param tokenType Parsed token type.
  */
 function isDefinitionHover(tokenType: string) {
   return tokenType === "label";
@@ -613,7 +589,6 @@ function isDefinitionHover(tokenType: string) {
  * themes therefore need an explicit light color; light themes keep MathJax's
  * default black glyphs.
  *
- * @returns {string | undefined}
  */
 function getMathPreviewForegroundColor() {
   const themeKind = vscode.window.activeColorTheme.kind;
@@ -629,11 +604,10 @@ function getMathPreviewForegroundColor() {
 /**
  * Builds a hover body for display math blocks with a rendered SVG preview.
  *
- * @param {import("./parser").MathBlockEntry} mathBlock Math block entry.
- * @param {PandocWorkspaceIndex} index Workspace index.
- * @param {vscode.TextDocument} document Markdown document whose references should be counted.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @returns {Promise<vscode.MarkdownString>}
+ * @param mathBlock Math block entry.
+ * @param index Workspace index.
+ * @param document Markdown document whose references should be counted.
+ * @param mathRenderer MathJax SVG renderer.
  */
 async function buildMathHover(mathBlock: import("./parser").MathBlockEntry, index: PandocWorkspaceIndex, document: vscode.TextDocument, mathRenderer: MathJaxRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -663,9 +637,8 @@ async function buildMathHover(mathBlock: import("./parser").MathBlockEntry, inde
 /**
  * Builds a hover body for inline TeX math spans.
  *
- * @param {import("./parser").InlineMathEntry} inlineMath Inline math entry.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @returns {Promise<vscode.MarkdownString>}
+ * @param inlineMath Inline math entry.
+ * @param mathRenderer MathJax SVG renderer.
  */
 async function buildInlineMathHover(inlineMath: import("./parser").InlineMathEntry, mathRenderer: MathJaxRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -687,10 +660,9 @@ async function buildInlineMathHover(inlineMath: import("./parser").InlineMathEnt
 /**
  * Builds a hover body for paragraph-level math preview and/or translation.
  *
- * @param {ParagraphHover} paragraph Paragraph hover data.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<vscode.MarkdownString | undefined>}
+ * @param paragraph Paragraph hover data.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
  */
 async function buildParagraphHover(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -722,10 +694,9 @@ async function buildParagraphHover(paragraph: ParagraphHover, mathRenderer: Math
  * the user wants translation to see the same text that appears in the editor;
  * surviving inline TeX is rendered before showing the hover.
  *
- * @param {ParagraphHover} paragraph Paragraph hover data.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<RenderedTranslation | undefined>}
+ * @param paragraph Paragraph hover data.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
  */
 async function buildParagraphTranslation(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   if (!paragraph.showTranslation) {
@@ -759,10 +730,10 @@ async function buildParagraphTranslation(paragraph: ParagraphHover, mathRenderer
  * Normal paragraph translation intentionally folds prose, but list hovers need
  * their source line boundaries kept so VS Code does not show every item inline.
  *
- * @param {string} text Raw paragraph text.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<RenderedTranslation | undefined>} Undefined means "not a simple list"; empty markdown means translation failed.
+ * @param text Raw paragraph text.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
+ * @returns Undefined means "not a simple list"; empty markdown means translation failed.
  */
 async function buildMarkdownListTranslation(text: string, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const list = parseSimpleMarkdownList(text);
@@ -791,10 +762,10 @@ async function buildMarkdownListTranslation(text: string, mathRenderer: MathJaxR
  * Normal paragraph translation collapses line breaks and escapes `|`, which
  * intentionally makes prose literal but prevents VS Code from rendering tables.
  *
- * @param {string} text Raw paragraph text.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<RenderedTranslation | undefined>} Undefined means "not a table"; empty markdown means table translation failed.
+ * @param text Raw paragraph text.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
+ * @returns Undefined means "not a table"; empty markdown means table translation failed.
  */
 async function buildPipeTableTranslation(text: string, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const table = parseMarkdownPipeTable(text);
@@ -844,11 +815,10 @@ async function buildPipeTableTranslation(text: string, mathRenderer: MathJaxRend
  * `translateHtml` usually leaves Markdown punctuation alone, but Markdown is
  * not a protected format there; the shape check prevents a broken hover table.
  *
- * @param {string} text Raw Markdown table text.
- * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} sourceTable Source table shape.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
- * @returns {Promise<RenderedTranslation | undefined>}
+ * @param text Raw Markdown table text.
+ * @param sourceTable Source table shape.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
  */
 async function buildDirectMarkdownPipeTableTranslation(text: string, sourceTable: MarkdownPipeTable, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const translatedMarkdown = await paragraphTranslator.translateText(text);
@@ -870,9 +840,8 @@ async function buildDirectMarkdownPipeTableTranslation(text: string, sourceTable
  * Failed structured translations keep an empty markdown string so callers can
  * stop fallback attempts without showing a partial table or list preview.
  *
- * @param {string} markdown Rendered hover Markdown.
- * @param {"google" | "microsoft" | undefined} engine Translation engine.
- * @returns {RenderedTranslation | undefined}
+ * @param markdown Rendered hover Markdown.
+ * @param engine Translation engine.
  */
 function createRenderedTranslation(markdown: string, engine: "google" | "microsoft" | undefined) {
   return engine ? { markdown, engine } : undefined;
@@ -881,8 +850,7 @@ function createRenderedTranslation(markdown: string, engine: "google" | "microso
 /**
  * Formats the engine label shown in paragraph translation hovers.
  *
- * @param {"google" | "microsoft"} engine Translation engine id.
- * @returns {string}
+ * @param engine Translation engine id.
  */
 function formatTranslationEngineName(engine: "google" | "microsoft") {
   return engine === "microsoft" ? "Microsoft Translator" : "Google Translate";
@@ -891,9 +859,8 @@ function formatTranslationEngineName(engine: "google" | "microsoft") {
 /**
  * Checks that direct Markdown translation preserved row and column boundaries.
  *
- * @param {{rows: {cells: string[]}[], separatorIndex: number}} translatedTable Translated table.
- * @param {{rows: {cells: string[]}[], separatorIndex: number}} sourceTable Source table.
- * @returns {boolean}
+ * @param translatedTable Translated table.
+ * @param sourceTable Source table.
  */
 function hasMatchingPipeTableShape(translatedTable: MarkdownPipeTable, sourceTable: MarkdownPipeTable): boolean {
   if (translatedTable.separatorIndex !== sourceTable.separatorIndex || translatedTable.rows.length !== sourceTable.rows.length) {
@@ -906,10 +873,9 @@ function hasMatchingPipeTableShape(translatedTable: MarkdownPipeTable, sourceTab
 /**
  * Rebuilds a parsed Markdown table after translating and escaping its cells.
  *
- * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} translatedTable Translated table.
- * @param {{rows: {cells: string[]}[], separatorIndex: number}} sourceTable Source table for stable alignment delimiters.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @returns {Promise<string>}
+ * @param translatedTable Translated table.
+ * @param sourceTable Source table for stable alignment delimiters.
+ * @param mathRenderer MathJax SVG renderer.
  */
 async function renderParsedPipeTableMarkdown(translatedTable: MarkdownPipeTable, sourceTable: MarkdownPipeTable, mathRenderer: MathJaxRenderer): Promise<string> {
   const translatedRows = [];
@@ -937,8 +903,7 @@ async function renderParsedPipeTableMarkdown(translatedTable: MarkdownPipeTable,
  * The Google endpoint is `translateHtml`, so these simple tags preserve row and
  * cell boundaries while still letting the model translate with table context.
  *
- * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} table Parsed pipe table.
- * @returns {string}
+ * @param table Parsed pipe table.
  */
 function formatPipeTableTranslationHtml(table: MarkdownPipeTable): string {
   const htmlRows = [];
@@ -961,9 +926,8 @@ function formatPipeTableTranslationHtml(table: MarkdownPipeTable): string {
 /**
  * Parses the translated protected HTML table back into row and caption text.
  *
- * @param {string} html Translated HTML fragment returned by Google.
- * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} table Source table shape.
- * @returns {{rows: string[][], caption: string} | undefined}
+ * @param html Translated HTML fragment returned by Google.
+ * @param table Source table shape.
  */
 function parseTranslatedPipeTableHtml(html: string, table: MarkdownPipeTable): TranslatedPipeTableHtml | undefined {
   const expectedRows = table.rows.filter((_row, rowIndex) => rowIndex !== table.separatorIndex);
@@ -992,9 +956,8 @@ function parseTranslatedPipeTableHtml(html: string, table: MarkdownPipeTable): T
 /**
  * Renders translated table cells as safe Markdown cell content.
  *
- * @param {string[]} cells Translated cell texts.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @returns {Promise<string[]>}
+ * @param cells Translated cell texts.
+ * @param mathRenderer MathJax SVG renderer.
  */
 async function renderMarkdownTableCells(cells: string[], mathRenderer: MathJaxRenderer): Promise<string[]> {
   const renderedCells: string[] = [];
@@ -1007,8 +970,7 @@ async function renderMarkdownTableCells(cells: string[], mathRenderer: MathJaxRe
 /**
  * Escapes table-cell pipes after Markdown rendering choices are preserved.
  *
- * @param {string} value Markdown table cell content.
- * @returns {string}
+ * @param value Markdown table cell content.
  */
 function escapeMarkdownTableCellPipes(value: string) {
   return value.replace(/(^|[^\\])\|/g, "$1\\|");
@@ -1020,8 +982,7 @@ function escapeMarkdownTableCellPipes(value: string) {
  * This branch intentionally handles only pipe tables with a header delimiter;
  * other table syntaxes should keep using the ordinary literal paragraph hover.
  *
- * @param {string} text Raw paragraph text.
- * @returns {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]} | undefined}
+ * @param text Raw paragraph text.
  */
 function parseMarkdownPipeTable(text: string): MarkdownPipeTable | undefined {
   const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
@@ -1060,8 +1021,7 @@ function parseMarkdownPipeTable(text: string): MarkdownPipeTable | undefined {
  * Nested item markers are allowed, but continuation lines are skipped so the
  * translator never flattens structure it cannot reconstruct safely in preview.
  *
- * @param {string} text Raw paragraph text.
- * @returns {{items: {prefix: string, text: string}[]} | undefined}
+ * @param text Raw paragraph text.
  */
 function parseSimpleMarkdownList(text: string): SimpleMarkdownList | undefined {
   const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.replace(/[ \t]+$/g, "")).filter((line) => line.trim().length > 0);
@@ -1088,8 +1048,7 @@ function parseSimpleMarkdownList(text: string): SimpleMarkdownList | undefined {
 /**
  * Parses one bullet or ordered-list item, keeping its original indentation.
  *
- * @param {string} line Markdown line without trailing whitespace.
- * @returns {{prefix: string, text: string} | undefined}
+ * @param line Markdown line without trailing whitespace.
  */
 function parseSimpleMarkdownListItem(line: string) {
   const unorderedMatch = line.match(/^([ \t]*[-+*]\s+)(.+)$/);
@@ -1108,8 +1067,7 @@ function parseSimpleMarkdownListItem(line: string) {
 /**
  * Checks whether a line can be parsed as a Markdown pipe-table row.
  *
- * @param {string} line Trimmed Markdown line.
- * @returns {boolean}
+ * @param line Trimmed Markdown line.
  */
 function isPipeTableRowLine(line: string) {
   const cells = splitMarkdownPipeTableRow(line);
@@ -1121,8 +1079,7 @@ function isPipeTableRowLine(line: string) {
 /**
  * Checks whether a line is the required Markdown table delimiter row.
  *
- * @param {string} line Trimmed Markdown line.
- * @returns {boolean}
+ * @param line Trimmed Markdown line.
  */
 function isPipeTableSeparatorLine(line: string) {
   if (!isPipeTableRowLine(line)) {
@@ -1135,8 +1092,7 @@ function isPipeTableSeparatorLine(line: string) {
 /**
  * Splits a pipe-table row without treating escaped pipes as cell separators.
  *
- * @param {string} line Trimmed Markdown table row.
- * @returns {string[]}
+ * @param line Trimmed Markdown table row.
  */
 function splitMarkdownPipeTableRow(line: string) {
   const row = stripOuterPipe(line.trim());
@@ -1158,8 +1114,7 @@ function splitMarkdownPipeTableRow(line: string) {
 /**
  * Removes optional leading and trailing pipe-table fences.
  *
- * @param {string} row Trimmed Markdown table row.
- * @returns {string}
+ * @param row Trimmed Markdown table row.
  */
 function stripOuterPipe(row: string) {
   let stripped = row;
@@ -1175,8 +1130,7 @@ function stripOuterPipe(row: string) {
 /**
  * Checks whether a row has unescaped leading and trailing table pipes.
  *
- * @param {string} line Trimmed Markdown table row.
- * @returns {boolean}
+ * @param line Trimmed Markdown table row.
  */
 function hasOuterPipeTableFences(line: string) {
   const trimmed = line.trim();
@@ -1188,9 +1142,8 @@ function hasOuterPipeTableFences(line: string) {
 /**
  * Checks whether a Markdown character is escaped by an odd number of slashes.
  *
- * @param {string} value Markdown source.
- * @param {number} index Character index to inspect.
- * @returns {boolean}
+ * @param value Markdown source.
+ * @param index Character index to inspect.
  */
 function isEscapedMarkdownCharacter(value: string, index: number) {
   let slashCount = 0;
@@ -1203,8 +1156,7 @@ function isEscapedMarkdownCharacter(value: string, index: number) {
 /**
  * Formats already-escaped cells as one Markdown pipe-table row.
  *
- * @param {string[]} cells Escaped table cells.
- * @returns {string}
+ * @param cells Escaped table cells.
  */
 function formatPipeTableRow(cells: string[]) {
   return `| ${cells.map((cell) => cell.trim()).join(" | ")} |`;
@@ -1213,8 +1165,7 @@ function formatPipeTableRow(cells: string[]) {
 /**
  * Escapes table text before embedding it in protected translation HTML.
  *
- * @param {string} value Raw table cell or caption text.
- * @returns {string}
+ * @param value Raw table cell or caption text.
  */
 function escapeHtmlText(value: string) {
   return value
@@ -1226,8 +1177,7 @@ function escapeHtmlText(value: string) {
 /**
  * Normalizes translated text recovered from protected table HTML.
  *
- * @param {string} value HTML text content from a translated cell or caption.
- * @returns {string}
+ * @param value HTML text content from a translated cell or caption.
  */
 function normalizeTranslatedTableHtmlText(value: string) {
   return value
@@ -1239,8 +1189,7 @@ function normalizeTranslatedTableHtmlText(value: string) {
 /**
  * Checks whether prose looks like an English paragraph.
  *
- * @param {string} text Raw paragraph text.
- * @returns {boolean}
+ * @param text Raw paragraph text.
  */
 function isLikelyEnglishParagraph(text: string) {
   const latinLetters = text.match(/[A-Za-z]/g) || [];
@@ -1261,9 +1210,8 @@ function isLikelyEnglishParagraph(text: string) {
  * Failed formulas fall back to inline TeX so one bad span does not hide the
  * rest of the paragraph preview.
  *
- * @param {ParagraphHover} paragraph Paragraph hover data.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @returns {Promise<string>}
+ * @param paragraph Paragraph hover data.
+ * @param mathRenderer MathJax SVG renderer.
  */
 async function renderInlineMathParagraphMarkdown(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer) {
   return renderInlineMathTextMarkdown(paragraph.text, mathRenderer, paragraph.inlineMath, paragraph.startOffset);
@@ -1275,11 +1223,10 @@ async function renderInlineMathParagraphMarkdown(paragraph: ParagraphHover, math
  * The non-math chunks remain Markdown so the hover acts like a Markdown preview
  * with VS Code's missing inline-math rendering filled in by MathJax images.
  *
- * @param {string} text Hover text.
- * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
- * @param {import("./parser").InlineMathEntry[]=} inlineMath Inline math entries, if already known.
- * @param {number=} startOffset Offset used by precomputed inline math entries.
- * @returns {Promise<string>}
+ * @param text Hover text.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param inlineMath Inline math entries, if already known.
+ * @param startOffset Offset used by precomputed inline math entries.
  */
 async function renderInlineMathTextMarkdown(text: string, mathRenderer: MathJaxRenderer, inlineMath: import("./parser").InlineMathEntry[] | undefined = undefined, startOffset: number | undefined = 0) {
   const mathEntries = inlineMath || parsePandocDocument(text).inlineMath;
@@ -1310,8 +1257,7 @@ async function renderInlineMathTextMarkdown(text: string, mathRenderer: MathJaxR
 /**
  * Normalizes line endings without escaping Markdown syntax.
  *
- * @param {string} value Markdown text.
- * @returns {string}
+ * @param value Markdown text.
  */
 function normalizeMarkdownLineBreaks(value: string) {
   return value.replace(/\r\n/g, "\n");
@@ -1320,8 +1266,7 @@ function normalizeMarkdownLineBreaks(value: string) {
 /**
  * Escapes rare backticks in TeX fallback code spans.
  *
- * @param {string} value TeX source.
- * @returns {string}
+ * @param value TeX source.
  */
 function escapeMarkdownCodeSpan(value: string) {
   return value.replace(/`/g, "\\`");
@@ -1330,7 +1275,7 @@ function escapeMarkdownCodeSpan(value: string) {
 /**
  * Adds the MathJax fallback message shown when a hover preview cannot render.
  *
- * @param {vscode.MarkdownString} markdown Hover markdown being built.
+ * @param markdown Hover markdown being built.
  */
 function appendMathJaxUnavailableMessage(markdown: vscode.MarkdownString) {
   markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Pandoc Manuscript Tools output for the TeX source and error details.\n\n");
@@ -1372,8 +1317,7 @@ function buildHeadingTree(headings: HeadingEntry[]): vscode.DocumentSymbol[] {
  * VS Code merges our symbols with the built-in Markdown provider, so keeping the
  * marker here makes the Pandoc-aware outline easy to distinguish from the built-in one.
  *
- * @param {import("./parser").HeadingEntry} heading Parsed heading.
- * @returns {string}
+ * @param heading Parsed heading.
  */
 function formatHeadingSymbolName(heading: import("./parser").HeadingEntry) {
   return `${"#".repeat(heading.level)} ${heading.title}`;
@@ -1382,8 +1326,8 @@ function formatHeadingSymbolName(heading: import("./parser").HeadingEntry) {
 /**
  * Adds figure, table, and equation labels below their nearest heading symbol.
  *
- * @param {import("./parser").LabelEntry[]} labels Parsed label definitions.
- * @param {vscode.DocumentSymbol[]} headingSymbols Heading symbols.
+ * @param labels Parsed label definitions.
+ * @param headingSymbols Heading symbols.
  */
 function addLabelSymbols(labels: import("./parser").LabelEntry[], headingSymbols: vscode.DocumentSymbol[]) {
   const nonSectionLabels = labels.filter((entry) => entry.prefix !== "sec");
@@ -1406,8 +1350,7 @@ function addLabelSymbols(labels: import("./parser").LabelEntry[], headingSymbols
 /**
  * Creates a VS Code symbol for one parsed label definition.
  *
- * @param {import("./parser").LabelEntry} label Parsed label definition.
- * @returns {vscode.DocumentSymbol}
+ * @param label Parsed label definition.
  */
 function createLabelSymbol(label: import("./parser").LabelEntry) {
   return new vscode.DocumentSymbol(
@@ -1422,8 +1365,7 @@ function createLabelSymbol(label: import("./parser").LabelEntry) {
 /**
  * Flattens the heading tree before labels are inserted into it.
  *
- * @param {vscode.DocumentSymbol[]} symbols Heading symbols.
- * @returns {vscode.DocumentSymbol[]}
+ * @param symbols Heading symbols.
  */
 function flattenDocumentSymbols(symbols: vscode.DocumentSymbol[]) {
   const flattened: vscode.DocumentSymbol[] = [];
@@ -1436,9 +1378,8 @@ function flattenDocumentSymbols(symbols: vscode.DocumentSymbol[]) {
 /**
  * Finds the innermost heading symbol preceding a line.
  *
- * @param {vscode.DocumentSymbol[]} symbols Flat candidate heading symbols.
- * @param {number} line Target line.
- * @returns {vscode.DocumentSymbol | undefined}
+ * @param symbols Flat candidate heading symbols.
+ * @param line Target line.
  */
 function findNearestHeadingSymbol(symbols: vscode.DocumentSymbol[], line: number) {
   let nearest: vscode.DocumentSymbol | undefined;
@@ -1457,9 +1398,8 @@ function findNearestHeadingSymbol(symbols: vscode.DocumentSymbol[], line: number
  * This is the subfigure special case: only labels created from HTML div ids act
  * as outline containers, so ordinary image/table labels stay as siblings.
  *
- * @param {import("./parser").LabelEntry[]} labels Candidate labels.
- * @param {import("./parser").LabelEntry} child Child label.
- * @returns {import("./parser").LabelEntry | undefined}
+ * @param labels Candidate labels.
+ * @param child Child label.
  */
 function findNearestContainerLabel(labels: import("./parser").LabelEntry[], child: import("./parser").LabelEntry) {
   let nearest;
@@ -1480,9 +1420,8 @@ function findNearestContainerLabel(labels: import("./parser").LabelEntry[], chil
 /**
  * Checks whether one parser range starts after another range.
  *
- * @param {import("./parser").PlainRange} left Left range.
- * @param {import("./parser").PlainRange} right Right range.
- * @returns {boolean}
+ * @param left Left range.
+ * @param right Right range.
  */
 function isRangeStartAfter(left: import("./parser").PlainRange, right: import("./parser").PlainRange) {
   if (left.start.line !== right.start.line) {
@@ -1494,8 +1433,8 @@ function isRangeStartAfter(left: import("./parser").PlainRange, right: import(".
 /**
  * Updates diagnostics for all open Markdown documents.
  *
- * @param {PandocWorkspaceIndex} index Workspace index.
- * @param {vscode.DiagnosticCollection} diagnostics Diagnostic collection.
+ * @param index Workspace index.
+ * @param diagnostics Diagnostic collection.
  */
 export function updateDiagnosticsForOpenDocuments(index: PandocWorkspaceIndex, diagnostics: vscode.DiagnosticCollection): void {
   for (const document of vscode.workspace.textDocuments) {
@@ -1508,9 +1447,9 @@ export function updateDiagnosticsForOpenDocuments(index: PandocWorkspaceIndex, d
 /**
  * Updates diagnostics for one Markdown document.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {PandocWorkspaceIndex} index Workspace index.
- * @param {vscode.DiagnosticCollection} diagnostics Diagnostic collection.
+ * @param document Markdown document.
+ * @param index Workspace index.
+ * @param diagnostics Diagnostic collection.
  */
 export function updateDiagnostics(document: vscode.TextDocument, index: PandocWorkspaceIndex, diagnostics: vscode.DiagnosticCollection): void {
   if (!getConfiguration().get("enableDiagnostics", true)) {
@@ -1553,10 +1492,9 @@ export function updateDiagnostics(document: vscode.TextDocument, index: PandocWo
 /**
  * Returns the token at a document position.
  *
- * @param {PandocWorkspaceIndex} index Workspace index.
- * @param {vscode.TextDocument} document Markdown document.
- * @param {vscode.Position} position Cursor position.
- * @returns {{type: string, entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry} | undefined}
+ * @param index Workspace index.
+ * @param document Markdown document.
+ * @param position Cursor position.
  */
 function getTokenAtDocumentPosition(index: PandocWorkspaceIndex, document: vscode.TextDocument, position: vscode.Position): PandocTokenAtPosition | undefined {
   const parsed = index.getParsedDocument(document);

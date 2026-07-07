@@ -1,10 +1,10 @@
 import type * as vscode from "vscode";
 import * as fs from "fs/promises";
 import * as path from "path";
-const { createJimp } = require("@jimp/core");
-const jpeg = require("@jimp/js-jpeg").default;
-const png = require("@jimp/js-png").default;
-const resize = require("@jimp/plugin-resize");
+import { createJimp } from "@jimp/core";
+import jpeg from "@jimp/js-jpeg";
+import png from "@jimp/js-png";
+import * as resize from "@jimp/plugin-resize";
 import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
 
 type OutputChannelLike = { appendLine(message: string): void };
@@ -40,10 +40,9 @@ const NestedRasterJimp = createJimp({
  * This exists because VS Code hover images cannot reliably resolve local file
  * references inside a data-URI SVG. Inlining keeps SVG previews self-contained.
  *
- * @param {vscode.TextDocument} document Document containing the SVG reference.
- * @param {string} svgPath Absolute SVG path.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param document Document containing the SVG reference.
+ * @param svgPath Absolute SVG path.
+ * @param output Output channel.
  */
 export async function renderSvgPreviewDataUri(document: { uri: vscode.Uri }, svgPath: string, output: OutputChannelLike): Promise<string | undefined> {
   try {
@@ -59,11 +58,10 @@ export async function renderSvgPreviewDataUri(document: { uri: vscode.Uri }, svg
 /**
  * Replaces local SVG image references with embedded data URIs.
  *
- * @param {vscode.TextDocument} document Document containing the outer image.
- * @param {string} svg Raw SVG text.
- * @param {string} baseDirectory Directory used for relative nested images.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string>}
+ * @param document Document containing the outer image.
+ * @param svg Raw SVG text.
+ * @param baseDirectory Directory used for relative nested images.
+ * @param output Output channel.
  */
 async function inlineSvgImageReferences(document: { uri: vscode.Uri }, svg: string, baseDirectory: string, output: OutputChannelLike): Promise<string> {
   const replacements: Replacement[] = [];
@@ -97,9 +95,8 @@ async function inlineSvgImageReferences(document: { uri: vscode.Uri }, svg: stri
 /**
  * Reads one nested image as a data URI.
  *
- * @param {string} imagePath Absolute image path.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param imagePath Absolute image path.
+ * @param output Output channel.
  */
 async function readImageAsDataUri(imagePath: string, output: OutputChannelLike) {
   const mimeType = MIME_TYPES.get(path.extname(imagePath).toLowerCase());
@@ -125,11 +122,10 @@ async function readImageAsDataUri(imagePath: string, output: OutputChannelLike) 
  * native canvas runtime. Non-PNG/JPEG raster formats are left unchanged because
  * this lightweight Jimp instance only includes the formats this extension needs.
  *
- * @param {Buffer} imageBytes Source image bytes.
- * @param {string} mimeType Source MIME type.
- * @param {string} imagePath Absolute image path for diagnostics.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<{bytes: Buffer, mimeType: string}>}
+ * @param imageBytes Source image bytes.
+ * @param mimeType Source MIME type.
+ * @param imagePath Absolute image path for diagnostics.
+ * @param output Output channel.
  */
 async function prepareNestedImageForDataUri(imageBytes: Buffer, mimeType: string, imagePath: string, output: OutputChannelLike) {
   if (!RESIZABLE_RASTER_MIME_TYPES.has(mimeType)) {
@@ -147,9 +143,8 @@ async function prepareNestedImageForDataUri(imageBytes: Buffer, mimeType: string
 /**
  * Resizes one PNG/JPEG image so both dimensions are at most MAX_NESTED_RASTER_DIMENSION.
  *
- * @param {Buffer} imageBytes Source image bytes.
- * @param {string} mimeType Source MIME type.
- * @returns {Promise<{bytes: Buffer, mimeType: string}>}
+ * @param imageBytes Source image bytes.
+ * @param mimeType Source MIME type.
  */
 async function resizeNestedRasterImage(imageBytes: Buffer, mimeType: string) {
   const image = await NestedRasterJimp.fromBuffer(imageBytes);
@@ -169,10 +164,9 @@ async function resizeNestedRasterImage(imageBytes: Buffer, mimeType: string) {
 /**
  * Computes dimensions that fit inside a square bound without upscaling.
  *
- * @param {number} width Source width.
- * @param {number} height Source height.
- * @param {number} maxDimension Maximum allowed width or height.
- * @returns {{width: number, height: number} | undefined}
+ * @param width Source width.
+ * @param height Source height.
+ * @param maxDimension Maximum allowed width or height.
  */
 function fitWithinBounds(width: number, height: number, maxDimension: number) {
   if (!width || !height || width <= maxDimension && height <= maxDimension) {
@@ -189,9 +183,8 @@ function fitWithinBounds(width: number, height: number, maxDimension: number) {
 /**
  * Applies non-overlapping string replacements from right to left.
  *
- * @param {string} value Source string.
- * @param {{start: number, end: number, value: string}[]} replacements Replacements.
- * @returns {string}
+ * @param value Source string.
+ * @param replacements Replacements.
  */
 function applyReplacements(value: string, replacements: Replacement[]): string {
   let result = value;
@@ -204,10 +197,8 @@ function applyReplacements(value: string, replacements: Replacement[]): string {
 /**
  * Formats an unknown error for the output channel.
  *
- * @param {unknown} error Error-like value.
- * @returns {string}
+ * @param error Error-like value.
  */
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
-

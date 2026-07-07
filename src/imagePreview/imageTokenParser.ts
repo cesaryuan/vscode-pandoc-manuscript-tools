@@ -9,9 +9,8 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
  * This parser is intentionally line-local because image preview hovers should
  * stay cheap and should not compete with the full Pandoc label parser.
  *
- * @param {vscode.TextDocument} document Text document.
- * @param {vscode.Position} position Hover position.
- * @returns {ImageToken | undefined}
+ * @param document Text document.
+ * @param position Hover position.
  */
 export function findImageTokenAtPosition(document: vscode.TextDocument, position: vscode.Position) {
   const line = document.lineAt(position.line).text;
@@ -25,9 +24,8 @@ export function findImageTokenAtPosition(document: vscode.TextDocument, position
 /**
  * Finds a supported Markdown image token on one line.
  *
- * @param {string} line Source line.
- * @param {vscode.Position} position Hover position.
- * @returns {ImageToken | undefined}
+ * @param line Source line.
+ * @param position Hover position.
  */
 function findMarkdownImageToken(line: string, position: vscode.Position) {
   const imagePattern = /!\[[^\]\n]*(?:\\.[^\]\n]*)*\]\(([^)\n]+)\)/g;
@@ -53,8 +51,7 @@ function findMarkdownImageToken(line: string, position: vscode.Position) {
  * The special handling for `<...>` exists because Pandoc/Markdown commonly use
  * angle brackets when paths contain spaces.
  *
- * @param {string} rawDestination Raw text inside image parentheses.
- * @returns {string}
+ * @param rawDestination Raw text inside image parentheses.
  */
 function extractMarkdownImageDestination(rawDestination: string) {
   const trimmed = rawDestination.trim();
@@ -77,9 +74,8 @@ function extractMarkdownImageDestination(rawDestination: string) {
 /**
  * Finds a supported HTML `<img src="...">` token on one line.
  *
- * @param {string} line Source line.
- * @param {vscode.Position} position Hover position.
- * @returns {ImageToken | undefined}
+ * @param line Source line.
+ * @param position Hover position.
  */
 function findHtmlImageToken(line: string, position: vscode.Position) {
   const imagePattern = /<img\b[^>]*>/gi;
@@ -102,9 +98,8 @@ function findHtmlImageToken(line: string, position: vscode.Position) {
 /**
  * Reads one quoted or unquoted HTML attribute from a tag.
  *
- * @param {string} tag Source HTML tag.
- * @param {string} attribute Attribute name.
- * @returns {string | undefined}
+ * @param tag Source HTML tag.
+ * @param attribute Attribute name.
  */
 function getHtmlAttribute(tag: string, attribute: string) {
   const pattern = new RegExp(`\\b${attribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
@@ -115,11 +110,10 @@ function getHtmlAttribute(tag: string, attribute: string) {
 /**
  * Creates a normalized image token when the target extension is supported.
  *
- * @param {string | undefined} rawTarget Raw image target.
- * @param {number} line Line number.
- * @param {number} start Start character.
- * @param {number} end End character.
- * @returns {ImageToken | undefined}
+ * @param rawTarget Raw image target.
+ * @param line Line number.
+ * @param start Start character.
+ * @param end End character.
  */
 function createImageToken(rawTarget: string | undefined, line: number, start: number, end: number) {
   if (!rawTarget) {
@@ -142,8 +136,7 @@ function createImageToken(rawTarget: string | undefined, line: number, start: nu
 /**
  * Decodes a Markdown URL while tolerating literal Windows paths.
  *
- * @param {string} value URL or path from Markdown/HTML.
- * @returns {string}
+ * @param value URL or path from Markdown/HTML.
  */
 function decodeMarkdownUrl(value: string) {
   try {
@@ -156,8 +149,7 @@ function decodeMarkdownUrl(value: string) {
 /**
  * Removes URL query and hash suffixes before extension detection.
  *
- * @param {string} value URL or path.
- * @returns {string}
+ * @param value URL or path.
  */
 function stripQueryAndHash(value: string) {
   const suffixIndex = value.search(/[?#]/);
@@ -167,16 +159,12 @@ function stripQueryAndHash(value: string) {
 /**
  * Checks whether a character offset is inside a half-open token range.
  *
- * @param {number} character Character offset.
- * @param {number} start Inclusive start.
- * @param {number} end Exclusive end.
- * @returns {boolean}
+ * @param character Character offset.
+ * @param start Inclusive start.
+ * @param end Exclusive end.
  */
 function isCharacterInside(character: number, start: number, end: number) {
   return character >= start && character <= end;
 }
 
 
-/**
- * @typedef {{target: string, extension: string, range: vscode.Range}} ImageToken
- */

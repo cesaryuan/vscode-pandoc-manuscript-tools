@@ -30,8 +30,8 @@ export class FencedDivHighlighter {
   /**
    * Creates editor decorations for Pandoc fenced div blocks and bracketed spans.
    *
-   * @param {import("./workspaceIndex").PandocWorkspaceIndex} index Workspace index.
-   * @param {vscode.OutputChannel} output Output channel for useful diagnostics.
+   * @param index Workspace index.
+   * @param output Output channel for useful diagnostics.
    */
   constructor(index: import("./workspaceIndex").PandocWorkspaceIndex, output: vscode.OutputChannel) {
     this.index = index;
@@ -43,7 +43,7 @@ export class FencedDivHighlighter {
   /**
    * Refreshes decorations in visible Markdown editors.
    *
-   * @param {vscode.TextDocument=} changedDocument Optional changed document to refresh.
+   * @param changedDocument Optional changed document to refresh.
    */
   updateVisibleEditors(changedDocument: vscode.TextDocument | undefined = undefined) {
     for (const editor of vscode.window.visibleTextEditors) {
@@ -56,7 +56,7 @@ export class FencedDivHighlighter {
   /**
    * Refreshes decorations in one editor.
    *
-   * @param {vscode.TextEditor} editor Text editor.
+   * @param editor Text editor.
    */
   updateEditor(editor: vscode.TextEditor) {
     const configuration = getConfiguration();
@@ -103,9 +103,9 @@ export class FencedDivHighlighter {
   /**
    * Applies Pandoc fenced div and bracketed span decorations to one editor.
    *
-   * @param {vscode.TextEditor} editor Markdown editor.
-   * @param {boolean} highlightFencedDivs Whether fenced div block highlights are enabled.
-   * @param {boolean} highlightBracketedSpans Whether bracketed span highlights are enabled.
+   * @param editor Markdown editor.
+   * @param highlightFencedDivs Whether fenced div block highlights are enabled.
+   * @param highlightBracketedSpans Whether bracketed span highlights are enabled.
    */
   applyDecorations(editor: vscode.TextEditor, highlightFencedDivs: boolean, highlightBracketedSpans: boolean) {
     const parsed = this.index.getParsedDocument(editor.document);
@@ -116,9 +116,9 @@ export class FencedDivHighlighter {
   /**
    * Applies nested fenced div decorations to one editor.
    *
-   * @param {vscode.TextEditor} editor Markdown editor.
-   * @param {import("./parser").FencedDivEntry[]} fencedDivs Parsed fenced div blocks.
-   * @param {boolean} enabled Whether fenced div block highlights are enabled.
+   * @param editor Markdown editor.
+   * @param fencedDivs Parsed fenced div blocks.
+   * @param enabled Whether fenced div block highlights are enabled.
    */
   applyFencedDivDecorations(editor: vscode.TextEditor, fencedDivs: import("./parser").FencedDivEntry[], enabled: boolean) {
     const groupedRanges = this.decorationTypes.map((): vscode.Range[] => []);
@@ -138,9 +138,9 @@ export class FencedDivHighlighter {
   /**
    * Applies inline bracketed span decorations to one editor.
    *
-   * @param {vscode.TextEditor} editor Markdown editor.
-   * @param {import("./parser").SpanEntry[]} spans Parsed bracketed spans.
-   * @param {boolean} enabled Whether bracketed span highlights are enabled.
+   * @param editor Markdown editor.
+   * @param spans Parsed bracketed spans.
+   * @param enabled Whether bracketed span highlights are enabled.
    */
   applySpanDecorations(editor: vscode.TextEditor, spans: import("./parser").SpanEntry[], enabled: boolean) {
     const ranges = enabled ? spans.map(toInlineRange) : [];
@@ -150,7 +150,7 @@ export class FencedDivHighlighter {
   /**
    * Clears Pandoc visual syntax decorations from one editor.
    *
-   * @param {vscode.TextEditor} editor Text editor.
+   * @param editor Text editor.
    */
   clearEditor(editor: vscode.TextEditor) {
     for (const decorationType of this.decorationTypes) {
@@ -163,8 +163,7 @@ export class FencedDivHighlighter {
 /**
  * Creates a whole-line decoration style for one nesting level.
  *
- * @param {{backgroundColor: string, markerColor: string}} colors Decoration colors.
- * @returns {vscode.TextEditorDecorationType}
+ * @param colors Decoration colors.
  */
 function createFencedDivDecorationType(colors: { backgroundColor: string; markerColor: string }): vscode.TextEditorDecorationType {
   return vscode.window.createTextEditorDecorationType({
@@ -178,7 +177,6 @@ function createFencedDivDecorationType(colors: { backgroundColor: string; marker
 /**
  * Creates the inline decoration style for Pandoc bracketed spans.
  *
- * @returns {vscode.TextEditorDecorationType}
  */
 function createSpanDecorationType(): vscode.TextEditorDecorationType {
   return vscode.window.createTextEditorDecorationType({
@@ -192,9 +190,8 @@ function createSpanDecorationType(): vscode.TextEditorDecorationType {
  * VS Code whole-line decorations still need a concrete range, so using column
  * zero on the start and end lines keeps empty closing fences highlighted too.
  *
- * @param {vscode.TextDocument} document Markdown document.
- * @param {import("./parser").FencedDivEntry} fencedDiv Parsed fenced div.
- * @returns {vscode.Range}
+ * @param document Markdown document.
+ * @param fencedDiv Parsed fenced div.
  */
 function toWholeLineRange(document: vscode.TextDocument, fencedDiv: import("./parser").FencedDivEntry): vscode.Range {
   const startLine = Math.max(0, Math.min(fencedDiv.range.start.line, document.lineCount - 1));
@@ -205,8 +202,7 @@ function toWholeLineRange(document: vscode.TextDocument, fencedDiv: import("./pa
 /**
  * Converts a parser range into a VS Code inline range.
  *
- * @param {import("./parser").SpanEntry} entry Parsed bracketed span.
- * @returns {vscode.Range}
+ * @param entry Parsed bracketed span.
  */
 function toInlineRange(entry: import("./parser").SpanEntry): vscode.Range {
   return new vscode.Range(

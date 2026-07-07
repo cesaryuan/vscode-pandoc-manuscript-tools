@@ -9,10 +9,9 @@ import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
  * EMF and WMF files use the bundled libemf2svg WASM renderer so the hover can
  * show generated SVG directly.
  *
- * @param {string} imagePath Absolute image path.
- * @param {".emf" | ".wmf"} extension Image extension.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param imagePath Absolute image path.
+ * @param extension Image extension.
+ * @param output Output channel.
  */
 export async function renderMetafilePreviewDataUri(imagePath: string, extension: ".emf" | ".wmf", output: OutputChannelLike): Promise<string | undefined> {
   try {
@@ -33,10 +32,9 @@ export async function renderMetafilePreviewDataUri(imagePath: string, extension:
 /**
  * Converts metafile bytes to an SVG data URI through libemf2svg WASM.
  *
- * @param {Buffer} bytes Metafile bytes.
- * @param {".emf" | ".wmf"} extension Image extension.
- * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<string | undefined>}
+ * @param bytes Metafile bytes.
+ * @param extension Image extension.
+ * @param output Output channel.
  */
 async function renderSvgMetafilePreviewDataUri(bytes: Buffer, extension: ".emf" | ".wmf", output: OutputChannelLike): Promise<string | undefined> {
   const svg = extension === ".emf"
@@ -51,8 +49,7 @@ async function renderSvgMetafilePreviewDataUri(bytes: Buffer, extension: ".emf" 
 /**
  * Formats an unknown error for the output channel.
  *
- * @param {unknown} error Error-like value.
- * @returns {string}
+ * @param error Error-like value.
  */
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);

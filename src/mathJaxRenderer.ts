@@ -26,7 +26,7 @@ export class MathJaxRenderer {
   /**
    * Creates a lazy MathJax renderer for hover previews.
    *
-   * @param {vscode.OutputChannel} output Output channel for render failures.
+   * @param output Output channel for render failures.
    */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -38,10 +38,9 @@ export class MathJaxRenderer {
   /**
    * Converts TeX into a data URI containing a standalone SVG image.
    *
-   * @param {string} tex TeX source.
-   * @param {boolean} display Whether to render in display style.
-   * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
-   * @returns {Promise<string | undefined>}
+   * @param tex TeX source.
+   * @param display Whether to render in display style.
+   * @param foregroundColor CSS color for SVG glyphs.
    */
   async renderToDataUri(tex: string, display: boolean, foregroundColor: string | undefined) {
     const svg = await this.renderToSvg(tex, display, foregroundColor);
@@ -54,10 +53,9 @@ export class MathJaxRenderer {
   /**
    * Converts TeX into SVG and caches the result by source text and mode.
    *
-   * @param {string} tex TeX source.
-   * @param {boolean} display Whether to render in display style.
-   * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
-   * @returns {Promise<string | undefined>}
+   * @param tex TeX source.
+   * @param display Whether to render in display style.
+   * @param foregroundColor CSS color for SVG glyphs.
    */
   async renderToSvg(tex: string, display: boolean, foregroundColor: string | undefined) {
     const trimmedTex = tex.trim();
@@ -76,10 +74,9 @@ export class MathJaxRenderer {
   /**
    * Converts TeX into SVG without consulting the cache.
    *
-   * @param {string} tex TeX source.
-   * @param {boolean} display Whether to render in display style.
-   * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
-   * @returns {Promise<string | undefined>}
+   * @param tex TeX source.
+   * @param display Whether to render in display style.
+   * @param foregroundColor CSS color for SVG glyphs.
    */
   async renderToSvgUncached(tex: string, display: boolean, foregroundColor: string | undefined) {
     try {
@@ -127,7 +124,6 @@ export class MathJaxRenderer {
    * The extension uses static require calls inside the lazy loader so esbuild
    * can bundle MathJax without invoking the component loader's SRE path probes.
    *
-   * @returns {Promise<MathJaxRenderContext | undefined>}
    */
   async ensureMathJax() {
     if (this.loadFailure) {
@@ -150,7 +146,6 @@ export class MathJaxRenderer {
   /**
    * Initializes MathJax's direct Node API for TeX-to-SVG rendering.
    *
-   * @returns {Promise<MathJaxRenderContext>}
    */
   async loadMathJax() {
     require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
@@ -198,9 +193,8 @@ export class MathJaxRenderer {
  * Some stretchy operators, including \xleftarrow, embed nested SVG fragments
  * inside the real preview; counting recursive descendants falsely rejects them.
  *
- * @param {MathJaxAdaptor} adaptor MathJax DOM adaptor.
- * @param {unknown} node MathJax conversion result node.
- * @returns {unknown[]}
+ * @param adaptor MathJax DOM adaptor.
+ * @param node MathJax conversion result node.
  */
 function getTopLevelSvgNodes(adaptor: MathJaxAdaptor, node: unknown) {
   return adaptor.childNodes(node).filter((child) => adaptor.kind(child) === "svg");
@@ -212,7 +206,7 @@ function getTopLevelSvgNodes(adaptor: MathJaxAdaptor, node: unknown) {
  * The NewCM dynamic font files are packaged beside the bundle so large glyph
  * tables do not inflate `dist/extension.ts`.
  *
- * @param {MathJaxNamespace} mathjax MathJax direct API namespace.
+ * @param mathjax MathJax direct API namespace.
  */
 function configureMathJaxAsyncLoad(mathjax: MathJaxNamespace) {
   mathjax.asyncLoad = loadPackagedMathJaxDynamicModule;
@@ -222,8 +216,7 @@ function configureMathJaxAsyncLoad(mathjax: MathJaxNamespace) {
 /**
  * Loads dynamic MathJax modules from the packaged extension assets.
  *
- * @param {string} name Module name requested by MathJax.
- * @returns {unknown}
+ * @param name Module name requested by MathJax.
  */
 function loadPackagedMathJaxDynamicModule(name: string) {
   const normalizedName = name.replace(/\\/g, "/");
@@ -241,8 +234,7 @@ function loadPackagedMathJaxDynamicModule(name: string) {
  * with a tiny local require shim keeps the chunk external without pulling the
  * whole font package into the bundle.
  *
- * @param {string} chunkName NewCM SVG dynamic chunk name.
- * @returns {unknown}
+ * @param chunkName NewCM SVG dynamic chunk name.
  */
 function loadPackagedNewcmDynamicChunk(chunkName: string) {
   if (loadedMathJaxDynamicChunks.has(chunkName)) {
@@ -271,8 +263,7 @@ function loadPackagedNewcmDynamicChunk(chunkName: string) {
  * MathJax controls the module name, but this guard keeps the asset loader from
  * accepting path separators or traversal if a future request format changes.
  *
- * @param {string} chunkName NewCM SVG dynamic chunk name.
- * @returns {string}
+ * @param chunkName NewCM SVG dynamic chunk name.
  */
 function getPackagedNewcmDynamicChunkPath(chunkName: string) {
   if (!MATHJAX_DYNAMIC_CHUNK_NAME_PATTERN.test(chunkName)) {
@@ -284,9 +275,8 @@ function getPackagedNewcmDynamicChunkPath(chunkName: string) {
 /**
  * Resolves the limited dependency surface used by generated NewCM chunks.
  *
- * @param {string} request Require path from the generated chunk.
- * @param {unknown} MathJaxNewcmFont Bundled NewCM font class.
- * @returns {unknown}
+ * @param request Require path from the generated chunk.
+ * @param MathJaxNewcmFont Bundled NewCM font class.
  */
 function requireMathJaxDynamicChunkDependency(request: string, MathJaxNewcmFont: unknown) {
   if (request === "../../svg.js") {
@@ -301,8 +291,7 @@ function requireMathJaxDynamicChunkDependency(request: string, MathJaxNewcmFont:
  * MathJax can return an SVG containing an error node instead of throwing; the
  * hover should treat that as a failed preview so the output channel has details.
  *
- * @param {string} svg Serialized MathJax SVG.
- * @returns {string | undefined}
+ * @param svg Serialized MathJax SVG.
  */
 function getMathJaxSvgError(svg: string) {
   const match = svg.match(/\bdata-mjx-error="([^"]+)"/);
@@ -312,8 +301,7 @@ function getMathJaxSvgError(svg: string) {
 /**
  * Decodes the small set of HTML entities expected inside SVG attributes.
  *
- * @param {string} value Attribute value.
- * @returns {string}
+ * @param value Attribute value.
  */
 function decodeHtmlAttribute(value: string) {
   return value
@@ -327,8 +315,7 @@ function decodeHtmlAttribute(value: string) {
 /**
  * Formats TeX compactly for one-line output-channel diagnostics.
  *
- * @param {string} tex TeX source.
- * @returns {string}
+ * @param tex TeX source.
  */
 function formatTexForLog(tex: string) {
   const compactTex = tex.replace(/\s+/g, " ").trim();
@@ -339,9 +326,8 @@ function formatTexForLog(tex: string) {
 /**
  * Makes a MathJax SVG fit inside hover images without clipping.
  *
- * @param {string} svg Raw MathJax SVG.
- * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
- * @returns {string}
+ * @param svg Raw MathJax SVG.
+ * @param foregroundColor CSS color for SVG glyphs.
  */
 function makeSvgHoverFriendly(svg: string, foregroundColor: string | undefined) {
   const sizedSvg = setSvgPixelSize(svg, 720);
@@ -361,9 +347,8 @@ function makeSvgHoverFriendly(svg: string, foregroundColor: string | undefined) 
  * VS Code hover images can crop very wide SVGs; using the viewBox lets the
  * preview scale down while preserving the complete formula.
  *
- * @param {string} svg Raw MathJax SVG.
- * @param {number} maxWidthPx Maximum rendered width.
- * @returns {string}
+ * @param svg Raw MathJax SVG.
+ * @param maxWidthPx Maximum rendered width.
  */
 function setSvgPixelSize(svg: string, maxWidthPx: number) {
   const viewBoxMatch = svg.match(/\bviewBox="(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
@@ -388,10 +373,9 @@ function setSvgPixelSize(svg: string, maxWidthPx: number) {
 /**
  * Adds or replaces an attribute on the root SVG element.
  *
- * @param {string} svg Raw SVG.
- * @param {string} attribute Attribute name.
- * @param {string} value Attribute value.
- * @returns {string}
+ * @param svg Raw SVG.
+ * @param attribute Attribute name.
+ * @param value Attribute value.
  */
 function upsertSvgAttribute(svg: string, attribute: string, value: string) {
   const pattern = new RegExp(`(<svg\\b[^>]*\\s)${attribute}="[^"]*"`);

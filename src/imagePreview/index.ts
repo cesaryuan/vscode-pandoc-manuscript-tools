@@ -14,7 +14,7 @@ export class ImagePreviewRenderer {
   /**
    * Creates a renderer for SVG, EMF, and WMF hover previews.
    *
-   * @param {{appendLine(message: string): void}} output Output channel.
+   * @param output Output channel.
    */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -24,9 +24,8 @@ export class ImagePreviewRenderer {
   /**
    * Builds a hover for a supported local image under the cursor.
    *
-   * @param {{uri: vscode.Uri}} document Document URI used to resolve nested assets.
-   * @param {vscode.Position} position Hover position.
-   * @returns {Promise<vscode.Hover | undefined>}
+   * @param document Document URI used to resolve nested assets.
+   * @param position Hover position.
    */
   async provideHover(document: vscode.TextDocument, position: vscode.Position) {
     const token = findImageTokenAtPosition(document, position);
@@ -50,10 +49,9 @@ export class ImagePreviewRenderer {
   /**
    * Renders one image to a data URI, using an in-memory cache per path.
    *
-   * @param {vscode.TextDocument} document Text document.
-   * @param {string} imagePath Absolute image path.
-   * @param {string} extension Lowercase image extension.
-   * @returns {Promise<string | undefined>}
+   * @param document Text document.
+   * @param imagePath Absolute image path.
+   * @param extension Lowercase image extension.
    */
   async renderToDataUri(document: PreviewDocument, imagePath: string, extension: string) {
     let cacheKey;
@@ -73,9 +71,8 @@ export class ImagePreviewRenderer {
   /**
    * Creates a cache key that changes when the outer image file changes.
    *
-   * @param {string} imagePath Absolute image path.
-   * @param {string} extension Lowercase image extension.
-   * @returns {Promise<string>}
+   * @param imagePath Absolute image path.
+   * @param extension Lowercase image extension.
    */
   async createCacheKey(imagePath: string, extension: string) {
     const stats = await fs.stat(imagePath);
@@ -85,10 +82,9 @@ export class ImagePreviewRenderer {
   /**
    * Renders one image without reading the preview cache.
    *
-   * @param {{uri: vscode.Uri}} document Document URI used to resolve nested assets.
-   * @param {string} imagePath Absolute image path.
-   * @param {string} extension Lowercase image extension.
-   * @returns {Promise<string | undefined>}
+   * @param document Document URI used to resolve nested assets.
+   * @param imagePath Absolute image path.
+   * @param extension Lowercase image extension.
    */
   async renderToDataUriUncached(document: PreviewDocument, imagePath: string, extension: string) {
     if (extension === ".svg") {
@@ -111,9 +107,8 @@ export class ImagePreviewRenderer {
 /**
  * Builds the Markdown body for a successful image preview.
  *
- * @param {string} target Original image target.
- * @param {string} dataUri Preview image data URI.
- * @returns {vscode.MarkdownString}
+ * @param target Original image target.
+ * @param dataUri Preview image data URI.
  */
 function buildImagePreviewHover(target: string, dataUri: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -125,8 +120,7 @@ function buildImagePreviewHover(target: string, dataUri: string) {
 /**
  * Builds the Markdown body shown when preview rendering fails.
  *
- * @param {string} target Original image target.
- * @returns {vscode.MarkdownString}
+ * @param target Original image target.
  */
 function buildImagePreviewUnavailableHover(target: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -138,8 +132,7 @@ function buildImagePreviewUnavailableHover(target: string) {
 /**
  * Formats an unknown error for the output channel.
  *
- * @param {unknown} error Error-like value.
- * @returns {string}
+ * @param error Error-like value.
  */
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);

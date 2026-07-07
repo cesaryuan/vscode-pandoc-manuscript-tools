@@ -15,7 +15,7 @@ export class PandocWorkspaceIndex {
   /**
    * Creates a workspace-wide Markdown index.
    *
-   * @param {vscode.OutputChannel} output Output channel for useful diagnostics.
+   * @param output Output channel for useful diagnostics.
    */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -28,7 +28,6 @@ export class PandocWorkspaceIndex {
    * Open documents are parsed from their editor buffer so unsaved label edits are
    * still visible to definitions, references, hovers, and diagnostics.
    *
-   * @returns {Promise<void>}
    */
   async refreshWorkspace() {
     const includeWorkspace = getConfiguration().get("includeWorkspaceReferences", false);
@@ -63,8 +62,7 @@ export class PandocWorkspaceIndex {
   /**
    * Parses and caches an open text document.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @returns {ParsedCacheEntry}
+   * @param document Markdown document.
    */
   updateDocument(document: vscode.TextDocument) {
     const uriText = document.uri.toString();
@@ -82,8 +80,7 @@ export class PandocWorkspaceIndex {
   /**
    * Reads, parses, and caches a Markdown file URI.
    *
-   * @param {vscode.Uri} uri Markdown file URI.
-   * @returns {Promise<ParsedCacheEntry | undefined>}
+   * @param uri Markdown file URI.
    */
   async updateUri(uri: vscode.Uri) {
     try {
@@ -102,8 +99,7 @@ export class PandocWorkspaceIndex {
   /**
    * Returns the cached parse for a document, parsing it if needed.
    *
-   * @param {vscode.TextDocument} document Markdown document.
-   * @returns {import("./parser").ParsedPandocDocument}
+   * @param document Markdown document.
    */
   getParsedDocument(document: vscode.TextDocument) {
     return this.updateDocument(document).parsed;
@@ -112,9 +108,8 @@ export class PandocWorkspaceIndex {
   /**
    * Finds definitions for a Pandoc label in one Markdown document.
    *
-   * @param {vscode.TextDocument} document Markdown document whose labels define the lookup scope.
-   * @param {string} label Pandoc label.
-   * @returns {import("./parser").LabelEntry[]}
+   * @param document Markdown document whose labels define the lookup scope.
+   * @param label Pandoc label.
    */
   getDefinitions(document: vscode.TextDocument, label: string): import("./parser").LabelEntry[] {
     return this.getParsedDocument(document).labels.filter((entry) => entry.label === label);
@@ -123,9 +118,8 @@ export class PandocWorkspaceIndex {
   /**
    * Finds references for a Pandoc label in one Markdown document.
    *
-   * @param {vscode.TextDocument} document Markdown document whose references define the lookup scope.
-   * @param {string} label Pandoc label.
-   * @returns {import("./parser").ReferenceEntry[]}
+   * @param document Markdown document whose references define the lookup scope.
+   * @param label Pandoc label.
    */
   getReferences(document: vscode.TextDocument, label: string): import("./parser").ReferenceEntry[] {
     return this.getParsedDocument(document).references.filter((entry) => entry.label === label);
@@ -134,8 +128,7 @@ export class PandocWorkspaceIndex {
   /**
    * Returns all labels from one Markdown document.
    *
-   * @param {vscode.TextDocument} document Markdown document whose labels should be returned.
-   * @returns {import("./parser").LabelEntry[]}
+   * @param document Markdown document whose labels should be returned.
    */
   getAllLabels(document: vscode.TextDocument) {
     return this.getParsedDocument(document).labels;
@@ -144,10 +137,9 @@ export class PandocWorkspaceIndex {
   /**
    * Returns entries from one parsed document collection matching one label.
    *
-   * @param {vscode.TextDocument} document Markdown document whose parsed entries should be searched.
-   * @param {"labels" | "references"} collection Parsed collection name.
-   * @param {string} label Pandoc label.
-   * @returns {Array<import("./parser").LabelEntry | import("./parser").ReferenceEntry>}
+   * @param document Markdown document whose parsed entries should be searched.
+   * @param collection Parsed collection name.
+   * @param label Pandoc label.
    */
   getDocumentEntriesByLabel(document: vscode.TextDocument, collection: "labels" | "references", label: string): Array<import("./parser").LabelEntry | import("./parser").ReferenceEntry> {
     const parsed = this.getParsedDocument(document);
@@ -157,8 +149,7 @@ export class PandocWorkspaceIndex {
   /**
    * Returns a map from label to definitions in one Markdown document.
    *
-   * @param {vscode.TextDocument} document Markdown document whose labels define the duplicate scope.
-   * @returns {Map<string, import("./parser").LabelEntry[]>}
+   * @param document Markdown document whose labels define the duplicate scope.
    */
   getDefinitionMap(document: vscode.TextDocument) {
     const map = new Map();
@@ -176,7 +167,4 @@ export class PandocWorkspaceIndex {
 
 
 
-/**
- * @typedef {ParsedCacheEntry} ParsedCacheEntry
- */
 
