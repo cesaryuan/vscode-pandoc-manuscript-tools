@@ -1,14 +1,27 @@
-"use strict";
-
-const fs = require("fs");
-const path = require("path");
-const vm = require("vm");
+import * as fs from "fs";
+import * as path from "path";
+import * as vm from "vm";
 
 const MATHJAX_NEWCM_DYNAMIC_FONT_DIR = path.join(__dirname, "..", "assets", "mathjax-newcm-font", "cjs", "svg", "dynamic");
 const MATHJAX_DYNAMIC_CHUNK_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
-const loadedMathJaxDynamicChunks = new Map();
+const loadedMathJaxDynamicChunks = new Map<string, unknown>();
 
-class MathJaxRenderer {
+type MathJaxAdaptor = {
+  childNodes(node: unknown): unknown[];
+  kind(node: unknown): string;
+  serializeXML(node: unknown): string;
+};
+type MathJaxHtmlDocument = {
+  convertPromise(tex: string, options: { display: boolean; em: number; ex: number; containerWidth: number }): Promise<unknown>;
+};
+type MathJaxRenderContext = { adaptor: MathJaxAdaptor; html: MathJaxHtmlDocument };
+type MathJaxNamespace = { asyncLoad?: (name: string) => unknown; asyncIsSynchronous?: boolean };
+
+export class MathJaxRenderer {
+  declare output: import("vscode").OutputChannel;
+  declare readyPromise: Promise<MathJaxRenderContext> | undefined;
+  declare svgCache: Map<string, Promise<string | undefined>>;
+  declare loadFailure: unknown;
   /**
    * Creates a lazy MathJax renderer for hover previews.
    *
@@ -113,7 +126,7 @@ class MathJaxRenderer {
    * The extension uses static require calls inside the lazy loader so esbuild
    * can bundle MathJax without invoking the component loader's SRE path probes.
    *
-   * @returns {Promise<{adaptor: any, html: any} | undefined>}
+   * @returns {Promise<MathJaxRenderContext | undefined>}
    */
   async ensureMathJax() {
     if (this.loadFailure) {
@@ -136,7 +149,7 @@ class MathJaxRenderer {
   /**
    * Initializes MathJax's direct Node API for TeX-to-SVG rendering.
    *
-   * @returns {Promise<{adaptor: any, html: any}>}
+   * @returns {Promise<MathJaxRenderContext>}
    */
   async loadMathJax() {
     require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
@@ -184,9 +197,9 @@ class MathJaxRenderer {
  * Some stretchy operators, including \xleftarrow, embed nested SVG fragments
  * inside the real preview; counting recursive descendants falsely rejects them.
  *
- * @param {any} adaptor MathJax DOM adaptor.
- * @param {any} node MathJax conversion result node.
- * @returns {any[]}
+ * @param {MathJaxAdaptor} adaptor MathJax DOM adaptor.
+ * @param {unknown} node MathJax conversion result node.
+ * @returns {unknown[]}
  */
 function getTopLevelSvgNodes(adaptor, node) {
   return adaptor.childNodes(node).filter((child) => adaptor.kind(child) === "svg");
@@ -196,9 +209,9 @@ function getTopLevelSvgNodes(adaptor, node) {
  * Registers external dynamic loaders for MathJax v4 SVG font chunks.
  *
  * The NewCM dynamic font files are packaged beside the bundle so large glyph
- * tables do not inflate `dist/extension.js`.
+ * tables do not inflate `dist/extension.ts`.
  *
- * @param {any} mathjax MathJax direct API namespace.
+ * @param {MathJaxNamespace} mathjax MathJax direct API namespace.
  */
 function configureMathJaxAsyncLoad(mathjax) {
   mathjax.asyncLoad = loadPackagedMathJaxDynamicModule;
@@ -209,7 +222,7 @@ function configureMathJaxAsyncLoad(mathjax) {
  * Loads dynamic MathJax modules from the packaged extension assets.
  *
  * @param {string} name Module name requested by MathJax.
- * @returns {any}
+ * @returns {unknown}
  */
 function loadPackagedMathJaxDynamicModule(name) {
   const normalizedName = name.replace(/\\/g, "/");
@@ -228,7 +241,7 @@ function loadPackagedMathJaxDynamicModule(name) {
  * whole font package into the bundle.
  *
  * @param {string} chunkName NewCM SVG dynamic chunk name.
- * @returns {any}
+ * @returns {unknown}
  */
 function loadPackagedNewcmDynamicChunk(chunkName) {
   if (loadedMathJaxDynamicChunks.has(chunkName)) {
@@ -238,10 +251,10 @@ function loadPackagedNewcmDynamicChunk(chunkName) {
   const chunkPath = getPackagedNewcmDynamicChunkPath(chunkName);
   const code = fs.readFileSync(chunkPath, "utf8");
   const module = { exports: {} };
-  const exports = module.exports;
+  const moduleExports = module.exports;
   const { Font } = require("@mathjax/mathjax-newcm-font/js/svg/default.js");
   const context = {
-    exports,
+    exports: moduleExports,
     module,
     require: (request) => requireMathJaxDynamicChunkDependency(request, Font.DefaultFont),
   };
@@ -271,8 +284,8 @@ function getPackagedNewcmDynamicChunkPath(chunkName) {
  * Resolves the limited dependency surface used by generated NewCM chunks.
  *
  * @param {string} request Require path from the generated chunk.
- * @param {any} MathJaxNewcmFont Bundled NewCM font class.
- * @returns {any}
+ * @param {unknown} MathJaxNewcmFont Bundled NewCM font class.
+ * @returns {unknown}
  */
 function requireMathJaxDynamicChunkDependency(request, MathJaxNewcmFont) {
   if (request === "../../svg.js") {
@@ -388,6 +401,5 @@ function upsertSvgAttribute(svg, attribute, value) {
 }
 
 
-module.exports = {
-  MathJaxRenderer,
-};
+
+

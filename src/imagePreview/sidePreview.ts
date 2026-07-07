@@ -1,5 +1,3 @@
-"use strict";
-
 /*
  * Editor-side image preview panel.
  *
@@ -9,14 +7,23 @@
  * for SVG href rewriting and EMF/WMF conversion.
  */
 
-const fs = require("fs/promises");
-const path = require("path");
-const vscode = require("vscode");
-const { resolveLocalPath, isDataUri, isRemoteUrl } = require("./pathResolver");
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as vscode from "vscode";
+import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
-class ImagePreviewSidePanel {
+type WebviewPreviewSource = (
+  | { kind: "uri"; src: string }
+  | { kind: "blob"; mimeType: string; base64: string }
+  | { kind: "inlineSvg"; svg: string; width: number; height: number }
+) & { localResourceRoots?: import("vscode").Uri[] };
+
+export class ImagePreviewSidePanel {
+  declare imagePreviewRenderer;
+  declare output: import("vscode").OutputChannel;
+  declare panels: Map<string, import("vscode").WebviewPanel>;
   /**
    * Creates a side-preview command handler.
    *
@@ -168,7 +175,7 @@ class ImagePreviewSidePanel {
  * @param {WebviewPreviewSource} previewSource Rendered image source.
  * @returns {string}
  */
-function buildPreviewHtml(imagePath, extension, previewSource) {
+export function buildPreviewHtml(imagePath, extension, previewSource) {
   const label = path.basename(imagePath);
   const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
   return buildPanelHtml(`
@@ -288,7 +295,7 @@ function buildIconSvg(body) {
  * @param {string} extension Lowercase image extension.
  * @returns {Promise<WebviewPreviewSource | undefined>}
  */
-async function renderWebviewPreviewSource(webview, imagePreviewRenderer, documentUri, imagePath, extension) {
+export async function renderWebviewPreviewSource(webview, imagePreviewRenderer, documentUri, imagePath, extension): Promise<WebviewPreviewSource | undefined> {
   if (extension === ".svg") {
     return renderSvgInlinePreviewSource(webview, documentUri, imagePath);
   }
@@ -309,7 +316,7 @@ async function renderWebviewPreviewSource(webview, imagePreviewRenderer, documen
  * @param {string} imagePath Absolute SVG path.
  * @returns {Promise<WebviewPreviewSource>}
  */
-async function renderSvgInlinePreviewSource(webview, documentUri, imagePath) {
+async function renderSvgInlinePreviewSource(webview, documentUri, imagePath): Promise<WebviewPreviewSource> {
   const svg = await fs.readFile(imagePath, "utf8");
   const documentLike = { uri: documentUri };
   const rewritten = rewriteSvgImageReferencesToWebviewUris(webview, documentLike, svg, path.dirname(imagePath));
@@ -330,7 +337,7 @@ async function renderSvgInlinePreviewSource(webview, documentUri, imagePath) {
  */
 function rewriteSvgImageReferencesToWebviewUris(webview, document, svg, baseDirectory) {
   const replacements = [];
-  const localResourceRootPaths = new Set();
+  const localResourceRootPaths = new Set<string>();
   const hrefPattern = /\b((?:xlink:)?href)\s*=\s*(["'])(.*?)\2/gi;
   for (const match of svg.matchAll(hrefPattern)) {
     const rawHref = match[3];
@@ -399,7 +406,7 @@ function getQueryAndHashSuffix(value) {
  * @param {string} dataUri Rendered image data URI.
  * @returns {WebviewPreviewSource | undefined}
  */
-function dataUriToWebviewPreviewSource(dataUri) {
+function dataUriToWebviewPreviewSource(dataUri): WebviewPreviewSource | undefined {
   const match = dataUri.match(/^data:([^;,]+);base64,(.*)$/s);
   if (!match) {
     return undefined;
@@ -424,7 +431,7 @@ function dataUriToWebviewPreviewSource(dataUri) {
  * @param {string} svg Raw SVG text.
  * @returns {WebviewPreviewSource}
  */
-function createInlineSvgPreviewSource(svg) {
+function createInlineSvgPreviewSource(svg): WebviewPreviewSource {
   const dimensions = getSvgNaturalDimensions(svg);
   return {
     kind: "inlineSvg",
@@ -610,7 +617,7 @@ function getLocalResourceRoots(imageUri, additionalRoots) {
  * @param {string=} script Optional inline script.
  * @returns {string}
  */
-function buildPanelHtml(body, script = "") {
+export function buildPanelHtml(body, script = "") {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -940,13 +947,9 @@ function formatError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-module.exports = {
-  ImagePreviewSidePanel,
-  buildPanelHtml,
-  buildPreviewHtml,
-  renderWebviewPreviewSource,
-};
 
 /**
  * @typedef {({kind: "uri", src: string} | {kind: "blob", mimeType: string, base64: string} | {kind: "inlineSvg", svg: string, width: number, height: number}) & {localResourceRoots?: vscode.Uri[]}} WebviewPreviewSource
  */
+
+

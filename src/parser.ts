@@ -1,6 +1,18 @@
-"use strict";
+export const LABEL_PREFIXES = ["sec", "fig", "tbl", "eq"];
+export type ParsedLine = { text: string; number: number; startOffset: number; endOffset: number };
+export type PlainRange = { start: { line: number; character: number }; end: { line: number; character: number } };
+export type LabelEntry = { label: string; prefix: string; kind: string; source: string; uriText: string; line: number; character: number; range: PlainRange; fullRange: PlainRange; containerRange?: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
+export type ReferenceEntry = { label: string; prefix: string; kind: string; uriText: string; line: number; character: number; range: PlainRange; fullRange: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
+export type HeadingEntry = { title: string; label?: string; level: number; uriText: string; line: number; character: number; range: PlainRange; selectionRange: PlainRange; preview: string };
+export type MathBlockEntry = { label?: string; display: true; uriText: string; line: number; endLine: number; range: PlainRange; selectionRange: PlainRange; tex: string };
+export type InlineMathEntry = { tex: string; display: false; uriText: string; line: number; character: number; range: PlainRange; fullRange: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
+export type SpanEntry = { uriText: string; attributes: string; line: number; text: string; range: PlainRange; contentRange: PlainRange; offset: number; endOffset: number; preview: string };
+export type CodeSpanRange = { start: number; end: number };
+export type FencedDivMarker = { type: "open" | "close"; fenceLength: number; attributeText?: string };
+export type FencedDivEntry = { uriText: string; depth: number; attributes: string; closed: boolean; openingFenceLength: number; closingFenceLength?: number; range: PlainRange };
+export type ParsedPandocDocument = { uriText: string; textLength: number; labels: LabelEntry[]; references: ReferenceEntry[]; headings: HeadingEntry[]; mathBlocks: MathBlockEntry[]; inlineMath: InlineMathEntry[]; fencedDivs: FencedDivEntry[]; spans: SpanEntry[]; labelMap: Map<string, LabelEntry[]>; referenceMap: Map<string, ReferenceEntry[]> };
+export type PandocTokenAtPosition = { type: "label" | "reference"; entry: LabelEntry | ReferenceEntry };
 
-const LABEL_PREFIXES = ["sec", "fig", "tbl", "eq"];
 const LABEL_SOURCE = "(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+";
 const LABEL_PATTERN = new RegExp("\\{#(" + LABEL_SOURCE + ")\\b[^}]*\\}", "g");
 const DIV_ID_PATTERN = new RegExp("<div\\s+[^>]*\\bid=[\"'](" + LABEL_SOURCE + ")[\"']", "gi");
@@ -21,7 +33,7 @@ const DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\$\$\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Z
  * @param {string} uriText Stable URI string used in cached entries.
  * @returns {ParsedPandocDocument}
  */
-function parsePandocDocument(text, uriText = "") {
+export function parsePandocDocument(text, uriText = "") {
   const lines = splitLines(text);
   const labels = [];
   const references = [];
@@ -805,7 +817,7 @@ function findNextDelimiter(text, delimiter, start, ignoredRanges = []) {
 }
 
 /**
- * Checks whether an index is inside any ignored line range.
+ * Checks whether an index falls inside ignored line ranges.
  *
  * @param {number} index Character index.
  * @param {CodeSpanRange[]} ranges Ignored ranges.
@@ -940,7 +952,7 @@ function createRange(startLine, startCharacter, endLine, endCharacter) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {{type: string, entry: LabelEntry | ReferenceEntry} | undefined}
  */
-function findTokenAtPosition(parsed, position) {
+export function findTokenAtPosition(parsed, position) {
   const reference = parsed.references.find((entry) => containsPosition(entry.fullRange, position));
   if (reference) {
     return { type: "reference", entry: reference };
@@ -961,7 +973,7 @@ function findTokenAtPosition(parsed, position) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {MathBlockEntry | undefined}
  */
-function findMathBlockAtPosition(parsed, position) {
+export function findMathBlockAtPosition(parsed, position) {
   return parsed.mathBlocks.find((entry) => containsPosition(entry.range, position));
 }
 
@@ -972,7 +984,7 @@ function findMathBlockAtPosition(parsed, position) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {InlineMathEntry | undefined}
  */
-function findInlineMathAtPosition(parsed, position) {
+export function findInlineMathAtPosition(parsed, position) {
   return parsed.inlineMath.find((entry) => containsPosition(entry.fullRange, position));
 }
 
@@ -983,7 +995,7 @@ function findInlineMathAtPosition(parsed, position) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {boolean}
  */
-function containsPosition(range, position) {
+export function containsPosition(range, position) {
   if (position.line < range.start.line || position.line > range.end.line) {
     return false;
   }
@@ -996,26 +1008,4 @@ function containsPosition(range, position) {
   return true;
 }
 
-module.exports = {
-  LABEL_PREFIXES,
-  parsePandocDocument,
-  findMathBlockAtPosition,
-  findInlineMathAtPosition,
-  findTokenAtPosition,
-  containsPosition,
-};
 
-/**
- * @typedef {{text: string, number: number, startOffset: number, endOffset: number}} ParsedLine
- * @typedef {{start: {line: number, character: number}, end: {line: number, character: number}}} PlainRange
- * @typedef {{label: string, prefix: string, kind: string, source: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, containerRange?: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} LabelEntry
- * @typedef {{label: string, prefix: string, kind: string, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} ReferenceEntry
- * @typedef {{title: string, label?: string, level: number, uriText: string, line: number, character: number, range: PlainRange, selectionRange: PlainRange, preview: string}} HeadingEntry
- * @typedef {{label?: string, display: true, uriText: string, line: number, endLine: number, range: PlainRange, selectionRange: PlainRange, tex: string}} MathBlockEntry
- * @typedef {{tex: string, display: false, uriText: string, line: number, character: number, range: PlainRange, fullRange: PlainRange, offset: number, endOffset: number, fullOffset: number, fullEndOffset: number, preview: string}} InlineMathEntry
- * @typedef {{uriText: string, attributes: string, line: number, text: string, range: PlainRange, contentRange: PlainRange, offset: number, endOffset: number, preview: string}} SpanEntry
- * @typedef {{start: number, end: number}} CodeSpanRange
- * @typedef {{type: "open" | "close", fenceLength: number, attributeText?: string}} FencedDivMarker
- * @typedef {{uriText: string, depth: number, attributes: string, closed: boolean, openingFenceLength: number, closingFenceLength?: number, range: PlainRange}} FencedDivEntry
- * @typedef {{uriText: string, textLength: number, labels: LabelEntry[], references: ReferenceEntry[], headings: HeadingEntry[], mathBlocks: MathBlockEntry[], inlineMath: InlineMathEntry[], fencedDivs: FencedDivEntry[], spans: SpanEntry[], labelMap: Map<string, LabelEntry[]>, referenceMap: Map<string, ReferenceEntry[]>}} ParsedPandocDocument
- */

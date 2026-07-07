@@ -24,13 +24,15 @@
   ],
   "icon": "assets/icon.png",
   "scripts": {
-    "bundle": "node scripts/copy-mathjax-fonts.js && esbuild src/extension.js --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
+    "bundle": "tsx scripts/copy-mathjax-fonts.ts && esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/extension.js --minify --legal-comments=none",
     "check:bundle": "node --check dist/extension.js",
-    "package:vsix": "npm run bundle && npm run check:bundle && vsce package",
-    "publish:marketplace": "npm run bundle && npm run check:bundle && vsce publish",
-    "publish:patch": "npm run bundle && npm run check:bundle && vsce publish patch",
-    "publish:minor": "npm run bundle && npm run check:bundle && vsce publish minor",
-    "profile:test-md": "node scripts/profile-test-md.js test.md"
+    "package:vsix": "npm run check && vsce package",
+    "publish:marketplace": "npm run check && vsce publish",
+    "publish:patch": "npm run check && vsce publish patch",
+    "publish:minor": "npm run check && vsce publish minor",
+    "profile:test-md": "tsx scripts/profile-test-md.ts test.md",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run bundle && npm run check:bundle"
   },
   "activationEvents": [
     "onLanguage:markdown",
@@ -164,7 +166,11 @@
     }
   },
   "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.9.1",
-    "esbuild": "^0.28.0"
+    "esbuild": "^0.28.0",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.1-rc"
   }
 }

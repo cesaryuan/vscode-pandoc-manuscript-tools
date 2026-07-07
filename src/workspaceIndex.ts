@@ -1,11 +1,17 @@
-"use strict";
+import * as vscode from "vscode";
+import { parsePandocDocument } from "./parser";
+import { getConfiguration } from "./configuration";
+import { isPandocDocument } from "./vscodeUtils";
 
-const vscode = require("vscode");
-const { parsePandocDocument } = require("./parser");
-const { getConfiguration } = require("./configuration");
-const { isPandocDocument } = require("./vscodeUtils");
+export type ParsedCacheEntry = {
+  uri: import("vscode").Uri;
+  version?: number;
+  parsed: ReturnType<typeof parsePandocDocument>;
+};
 
-class PandocWorkspaceIndex {
+export class PandocWorkspaceIndex {
+  declare output: import("vscode").OutputChannel;
+  declare documents: Map<string, ParsedCacheEntry>;
   /**
    * Creates a workspace-wide Markdown index.
    *
@@ -169,10 +175,8 @@ class PandocWorkspaceIndex {
 }
 
 
-module.exports = {
-  PandocWorkspaceIndex,
-};
 
 /**
- * @typedef {{uri: vscode.Uri, version?: number, parsed: import("./parser").ParsedPandocDocument}} ParsedCacheEntry
+ * @typedef {ParsedCacheEntry} ParsedCacheEntry
  */
+

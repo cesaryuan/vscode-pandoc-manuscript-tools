@@ -1,7 +1,5 @@
-"use strict";
-
-const path = require("path");
-const vscode = require("vscode");
+import * as path from "path";
+import * as vscode from "vscode";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
@@ -15,7 +13,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
  * @param {vscode.Position} position Hover position.
  * @returns {ImageToken | undefined}
  */
-function findImageTokenAtPosition(document, position) {
+export function findImageTokenAtPosition(document, position) {
   const line = document.lineAt(position.line).text;
   const markdownToken = findMarkdownImageToken(line, position);
   if (markdownToken) {
@@ -178,9 +176,6 @@ function isCharacterInside(character, start, end) {
   return character >= start && character <= end;
 }
 
-module.exports = {
-  findImageTokenAtPosition,
-};
 
 /**
  * @typedef {{target: string, extension: string, range: vscode.Range}} ImageToken

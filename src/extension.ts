@@ -1,34 +1,23 @@
-"use strict";
-
-const vscode = require("vscode");
-const { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE } = require("./constants");
-const { PandocWorkspaceIndex } = require("./workspaceIndex");
-const { PandocBuildRunner } = require("./docxBuild");
-const { FencedDivHighlighter } = require("./fencedDivHighlighter");
-const { MathJaxRenderer } = require("./mathJaxRenderer");
-const { ParagraphTranslator } = require("./paragraphTranslator");
-const { ImagePreviewRenderer } = require("./imagePreview");
-const { ImagePreviewSidePanel } = require("./imagePreview/sidePreview");
-const { MetafilePreviewCustomEditorProvider } = require("./imagePreview/customEditor");
-const { getConfiguration } = require("./configuration");
-const { isPandocDocument } = require("./vscodeUtils");
-const {
-  PandocDefinitionProvider,
-  PandocReferenceProvider,
-  PandocHoverProvider,
-  ImagePreviewHoverProvider,
-  PandocDocumentSymbolProvider,
-  PandocCompletionProvider,
-  updateDiagnosticsForOpenDocuments,
-  updateDiagnostics,
-} = require("./providers");
+import * as vscode from "vscode";
+import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
+import { PandocWorkspaceIndex } from "./workspaceIndex";
+import { PandocBuildRunner } from "./docxBuild";
+import { FencedDivHighlighter } from "./fencedDivHighlighter";
+import { MathJaxRenderer } from "./mathJaxRenderer";
+import { ParagraphTranslator } from "./paragraphTranslator";
+import { ImagePreviewRenderer } from "./imagePreview";
+import { ImagePreviewSidePanel } from "./imagePreview/sidePreview";
+import { MetafilePreviewCustomEditorProvider } from "./imagePreview/customEditor";
+import { getConfiguration } from "./configuration";
+import { isPandocDocument } from "./vscodeUtils";
+import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
  *
  * @param {vscode.ExtensionContext} context VS Code extension context.
  */
-function activate(context) {
+export function activate(context) {
   const output = vscode.window.createOutputChannel(EXTENSION_NAME);
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);
@@ -131,9 +120,5 @@ function activate(context) {
 /**
  * Deactivates the extension.
  */
-function deactivate() {}
+export function deactivate() {}
 
-module.exports = {
-  activate,
-  deactivate,
-};

@@ -1,8 +1,6 @@
-"use strict";
-
-const vscode = require("vscode");
-const { getConfiguration } = require("./configuration");
-const { isPandocDocument } = require("./vscodeUtils");
+import * as vscode from "vscode";
+import { getConfiguration } from "./configuration";
+import { isPandocDocument } from "./vscodeUtils";
 
 const DECORATION_COLORS = [
   {
@@ -24,7 +22,11 @@ const DECORATION_COLORS = [
 ];
 const SPAN_DECORATION_BACKGROUND = "rgba(255, 197, 92, 0.16)";
 
-class FencedDivHighlighter {
+export class FencedDivHighlighter {
+  declare index;
+  declare output: import("vscode").OutputChannel;
+  declare decorationTypes: import("vscode").TextEditorDecorationType[];
+  declare spanDecorationType: import("vscode").TextEditorDecorationType;
   /**
    * Creates editor decorations for Pandoc fenced div blocks and bracketed spans.
    *
@@ -43,7 +45,7 @@ class FencedDivHighlighter {
    *
    * @param {vscode.TextDocument=} changedDocument Optional changed document to refresh.
    */
-  updateVisibleEditors(changedDocument) {
+  updateVisibleEditors(changedDocument = undefined) {
     for (const editor of vscode.window.visibleTextEditors) {
       if (!changedDocument || editor.document === changedDocument) {
         this.updateEditor(editor);
@@ -215,6 +217,4 @@ function toInlineRange(entry) {
   );
 }
 
-module.exports = {
-  FencedDivHighlighter,
-};
+

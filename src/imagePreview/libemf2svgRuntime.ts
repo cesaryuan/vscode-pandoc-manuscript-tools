@@ -1,14 +1,23 @@
-"use strict";
-
-const fs = require("fs");
-const path = require("path");
+import * as fs from "fs";
+import * as path from "path";
 const createEmf2SvgModule = require("../../assets/libemf2svg/emf2svg.js");
 
 const DEFAULT_MAX_WIDTH = 450;
 const DEFAULT_MAX_HEIGHT = 150;
 const POINTER_SIZE = 4;
 
-let modulePromise;
+type LibEmf2SvgModule = {
+  HEAPU8: Uint8Array;
+  _malloc(size: number): number;
+  _free(pointer: number): void;
+  setValue(pointer: number, value: number, type: "*" | "i32"): void;
+  getValue(pointer: number, type: "*" | "i32"): number;
+  _emf2svg_wasm_convert(inputPtr: number, inputLength: number, crop: number, textAsPath: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
+  _wmf2svg_wasm_convert(inputPtr: number, inputLength: number, crop: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
+};
+type EmscriptenFactoryOptions = { locateFile(fileName: string): string; print(message: string): void; printErr(message: string): void };
+
+let modulePromise: Promise<LibEmf2SvgModule> | undefined;
 
 /**
  * Converts one EMF byte buffer to SVG text through the bundled libemf2svg WASM module.
@@ -17,7 +26,7 @@ let modulePromise;
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function convertEmfToSvg(bytes, output) {
+export async function convertEmfToSvg(bytes, output) {
   return convertMetafileToSvg(bytes, "EMF", output);
 }
 
@@ -32,7 +41,7 @@ async function convertEmfToSvg(bytes, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function convertWmfToSvg(bytes, output) {
+export async function convertWmfToSvg(bytes, output) {
   return convertMetafileToSvg(bytes, "WMF", output);
 }
 
@@ -150,7 +159,7 @@ function formatSvgNumber(value) {
 /**
  * Calls the correct libemf2svg wasm export for the input metafile format.
  *
- * @param {any} module Loaded Emscripten module.
+ * @param {LibEmf2SvgModule} module Loaded Emscripten module.
  * @param {"EMF" | "WMF"} format Metafile format.
  * @param {number} inputPtr Pointer to input bytes in wasm memory.
  * @param {number} inputLength Input byte length.
@@ -187,7 +196,7 @@ function callMetafileConverter(module, format, inputPtr, inputLength, outputPtrS
  * Loads the Emscripten module once and points it at the packaged WASM file.
  *
  * @param {{appendLine(message: string): void}} output Output channel.
- * @returns {Promise<any>}
+ * @returns {Promise<LibEmf2SvgModule>}
  */
 function loadLibemf2svgModule(output) {
   if (!modulePromise) {
@@ -227,7 +236,3 @@ function resolveBundledWasmPath() {
   throw new Error(`Bundled libemf2svg WASM file is missing. Checked: ${candidates.join("; ")}`);
 }
 
-module.exports = {
-  convertEmfToSvg,
-  convertWmfToSvg,
-};

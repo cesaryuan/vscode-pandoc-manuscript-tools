@@ -1,16 +1,11 @@
-"use strict";
-
-const vscode = require("vscode");
+import * as vscode from "vscode";
 
 /**
  * Returns this extension's workspace configuration.
  *
  * @returns {vscode.WorkspaceConfiguration}
  */
-function getConfiguration() {
+export function getConfiguration() {
   return vscode.workspace.getConfiguration("pandocManuscriptTools");
 }
 
-module.exports = {
-  getConfiguration,
-};

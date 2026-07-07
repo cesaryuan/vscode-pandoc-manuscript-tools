@@ -1,7 +1,5 @@
-"use strict";
-
-const fs = require("fs/promises");
-const { convertEmfToSvg, convertWmfToSvg } = require("./libemf2svgRuntime");
+import * as fs from "fs/promises";
+import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
 
 /**
  * Converts an EMF/WMF file into a hover image data URI.
@@ -14,7 +12,7 @@ const { convertEmfToSvg, convertWmfToSvg } = require("./libemf2svgRuntime");
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function renderMetafilePreviewDataUri(imagePath, extension, output) {
+export async function renderMetafilePreviewDataUri(imagePath, extension, output) {
   try {
     const bytes = await fs.readFile(imagePath);
     const dataUri = await renderSvgMetafilePreviewDataUri(bytes, extension, output);
@@ -58,6 +56,3 @@ function formatError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-module.exports = {
-  renderMetafilePreviewDataUri,
-};

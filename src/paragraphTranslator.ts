@@ -1,6 +1,4 @@
-"use strict";
-
-const { getConfiguration } = require("./configuration");
+import { getConfiguration } from "./configuration";
 
 const GOOGLE_TRANSLATE_HTML_URL = "https://translate-pa.googleapis.com/v1/translateHtml";
 const GOOGLE_TRANSLATE_HTML_API_KEY = "AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520";
@@ -10,7 +8,16 @@ const MICROSOFT_TRANSLATE_URL = "https://api-edge.cognitive.microsofttranslator.
 const TRANSLATION_TIMEOUT_MS = 5000;
 const TRANSLATION_PROBE_TEXT = "Library";
 
-class ParagraphTranslator {
+export type TranslationEngine = "google" | "microsoft";
+export type TranslationResult = { text: string; engine: TranslationEngine };
+
+export class ParagraphTranslator {
+  declare output: import("vscode").OutputChannel;
+  declare translationCache: Map<string, Promise<TranslationResult | undefined>>;
+  declare preferredEngine: TranslationEngine | undefined;
+  declare engineProbePromise: Promise<TranslationEngine | undefined> | undefined;
+  declare microsoftToken: string | undefined;
+  declare microsoftTokenPromise: Promise<string | undefined> | undefined;
   /**
    * Creates a small translator for paragraph hover previews.
    *
@@ -66,7 +73,7 @@ class ParagraphTranslator {
   /**
    * Returns the preferred translation engine, probing once if needed.
    *
-   * @returns {Promise<"google" | "microsoft" | undefined>}
+   * @returns {Promise<TranslationEngine | undefined>}
    */
   async ensurePreferredEngine() {
     if (this.preferredEngine) {
@@ -90,7 +97,7 @@ class ParagraphTranslator {
   /**
    * Probes Google first and falls back to Microsoft when Google is unavailable.
    *
-   * @returns {Promise<"google" | "microsoft" | undefined>}
+   * @returns {Promise<TranslationEngine | undefined>}
    */
   async probePreferredEngine() {
     const targetLanguage = getConfiguration().get("paragraphHoverTranslationTargetLanguage", "zh");
@@ -116,7 +123,7 @@ class ParagraphTranslator {
    *
    * @param {string} text English paragraph text.
    * @param {string} targetLanguage Target language code.
-   * @param {"google" | "microsoft"} engine Translation engine.
+   * @param {TranslationEngine} engine Translation engine.
    * @returns {Promise<string | undefined>}
    */
   async translateTextWithEngine(text, targetLanguage, engine) {
@@ -328,10 +335,8 @@ function formatTranslationTextForLog(text) {
 }
 
 
-module.exports = {
-  ParagraphTranslator,
-};
 
 /**
- * @typedef {{text: string, engine: "google" | "microsoft"}} TranslationResult
+ * @typedef {TranslationResult} TranslationResult
  */
+

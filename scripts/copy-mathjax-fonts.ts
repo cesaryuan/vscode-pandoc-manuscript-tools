@@ -1,7 +1,5 @@
-"use strict";
-
-const fs = require("fs");
-const path = require("path");
+import * as fs from "fs";
+import * as path from "path";
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceDir = path.join(repoRoot, "node_modules", "@mathjax", "mathjax-newcm-font", "cjs", "svg", "dynamic");

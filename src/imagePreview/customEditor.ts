@@ -1,5 +1,3 @@
-"use strict";
-
 /*
  * Read-only custom editor for EMF/WMF files.
  *
@@ -8,13 +6,15 @@
  * hover and side-preview panels.
  */
 
-const path = require("path");
-const vscode = require("vscode");
-const { buildPanelHtml, buildPreviewHtml, renderWebviewPreviewSource } = require("./sidePreview");
+import * as path from "path";
+import * as vscode from "vscode";
+import { buildPanelHtml, buildPreviewHtml, renderWebviewPreviewSource } from "./sidePreview";
 
 const SUPPORTED_METAFILE_EXTENSIONS = new Set([".emf", ".wmf"]);
 
-class MetafilePreviewCustomEditorProvider {
+export class MetafilePreviewCustomEditorProvider {
+  declare imagePreviewRenderer;
+  declare output: import("vscode").OutputChannel;
   /**
    * Creates a read-only custom editor provider for EMF/WMF previews.
    *
@@ -99,6 +99,4 @@ function formatError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-module.exports = {
-  MetafilePreviewCustomEditorProvider,
-};
+

@@ -1,12 +1,10 @@
-"use strict";
-
-const fs = require("fs/promises");
-const path = require("path");
+import * as fs from "fs/promises";
+import * as path from "path";
 const { createJimp } = require("@jimp/core");
 const jpeg = require("@jimp/js-jpeg").default;
 const png = require("@jimp/js-png").default;
 const resize = require("@jimp/plugin-resize");
-const { resolveLocalPath, isDataUri, isRemoteUrl } = require("./pathResolver");
+import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
 
 const MAX_NESTED_RASTER_DIMENSION = 100;
 const NESTED_RASTER_OUTPUT_MIME_TYPE = "image/png";
@@ -43,7 +41,7 @@ const NestedRasterJimp = createJimp({
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function renderSvgPreviewDataUri(document, svgPath, output) {
+export async function renderSvgPreviewDataUri(document, svgPath, output) {
   try {
     const svg = await fs.readFile(svgPath, "utf8");
     const inlinedSvg = await inlineSvgImageReferences(document, svg, path.dirname(svgPath), output);
@@ -209,7 +207,3 @@ function formatError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-module.exports = {
-  renderSvgPreviewDataUri,
-  inlineSvgImageReferences,
-};

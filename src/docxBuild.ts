@@ -1,17 +1,19 @@
-"use strict";
-
-const cp = require("child_process");
-const fs = require("fs/promises");
-const http = require("http");
-const crypto = require("crypto");
-const path = require("path");
-const vscode = require("vscode");
-const { CAN_BUILD_DOCX_CONTEXT } = require("./constants");
-const { isBuildableMarkdownDocument } = require("./vscodeUtils");
+import * as cp from "child_process";
+import * as fs from "fs/promises";
+import * as http from "http";
+import * as crypto from "crypto";
+import * as path from "path";
+import * as vscode from "vscode";
+import { CAN_BUILD_DOCX_CONTEXT } from "./constants";
+import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 const BUILD_SCRIPT_PATH = "scripts/build.py";
 
-class PandocBuildRunner {
+type DocxDownloadServer = { uri: import("vscode").Uri; dispose: () => void };
+
+export class PandocBuildRunner {
+  declare output: import("vscode").OutputChannel;
+  declare contextRefreshId: number;
   /**
    * Creates the DOCX build runner used by the editor-title command.
    *
@@ -230,11 +232,11 @@ async function isFileLockedForOverwrite(uri) {
 /**
  * Returns whether a filesystem error indicates a file lock or write denial.
  *
- * @param {any} error Filesystem error.
+ * @param {unknown} error Filesystem error.
  * @returns {boolean}
  */
 function isFileLockError(error) {
-  return Boolean(error && ["EBUSY", "EPERM", "EACCES"].includes(error.code));
+  return Boolean(error && typeof error === "object" && "code" in error && ["EBUSY", "EPERM", "EACCES"].includes(String(error.code)));
 }
 
 /**
@@ -310,7 +312,7 @@ async function createRemoteDocxDownloadServer(docxUri, output) {
   const requestPath = `${requestPathPrefix}${encodeURIComponent(fileName)}`;
   const stat = await fs.stat(docxUri.fsPath);
 
-  return new Promise((resolve, reject) => {
+  return new Promise<DocxDownloadServer>((resolve, reject) => {
     let closeTimer;
     const server = http.createServer(async (request, response) => {
       try {
@@ -534,7 +536,7 @@ function parseHttpRange(rangeHeader, size) {
 }
 
 /**
- * Schedules an HTTP server close, replacing any existing close timer.
+ * Schedules an HTTP server close, replacing the existing close timer.
  *
  * @param {import("http").Server} server HTTP server.
  * @param {NodeJS.Timeout | undefined} existingTimer Existing close timer.
@@ -608,7 +610,7 @@ async function isUvAvailable() {
  * @returns {Promise<void>}
  */
 function runProcess(command, args, options) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const child = cp.spawn(command, args, {
       cwd: options.cwd,
       shell: process.platform === "win32",
@@ -647,11 +649,12 @@ function isSameFsPath(left, right) {
   return normalizedLeft === normalizedRight;
 }
 
-module.exports = {
-  PandocBuildRunner,
-};
 
 /**
  * @typedef {{rootUri: vscode.Uri, buildScript: string}} PandocManuscriptProject
  * @typedef {{uri: vscode.Uri, dispose: () => void}} DocxDownloadServer
  */
+
+
+
+

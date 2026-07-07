@@ -1,14 +1,14 @@
-"use strict";
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as vscode from "vscode";
+import { findImageTokenAtPosition } from "./imageTokenParser";
+import { resolveLocalPath } from "./pathResolver";
+import { renderSvgPreviewDataUri } from "./svgPreview";
+import { renderMetafilePreviewDataUri } from "./emfPreview";
 
-const fs = require("fs/promises");
-const path = require("path");
-const vscode = require("vscode");
-const { findImageTokenAtPosition } = require("./imageTokenParser");
-const { resolveLocalPath } = require("./pathResolver");
-const { renderSvgPreviewDataUri } = require("./svgPreview");
-const { renderMetafilePreviewDataUri } = require("./emfPreview");
-
-class ImagePreviewRenderer {
+export class ImagePreviewRenderer {
+  declare output: import("vscode").OutputChannel;
+  declare cache: Map<string, Promise<string | undefined>>;
   /**
    * Creates a renderer for SVG, EMF, and WMF hover previews.
    *
@@ -143,6 +143,4 @@ function formatError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-module.exports = {
-  ImagePreviewRenderer,
-};
+

@@ -1,7 +1,5 @@
-"use strict";
-
-const path = require("path");
-const { fileURLToPath } = require("url");
+import * as path from "path";
+import { fileURLToPath } from "url";
 
 /**
  * Resolves a local image target against the current document.
@@ -14,7 +12,7 @@ const { fileURLToPath } = require("url");
  * @param {string=} baseDirectory Optional base directory for nested SVG images.
  * @returns {string | undefined}
  */
-function resolveLocalPath(document, target, baseDirectory) {
+export function resolveLocalPath(document, target, baseDirectory = undefined) {
   if (!target || isDataUri(target) || isRemoteUrl(target)) {
     return undefined;
   }
@@ -43,7 +41,7 @@ function resolveLocalPath(document, target, baseDirectory) {
  * @param {string} value URI or path.
  * @returns {boolean}
  */
-function isDataUri(value) {
+export function isDataUri(value) {
   return /^data:/i.test(value);
 }
 
@@ -53,7 +51,7 @@ function isDataUri(value) {
  * @param {string} value URI or path.
  * @returns {boolean}
  */
-function isRemoteUrl(value) {
+export function isRemoteUrl(value) {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !/^file:\/\//i.test(value);
 }
 
@@ -95,8 +93,3 @@ function normalizeRelativeSeparators(value) {
   return value.replace(/[\\/]+/g, path.sep);
 }
 
-module.exports = {
-  resolveLocalPath,
-  isDataUri,
-  isRemoteUrl,
-};

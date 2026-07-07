@@ -1,28 +1,14 @@
-"use strict";
-
-const vscode = require("vscode");
-const { EXTENSION_NAME } = require("./constants");
-const { getConfiguration } = require("./configuration");
-const {
-  parsePandocDocument,
-  findMathBlockAtPosition,
-  findInlineMathAtPosition,
-  findTokenAtPosition,
-  containsPosition,
-} = require("./parser");
-const {
-  toRange,
-  toLocation,
-  toLocationLink,
-  toPlainPosition,
-  toSymbolKind,
-  isPandocDocument,
-  supportsPandocTextFeatures,
-} = require("./vscodeUtils");
+import * as vscode from "vscode";
+import { EXTENSION_NAME } from "./constants";
+import { getConfiguration } from "./configuration";
+import { parsePandocDocument, findMathBlockAtPosition, findInlineMathAtPosition, findTokenAtPosition, containsPosition } from "./parser";
+import { toRange, toLocation, toLocationLink, toPlainPosition, toSymbolKind, isPandocDocument, supportsPandocTextFeatures } from "./vscodeUtils";
 
 const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
 
-class PandocDefinitionProvider {
+
+export class PandocDefinitionProvider {
+  declare index;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
@@ -47,7 +33,8 @@ class PandocDefinitionProvider {
   }
 }
 
-class PandocReferenceProvider {
+export class PandocReferenceProvider {
+  declare index;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
@@ -77,7 +64,11 @@ class PandocReferenceProvider {
   }
 }
 
-class PandocHoverProvider {
+export class PandocHoverProvider {
+  declare index;
+  declare mathRenderer;
+  declare paragraphTranslator;
+  declare output: import("vscode").OutputChannel;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
@@ -160,7 +151,9 @@ class PandocHoverProvider {
   }
 }
 
-class ImagePreviewHoverProvider {
+export class ImagePreviewHoverProvider {
+  declare imagePreviewRenderer;
+  declare output: import("vscode").OutputChannel;
   /**
    * Creates a hover provider for standalone image previews.
    *
@@ -495,7 +488,8 @@ function extractStandaloneHtmlCommentText(text) {
     .trim();
 }
 
-class PandocDocumentSymbolProvider {
+export class PandocDocumentSymbolProvider {
+  declare index;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
@@ -519,7 +513,8 @@ class PandocDocumentSymbolProvider {
   }
 }
 
-class PandocCompletionProvider {
+export class PandocCompletionProvider {
+  declare index;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
@@ -712,9 +707,9 @@ async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator)
 /**
  * Builds the optional translated paragraph preview.
  *
- * The full paragraph, including any TeX, is sent to the translation engine because
+ * The full paragraph, including TeX, is sent to the translation engine because
  * the user wants translation to see the same text that appears in the editor;
- * any inline TeX that survives translation is rendered before showing the hover.
+ * surviving inline TeX is rendered before showing the hover.
  *
  * @param {ParagraphHover} paragraph Paragraph hover data.
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
@@ -1275,7 +1270,7 @@ async function renderInlineMathParagraphMarkdown(paragraph, mathRenderer) {
  * @param {number=} startOffset Offset used by precomputed inline math entries.
  * @returns {Promise<string>}
  */
-async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath, startOffset = 0) {
+async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath = undefined, startOffset = 0) {
   const mathEntries = inlineMath || parsePandocDocument(text).inlineMath;
   const parts = [];
   let cursor = 0;
@@ -1491,7 +1486,7 @@ function isRangeStartAfter(left, right) {
  * @param {PandocWorkspaceIndex} index Workspace index.
  * @param {vscode.DiagnosticCollection} diagnostics Diagnostic collection.
  */
-function updateDiagnosticsForOpenDocuments(index, diagnostics) {
+export function updateDiagnosticsForOpenDocuments(index, diagnostics) {
   for (const document of vscode.workspace.textDocuments) {
     if (isPandocDocument(document)) {
       updateDiagnostics(document, index, diagnostics);
@@ -1506,7 +1501,7 @@ function updateDiagnosticsForOpenDocuments(index, diagnostics) {
  * @param {PandocWorkspaceIndex} index Workspace index.
  * @param {vscode.DiagnosticCollection} diagnostics Diagnostic collection.
  */
-function updateDiagnostics(document, index, diagnostics) {
+export function updateDiagnostics(document, index, diagnostics) {
   if (!getConfiguration().get("enableDiagnostics", true)) {
     diagnostics.delete(document.uri);
     return;
@@ -1557,18 +1552,15 @@ function getTokenAtDocumentPosition(index, document, position) {
   return findTokenAtPosition(parsed, toPlainPosition(position));
 }
 
-module.exports = {
-  PandocDefinitionProvider,
-  PandocReferenceProvider,
-  PandocHoverProvider,
-  ImagePreviewHoverProvider,
-  PandocDocumentSymbolProvider,
-  PandocCompletionProvider,
-  updateDiagnosticsForOpenDocuments,
-  updateDiagnostics,
-};
 
 /**
  * @typedef {{range: vscode.Range, text: string, translationText: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[], showMathPreview: boolean, showTranslation: boolean}} ParagraphHover
  * @typedef {{markdown: string, engine: "google" | "microsoft"}} RenderedTranslation
  */
+
+
+
+
+
+
+

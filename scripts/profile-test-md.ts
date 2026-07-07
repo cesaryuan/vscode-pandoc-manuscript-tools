@@ -1,14 +1,7 @@
-"use strict";
-
-const fs = require("fs");
-const path = require("path");
-const { performance } = require("perf_hooks");
-const {
-  parsePandocDocument,
-  findMathBlockAtPosition,
-  findInlineMathAtPosition,
-  findTokenAtPosition,
-} = require("../src/parser");
+import * as fs from "fs";
+import * as path from "path";
+import { performance } from "perf_hooks";
+import { parsePandocDocument, findMathBlockAtPosition, findInlineMathAtPosition, findTokenAtPosition } from "../src/parser";
 
 const repoRoot = path.resolve(__dirname, "..");
 const targetPath = path.resolve(repoRoot, process.argv[2] || "test.md");
@@ -56,7 +49,12 @@ const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS = {
   symbols: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols.js"),
   variants: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/variants.js"),
 };
-let mathJaxReadyPromise;
+type MathJaxProfileAdaptor = { serializeXML(node: unknown): string; tags(node: unknown, name: string): unknown[] };
+type MathJaxProfileHtmlDocument = { convertPromise(tex: string, options: { display: boolean; em: number; ex: number; containerWidth: number }): Promise<unknown> };
+type MathJaxProfileRenderer = { adaptor: MathJaxProfileAdaptor; html: MathJaxProfileHtmlDocument };
+type MathJaxProfileNamespace = { asyncLoad?: (name: string) => unknown; asyncIsSynchronous?: boolean };
+
+let mathJaxReadyPromise: Promise<MathJaxProfileRenderer> | undefined;
 
 /**
  * Measures one synchronous or asynchronous profiler stage.
@@ -259,14 +257,14 @@ function runHoverAndNavigationLookups(parsed) {
 /**
  * Loads MathJax the same way the extension does for hover preview timing.
  *
- * @returns {Promise<any>}
+ * @returns {Promise<MathJaxProfileRenderer>}
  */
 async function loadMathJax() {
   if (mathJaxReadyPromise) {
     return mathJaxReadyPromise;
   }
 
-  // Keep this aligned with extension.js: use the direct API so profiling matches
+  // Keep this aligned with extension.ts: use the direct API so profiling matches
   // the packaged extension bundle rather than MathJax's component loader.
   mathJaxReadyPromise = Promise.resolve().then(() => {
     require("@mathjax/src/js/input/tex/base/BaseConfiguration.js");
@@ -293,9 +291,9 @@ async function loadMathJax() {
 }
 
 /**
- * Registers the same bundled MathJax dynamic loader used by extension.js.
+ * Registers the same bundled MathJax dynamic loader used by extension.ts.
  *
- * @param {any} mathjax MathJax direct API namespace.
+ * @param {MathJaxProfileNamespace} mathjax MathJax direct API namespace.
  */
 function configureMathJaxAsyncLoad(mathjax) {
   mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
@@ -306,7 +304,7 @@ function configureMathJaxAsyncLoad(mathjax) {
  * Loads dynamic MathJax modules, keeping known NewCM SVG chunks bundle-friendly.
  *
  * @param {string} name Module name requested by MathJax.
- * @returns {any}
+ * @returns {unknown}
  */
 function loadBundledMathJaxDynamicModule(name) {
   const normalizedName = name.replace(/\\/g, "/");
@@ -415,3 +413,4 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
