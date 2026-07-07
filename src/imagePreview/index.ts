@@ -6,6 +6,8 @@ import { resolveLocalPath } from "./pathResolver";
 import { renderSvgPreviewDataUri } from "./svgPreview";
 import { renderMetafilePreviewDataUri } from "./emfPreview";
 
+type PreviewDocument = { uri: vscode.Uri };
+
 export class ImagePreviewRenderer {
   declare output: import("vscode").OutputChannel;
   declare cache: Map<string, Promise<string | undefined>>;
@@ -14,7 +16,7 @@ export class ImagePreviewRenderer {
    *
    * @param {{appendLine(message: string): void}} output Output channel.
    */
-  constructor(output) {
+  constructor(output: vscode.OutputChannel) {
     this.output = output;
     this.cache = new Map();
   }
@@ -22,11 +24,11 @@ export class ImagePreviewRenderer {
   /**
    * Builds a hover for a supported local image under the cursor.
    *
-   * @param {vscode.TextDocument} document Text document.
+   * @param {{uri: vscode.Uri}} document Document URI used to resolve nested assets.
    * @param {vscode.Position} position Hover position.
    * @returns {Promise<vscode.Hover | undefined>}
    */
-  async provideHover(document, position) {
+  async provideHover(document: vscode.TextDocument, position: vscode.Position) {
     const token = findImageTokenAtPosition(document, position);
     if (!token) {
       return undefined;
@@ -53,7 +55,7 @@ export class ImagePreviewRenderer {
    * @param {string} extension Lowercase image extension.
    * @returns {Promise<string | undefined>}
    */
-  async renderToDataUri(document, imagePath, extension) {
+  async renderToDataUri(document: PreviewDocument, imagePath: string, extension: string) {
     let cacheKey;
     try {
       cacheKey = await this.createCacheKey(imagePath, extension);
@@ -75,7 +77,7 @@ export class ImagePreviewRenderer {
    * @param {string} extension Lowercase image extension.
    * @returns {Promise<string>}
    */
-  async createCacheKey(imagePath, extension) {
+  async createCacheKey(imagePath: string, extension: string) {
     const stats = await fs.stat(imagePath);
     return `${extension}:${imagePath}:${stats.size}:${stats.mtimeMs}`;
   }
@@ -83,12 +85,12 @@ export class ImagePreviewRenderer {
   /**
    * Renders one image without reading the preview cache.
    *
-   * @param {vscode.TextDocument} document Text document.
+   * @param {{uri: vscode.Uri}} document Document URI used to resolve nested assets.
    * @param {string} imagePath Absolute image path.
    * @param {string} extension Lowercase image extension.
    * @returns {Promise<string | undefined>}
    */
-  async renderToDataUriUncached(document, imagePath, extension) {
+  async renderToDataUriUncached(document: PreviewDocument, imagePath: string, extension: string) {
     if (extension === ".svg") {
       return renderSvgPreviewDataUri(document, imagePath, this.output);
     }
@@ -113,7 +115,7 @@ export class ImagePreviewRenderer {
  * @param {string} dataUri Preview image data URI.
  * @returns {vscode.MarkdownString}
  */
-function buildImagePreviewHover(target, dataUri) {
+function buildImagePreviewHover(target: string, dataUri: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown(`**Image preview** \`${path.basename(target)}\`\n\n`);
   markdown.appendMarkdown(`![Rendered image preview](${dataUri})`);
@@ -126,7 +128,7 @@ function buildImagePreviewHover(target, dataUri) {
  * @param {string} target Original image target.
  * @returns {vscode.MarkdownString}
  */
-function buildImagePreviewUnavailableHover(target) {
+function buildImagePreviewUnavailableHover(target: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown(`**Image preview** \`${path.basename(target)}\`\n\n`);
   markdown.appendMarkdown("$(warning) Preview could not render. See the Pandoc Manuscript Tools output for details.");
@@ -139,7 +141,7 @@ function buildImagePreviewUnavailableHover(target) {
  * @param {unknown} error Error-like value.
  * @returns {string}
  */
-function formatError(error) {
+function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 

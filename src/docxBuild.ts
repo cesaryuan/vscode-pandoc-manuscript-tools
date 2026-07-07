@@ -9,7 +9,9 @@ import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 const BUILD_SCRIPT_PATH = "scripts/build.py";
 
-type DocxDownloadServer = { uri: import("vscode").Uri; dispose: () => void };
+type PandocManuscriptProject = { rootUri: vscode.Uri; buildScript: string };
+type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
+type RunProcessOptions = { cwd?: string; output?: vscode.OutputChannel };
 
 export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
@@ -19,7 +21,7 @@ export class PandocBuildRunner {
    *
    * @param {vscode.OutputChannel} output Output channel for build logs.
    */
-  constructor(output) {
+  constructor(output: vscode.OutputChannel) {
     this.output = output;
     this.contextRefreshId = 0;
   }
@@ -113,7 +115,7 @@ export class PandocBuildRunner {
    * @param {vscode.TextDocument} document Markdown document to build.
    * @returns {Promise<void>}
    */
-  async runDocxBuild(project, document) {
+  async runDocxBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
     const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
     const args = ["run", project.buildScript, "docx", markdownRelativePath];
@@ -146,7 +148,7 @@ export class PandocBuildRunner {
 }
 
 
-async function findPandocManuscriptProject(markdownUri) {
+async function findPandocManuscriptProject(markdownUri: vscode.Uri): Promise<PandocManuscriptProject | undefined> {
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(markdownUri);
   const stopAtPath = workspaceFolder ? workspaceFolder.uri.fsPath : undefined;
   let currentPath = path.dirname(markdownUri.fsPath);
@@ -178,7 +180,7 @@ async function findPandocManuscriptProject(markdownUri) {
  * @param {vscode.Uri} rootUri Candidate project root.
  * @returns {Promise<PandocManuscriptProject | undefined>}
  */
-async function readPandocManuscriptProject(rootUri) {
+async function readPandocManuscriptProject(rootUri: vscode.Uri) {
   if (!(await pathExists(vscode.Uri.joinPath(rootUri, "style.yml")))) {
     return undefined;
   }
@@ -192,7 +194,7 @@ async function readPandocManuscriptProject(rootUri) {
  * @param {vscode.Uri} uri File or directory URI.
  * @returns {Promise<boolean>}
  */
-async function pathExists(uri) {
+async function pathExists(uri: vscode.Uri) {
   try {
     await vscode.workspace.fs.stat(uri);
     return true;
@@ -211,7 +213,7 @@ async function pathExists(uri) {
  * @param {vscode.Uri} uri Target DOCX URI.
  * @returns {Promise<boolean>}
  */
-async function isFileLockedForOverwrite(uri) {
+async function isFileLockedForOverwrite(uri: vscode.Uri) {
   if (!(await pathExists(uri))) {
     return false;
   }
@@ -235,7 +237,7 @@ async function isFileLockedForOverwrite(uri) {
  * @param {unknown} error Filesystem error.
  * @returns {boolean}
  */
-function isFileLockError(error) {
+function isFileLockError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && ["EBUSY", "EPERM", "EACCES"].includes(String(error.code)));
 }
 
@@ -245,7 +247,7 @@ function isFileLockError(error) {
  * @param {string} fileName DOCX filename.
  * @returns {string}
  */
-function getCloseDocxBeforeBuildMessage(fileName) {
+function getCloseDocxBeforeBuildMessage(fileName: string) {
   if (isChineseVscodeLanguage()) {
     return `目标 Word 文件 ${fileName} 已经打开或无法写入。请先在 Word 中关闭它，然后再重新编译。`;
   }
@@ -272,7 +274,7 @@ function isChineseVscodeLanguage() {
  * @param {vscode.OutputChannel} output Output channel for diagnostics.
  * @returns {Promise<boolean>}
  */
-async function openDocxInLocalWord(docxUri, output) {
+async function openDocxInLocalWord(docxUri: vscode.Uri, output: vscode.OutputChannel) {
   if (!vscode.env.remoteName) {
     return vscode.env.openExternal(docxUri);
   }
@@ -305,7 +307,7 @@ async function openDocxInLocalWord(docxUri, output) {
  * @param {vscode.OutputChannel} output Output channel for diagnostics.
  * @returns {Promise<DocxDownloadServer>}
  */
-async function createRemoteDocxDownloadServer(docxUri, output) {
+async function createRemoteDocxDownloadServer(docxUri: vscode.Uri, output: vscode.OutputChannel) {
   const fileName = path.basename(docxUri.fsPath);
   const token = crypto.randomBytes(16).toString("hex");
   const requestPathPrefix = `/download/${token}/`;
@@ -313,7 +315,7 @@ async function createRemoteDocxDownloadServer(docxUri, output) {
   const stat = await fs.stat(docxUri.fsPath);
 
   return new Promise<DocxDownloadServer>((resolve, reject) => {
-    let closeTimer;
+    let closeTimer: NodeJS.Timeout | undefined;
     const server = http.createServer(async (request, response) => {
       try {
         logDocxDownloadRequest(request, output);
@@ -346,7 +348,7 @@ async function createRemoteDocxDownloadServer(docxUri, output) {
           return;
         }
 
-        const responseHeaders = {
+        const responseHeaders: Record<string, string | number> = {
           "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "Content-Disposition": `attachment; filename="${escapeHeaderFileName(fileName)}"`,
           "Cache-Control": "no-store",
@@ -411,7 +413,7 @@ async function createRemoteDocxDownloadServer(docxUri, output) {
  *
  * @param {import("http").ServerResponse} response HTTP response.
  */
-function writeDocxOptionsResponse(response) {
+function writeDocxOptionsResponse(response: import("http").ServerResponse) {
   response.writeHead(200, {
     "Allow": "GET, HEAD, OPTIONS, PROPFIND",
     "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, PROPFIND",
@@ -432,7 +434,7 @@ function writeDocxOptionsResponse(response) {
  * @param {string} fileName DOCX filename.
  * @param {import("fs").Stats} stat DOCX file stat.
  */
-function writeDocxPropfindResponse(response, requestPath, fileName, stat) {
+function writeDocxPropfindResponse(response: import("http").ServerResponse, requestPath: string, fileName: string, stat: import("fs").Stats) {
   const body = `<?xml version="1.0" encoding="utf-8"?>
 <D:multistatus xmlns:D="DAV:">
   <D:response>
@@ -466,7 +468,7 @@ function writeDocxPropfindResponse(response, requestPath, fileName, stat) {
  * @param {import("http").IncomingMessage} request HTTP request.
  * @param {vscode.OutputChannel} output Output channel for diagnostics.
  */
-function logDocxDownloadRequest(request, output) {
+function logDocxDownloadRequest(request: import("http").IncomingMessage, output: vscode.OutputChannel) {
   const host = request.headers.host || "";
   const userAgent = request.headers["user-agent"] || "";
   const range = request.headers.range || "";
@@ -481,7 +483,7 @@ function logDocxDownloadRequest(request, output) {
  * @param {string} requestPathPrefix Tokenized download path prefix.
  * @returns {boolean}
  */
-function isDocxDownloadRequest(request, requestPath, requestPathPrefix) {
+function isDocxDownloadRequest(request: import("http").IncomingMessage, requestPath: string, requestPathPrefix: string) {
   if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "OPTIONS" && request.method !== "PROPFIND") {
     return false;
   }
@@ -496,7 +498,7 @@ function isDocxDownloadRequest(request, requestPath, requestPathPrefix) {
  * @param {number} size Total file size.
  * @returns {{start: number, end: number} | undefined}
  */
-function parseHttpRange(rangeHeader, size) {
+function parseHttpRange(rangeHeader: string | undefined, size: number) {
   if (!rangeHeader || size <= 0) {
     return undefined;
   }
@@ -543,7 +545,7 @@ function parseHttpRange(rangeHeader, size) {
  * @param {number} delayMs Delay before close.
  * @returns {NodeJS.Timeout}
  */
-function scheduleServerClose(server, existingTimer, delayMs) {
+function scheduleServerClose(server: import("http").Server, existingTimer: NodeJS.Timeout | undefined, delayMs: number) {
   if (existingTimer) {
     clearTimeout(existingTimer);
   }
@@ -556,7 +558,7 @@ function scheduleServerClose(server, existingTimer, delayMs) {
  * @param {string} fileName Filename.
  * @returns {string}
  */
-function escapeHeaderFileName(fileName) {
+function escapeHeaderFileName(fileName: string) {
   return fileName.replace(/["\r\n]/g, "_");
 }
 
@@ -566,7 +568,7 @@ function escapeHeaderFileName(fileName) {
  * @param {string} value Raw XML text value.
  * @returns {string}
  */
-function escapeXml(value) {
+function escapeXml(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -582,7 +584,7 @@ function escapeXml(value) {
  * @param {vscode.Uri} markdownUri Markdown file URI.
  * @returns {vscode.Uri}
  */
-function getExpectedDocxUri(rootUri, markdownUri) {
+function getExpectedDocxUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
   const outputName = `${path.parse(markdownUri.fsPath).name}.docx`;
   return vscode.Uri.file(path.join(rootUri.fsPath, "output", "docx", outputName));
 }
@@ -609,7 +611,7 @@ async function isUvAvailable() {
  * @param {{cwd?: string, output?: vscode.OutputChannel}} options Process options.
  * @returns {Promise<void>}
  */
-function runProcess(command, args, options) {
+function runProcess(command: string, args: string[], options: RunProcessOptions) {
   return new Promise<void>((resolve, reject) => {
     const child = cp.spawn(command, args, {
       cwd: options.cwd,
@@ -640,7 +642,7 @@ function runProcess(command, args, options) {
  * @param {string} right Right path.
  * @returns {boolean}
  */
-function isSameFsPath(left, right) {
+function isSameFsPath(left: string, right: string) {
   const normalizedLeft = path.resolve(left);
   const normalizedRight = path.resolve(right);
   if (process.platform === "win32") {

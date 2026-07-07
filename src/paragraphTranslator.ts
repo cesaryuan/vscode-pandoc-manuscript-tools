@@ -1,3 +1,4 @@
+import type * as vscode from "vscode";
 import { getConfiguration } from "./configuration";
 
 const GOOGLE_TRANSLATE_HTML_URL = "https://translate-pa.googleapis.com/v1/translateHtml";
@@ -23,7 +24,7 @@ export class ParagraphTranslator {
    *
    * @param {vscode.OutputChannel} output Output channel for translation failures.
    */
-  constructor(output) {
+  constructor(output: vscode.OutputChannel) {
     this.output = output;
     this.translationCache = new Map();
     this.preferredEngine = undefined;
@@ -50,7 +51,7 @@ export class ParagraphTranslator {
    * @param {string} text English paragraph text.
    * @returns {Promise<TranslationResult | undefined>}
    */
-  async translateText(text) {
+  async translateText(text: string) {
     const targetLanguage = getConfiguration().get("paragraphHoverTranslationTargetLanguage", "zh");
     const engine = await this.ensurePreferredEngine();
     if (!engine) {
@@ -126,7 +127,7 @@ export class ParagraphTranslator {
    * @param {TranslationEngine} engine Translation engine.
    * @returns {Promise<string | undefined>}
    */
-  async translateTextWithEngine(text, targetLanguage, engine) {
+  async translateTextWithEngine(text: string, targetLanguage: string, engine: TranslationEngine) {
     if (engine === "microsoft") {
       return this.translateWithMicrosoft(text, targetLanguage, true);
     }
@@ -144,7 +145,7 @@ export class ParagraphTranslator {
    * @param {boolean} shouldLog Whether to log failures for user-triggered translations.
    * @returns {Promise<string | undefined>}
    */
-  async translateWithGoogle(text, targetLanguage, shouldLog) {
+  async translateWithGoogle(text: string, targetLanguage: string, shouldLog: boolean) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TRANSLATION_TIMEOUT_MS);
 
@@ -200,7 +201,7 @@ export class ParagraphTranslator {
    * @param {boolean} shouldLog Whether to log failures for user-triggered translations.
    * @returns {Promise<string | undefined>}
    */
-  async translateWithMicrosoft(text, targetLanguage, shouldLog) {
+  async translateWithMicrosoft(text: string, targetLanguage: string, shouldLog: boolean) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TRANSLATION_TIMEOUT_MS);
 
@@ -309,7 +310,7 @@ export class ParagraphTranslator {
  * @param {string} value Translated text.
  * @returns {string}
  */
-function decodeHtmlText(value) {
+function decodeHtmlText(value: string) {
   return value
     .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
     .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
@@ -328,7 +329,7 @@ function decodeHtmlText(value) {
  * @param {string} text Source text.
  * @returns {string}
  */
-function formatTranslationTextForLog(text) {
+function formatTranslationTextForLog(text: string) {
   const compactText = text.replace(/\s+/g, " ").trim();
   const truncatedText = compactText.length > 120 ? `${compactText.slice(0, 117)}...` : compactText;
   return `"${truncatedText}"`;

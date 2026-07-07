@@ -1,6 +1,7 @@
 export const LABEL_PREFIXES = ["sec", "fig", "tbl", "eq"];
 export type ParsedLine = { text: string; number: number; startOffset: number; endOffset: number };
-export type PlainRange = { start: { line: number; character: number }; end: { line: number; character: number } };
+export type PlainPosition = { line: number; character: number };
+export type PlainRange = { start: PlainPosition; end: PlainPosition };
 export type LabelEntry = { label: string; prefix: string; kind: string; source: string; uriText: string; line: number; character: number; range: PlainRange; fullRange: PlainRange; containerRange?: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
 export type ReferenceEntry = { label: string; prefix: string; kind: string; uriText: string; line: number; character: number; range: PlainRange; fullRange: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
 export type HeadingEntry = { title: string; label?: string; level: number; uriText: string; line: number; character: number; range: PlainRange; selectionRange: PlainRange; preview: string };
@@ -11,7 +12,10 @@ export type CodeSpanRange = { start: number; end: number };
 export type FencedDivMarker = { type: "open" | "close"; fenceLength: number; attributeText?: string };
 export type FencedDivEntry = { uriText: string; depth: number; attributes: string; closed: boolean; openingFenceLength: number; closingFenceLength?: number; range: PlainRange };
 export type ParsedPandocDocument = { uriText: string; textLength: number; labels: LabelEntry[]; references: ReferenceEntry[]; headings: HeadingEntry[]; mathBlocks: MathBlockEntry[]; inlineMath: InlineMathEntry[]; fencedDivs: FencedDivEntry[]; spans: SpanEntry[]; labelMap: Map<string, LabelEntry[]>; referenceMap: Map<string, ReferenceEntry[]> };
-export type PandocTokenAtPosition = { type: "label" | "reference"; entry: LabelEntry | ReferenceEntry };
+export type PandocTokenAtPosition = { type: "label"; entry: LabelEntry } | { type: "reference"; entry: ReferenceEntry };
+
+type FencedDivStackEntry = { line: ParsedLine; marker: FencedDivMarker; depth: number };
+type BacktickRun = { start: number; end: number; length: number };
 
 const LABEL_SOURCE = "(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+";
 const LABEL_PATTERN = new RegExp("\\{#(" + LABEL_SOURCE + ")\\b[^}]*\\}", "g");
@@ -33,25 +37,25 @@ const DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\$\$\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Z
  * @param {string} uriText Stable URI string used in cached entries.
  * @returns {ParsedPandocDocument}
  */
-export function parsePandocDocument(text, uriText = "") {
+export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDocument {
   const lines = splitLines(text);
-  const labels = [];
-  const references = [];
-  const headings = [];
-  const mathBlocks = [];
-  const inlineMath = [];
+  const labels: LabelEntry[] = [];
+  const references: ReferenceEntry[] = [];
+  const headings: HeadingEntry[] = [];
+  const mathBlocks: MathBlockEntry[] = [];
+  const inlineMath: InlineMathEntry[] = [];
   const fencedDivs = scanFencedDivs(lines, uriText);
-  const spans = [];
-  const labelMap = new Map();
-  const referenceMap = new Map();
+  const spans: SpanEntry[] = [];
+  const labelMap = new Map<string, LabelEntry[]>();
+  const referenceMap = new Map<string, ReferenceEntry[]>();
 
   let inYaml = lines[0] && lines[0].text.trim() === "---";
   let inFence = false;
   let fenceMarker = "";
   let inMath = false;
-  let mathStart = null;
-  let mathBody = [];
-  const divLabelStack = [];
+  let mathStart: ParsedLine | null = null;
+  let mathBody: string[] = [];
+  const divLabelStack: Array<LabelEntry | undefined> = [];
 
   for (const line of lines) {
     const trimmed = line.text.trim();
@@ -141,8 +145,8 @@ export function parsePandocDocument(text, uriText = "") {
  * @param {string} text Full document text.
  * @returns {ParsedLine[]}
  */
-function splitLines(text) {
-  const lines = [];
+function splitLines(text: string): ParsedLine[] {
+  const lines: ParsedLine[] = [];
   let lineStart = 0;
   let lineNumber = 0;
 
@@ -173,7 +177,7 @@ function splitLines(text) {
  * @param {number} endOffset Absolute end offset.
  * @returns {ParsedLine}
  */
-function createLine(text, number, startOffset, endOffset) {
+function createLine(text: string, number: number, startOffset: number, endOffset: number): ParsedLine {
   return { text, number, startOffset, endOffset };
 }
 
@@ -187,9 +191,9 @@ function createLine(text, number, startOffset, endOffset) {
  * @param {string} uriText URI string for resulting entries.
  * @returns {FencedDivEntry[]}
  */
-function scanFencedDivs(lines, uriText) {
-  const blocks = [];
-  const stack = [];
+function scanFencedDivs(lines: ParsedLine[], uriText: string): FencedDivEntry[] {
+  const blocks: FencedDivEntry[] = [];
+  const stack: FencedDivStackEntry[] = [];
   let inYaml = lines[0] && lines[0].text.trim() === "---";
   let inFence = false;
   let fenceMarker = "";
@@ -268,7 +272,7 @@ function scanFencedDivs(lines, uriText) {
  * @param {string} lineText Line text without newline.
  * @returns {FencedDivMarker | undefined}
  */
-function parseFencedDivMarker(lineText) {
+function parseFencedDivMarker(lineText: string): FencedDivMarker | undefined {
   const match = lineText.match(FENCED_DIV_LINE_PATTERN);
   if (!match) {
     return undefined;
@@ -301,7 +305,7 @@ function parseFencedDivMarker(lineText) {
  * @param {string} attributeText Text after the opening colon run.
  * @returns {boolean}
  */
-function isFencedDivAttributeText(attributeText) {
+function isFencedDivAttributeText(attributeText: string): boolean {
   return /^(?:\{[^}]*\S[^}]*\}|[^\s{}:]+)$/.test(attributeText);
 }
 
@@ -311,7 +315,7 @@ function isFencedDivAttributeText(attributeText) {
  * @param {string} attributeText Raw opening attribute text.
  * @returns {string}
  */
-function stripTrailingFencedDivColons(attributeText) {
+function stripTrailingFencedDivColons(attributeText: string): string {
   return attributeText.replace(/\s*:{3,}\s*$/, "").trim();
 }
 
@@ -324,7 +328,7 @@ function stripTrailingFencedDivColons(attributeText) {
  * @param {boolean} closed Whether a real closing fence was found.
  * @returns {FencedDivEntry}
  */
-function createFencedDivEntry(uriText, opening, closing, closed) {
+function createFencedDivEntry(uriText: string, opening: FencedDivStackEntry, closing: ParsedLine, closed: boolean): FencedDivEntry {
   return {
     uriText,
     depth: opening.depth,
@@ -346,10 +350,10 @@ function createFencedDivEntry(uriText, opening, closing, closed) {
  * @param {string} uriText URI string for resulting entries.
  * @returns {SpanEntry[]}
  */
-function scanPandocSpans(line, uriText) {
+function scanPandocSpans(line: ParsedLine, uriText: string): SpanEntry[] {
   const spans = [];
   const codeSpanRanges = collectMarkdownCodeSpanRanges(line.text);
-  const openingBrackets = [];
+  const openingBrackets: number[] = [];
 
   for (let index = 0; index < line.text.length; index += 1) {
     if (isIndexInRanges(index, codeSpanRanges) || isEscaped(line.text, index)) {
@@ -419,7 +423,7 @@ function scanPandocSpans(line, uriText) {
  * @param {number} start First character after the opening `{`.
  * @returns {number}
  */
-function findClosingAttributeBrace(text, start) {
+function findClosingAttributeBrace(text: string, start: number): number {
   for (let index = start; index < text.length; index += 1) {
     if (text[index] === "}" && !isEscaped(text, index)) {
       return index;
@@ -434,7 +438,7 @@ function findClosingAttributeBrace(text, start) {
  * @param {string} attributes Raw attribute text without surrounding braces.
  * @returns {boolean}
  */
-function isPandocSpanAttributeText(attributes) {
+function isPandocSpanAttributeText(attributes: string): boolean {
   return attributes.length > 0;
 }
 
@@ -446,8 +450,8 @@ function isPandocSpanAttributeText(attributes) {
  * @param {string} source Logical source type, for example `markdown` or `math`.
  * @returns {LabelEntry[]}
  */
-function scanLabels(line, uriText, source) {
-  const labels = [];
+function scanLabels(line: ParsedLine, uriText: string, source: string): LabelEntry[] {
+  const labels: LabelEntry[] = [];
   collectLabelMatches(line, uriText, source, LABEL_PATTERN, labels, 1);
   collectLabelMatches(line, uriText, "html-div", DIV_ID_PATTERN, labels, 1);
   return labels;
@@ -463,10 +467,10 @@ function scanLabels(line, uriText, source) {
  * @param {LabelEntry[]} lineLabels Labels found on this line.
  * @param {Array<LabelEntry | undefined>} divLabelStack Open div stack.
  */
-function updateHtmlDivLabelContainers(line, lineLabels, divLabelStack) {
+function updateHtmlDivLabelContainers(line: ParsedLine, lineLabels: LabelEntry[], divLabelStack: Array<LabelEntry | undefined>): void {
   const divLabels = lineLabels.filter((entry) => entry.source === "html-div");
   const divTagPattern = /<\/div\s*>|<div\b[^>]*>/gi;
-  let match;
+  let match: RegExpExecArray | null;
 
   while ((match = divTagPattern.exec(line.text))) {
     const tag = match[0].toLowerCase();
@@ -488,7 +492,7 @@ function updateHtmlDivLabelContainers(line, lineLabels, divLabelStack) {
  * @param {ParsedLine} line Closing line.
  * @param {number} endCharacter Character after the closing `</div>`.
  */
-function closeHtmlDivLabelContainer(divLabelStack, line, endCharacter) {
+function closeHtmlDivLabelContainer(divLabelStack: Array<LabelEntry | undefined>, line: ParsedLine, endCharacter: number): void {
   const label = divLabelStack.pop();
   if (!label) {
     return;
@@ -503,7 +507,7 @@ function closeHtmlDivLabelContainer(divLabelStack, line, endCharacter) {
  * @param {Array<LabelEntry | undefined>} divLabelStack Open div stack.
  * @param {ParsedLine | undefined} finalLine Final document line.
  */
-function closeOpenHtmlDivLabelContainers(divLabelStack, finalLine) {
+function closeOpenHtmlDivLabelContainers(divLabelStack: Array<LabelEntry | undefined>, finalLine: ParsedLine | undefined): void {
   if (!finalLine) {
     return;
   }
@@ -523,7 +527,7 @@ function closeOpenHtmlDivLabelContainers(divLabelStack, finalLine) {
  * @param {LabelEntry[]} labels Target label collection.
  * @param {number} groupIndex Capturing group index containing the label.
  */
-function collectLabelMatches(line, uriText, source, pattern, labels, groupIndex) {
+function collectLabelMatches(line: ParsedLine, uriText: string, source: string, pattern: RegExp, labels: LabelEntry[], groupIndex: number): void {
   pattern.lastIndex = 0;
   let match;
   while ((match = pattern.exec(line.text))) {
@@ -555,7 +559,7 @@ function collectLabelMatches(line, uriText, source, pattern, labels, groupIndex)
  * @param {string} uriText URI string for resulting entries.
  * @returns {ReferenceEntry[]}
  */
-function scanReferences(line, uriText) {
+function scanReferences(line: ParsedLine, uriText: string): ReferenceEntry[] {
   const references = [];
   REF_PATTERN.lastIndex = 0;
   let match;
@@ -588,7 +592,7 @@ function scanReferences(line, uriText) {
  * @param {string} uriText URI string for resulting entries.
  * @returns {HeadingEntry | undefined}
  */
-function scanHeading(line, uriText) {
+function scanHeading(line: ParsedLine, uriText: string): HeadingEntry | undefined {
   const match = line.text.match(HEADING_PATTERN);
   if (!match) {
     return undefined;
@@ -624,7 +628,7 @@ function scanHeading(line, uriText) {
  * @param {LabelEntry[]} closingLabels Labels found on the closing delimiter.
  * @returns {MathBlockEntry}
  */
-function createMathBlock(uriText, startLine, endLine, bodyLines, closingLabels) {
+function createMathBlock(uriText: string, startLine: ParsedLine, endLine: ParsedLine, bodyLines: string[], closingLabels: LabelEntry[]): MathBlockEntry {
   const equationLabel = closingLabels.find((entry) => entry.prefix === "eq");
   return {
     label: equationLabel ? equationLabel.label : undefined,
@@ -648,8 +652,8 @@ function createMathBlock(uriText, startLine, endLine, bodyLines, closingLabels) 
  * @param {string} uriText URI string for resulting entries.
  * @returns {InlineMathEntry[]}
  */
-function scanInlineMath(line, uriText) {
-  const entries = [];
+function scanInlineMath(line: ParsedLine, uriText: string): InlineMathEntry[] {
+  const entries: InlineMathEntry[] = [];
   const codeSpanRanges = collectMarkdownCodeSpanRanges(line.text);
   scanDelimitedInlineMath(line, uriText, "$", "$", entries, codeSpanRanges);
   scanDelimitedInlineMath(line, uriText, "\\(", "\\)", entries, codeSpanRanges);
@@ -665,8 +669,8 @@ function scanInlineMath(line, uriText) {
  * @param {string} text Line text.
  * @returns {CodeSpanRange[]}
  */
-function collectMarkdownCodeSpanRanges(text) {
-  const ranges = [];
+function collectMarkdownCodeSpanRanges(text: string): CodeSpanRange[] {
+  const ranges: CodeSpanRange[] = [];
   let searchStart = 0;
 
   while (searchStart < text.length) {
@@ -694,7 +698,7 @@ function collectMarkdownCodeSpanRanges(text) {
  * @param {number} start Search start index.
  * @returns {{start: number, end: number, length: number} | undefined}
  */
-function findNextBacktickRun(text, start) {
+function findNextBacktickRun(text: string, start: number): BacktickRun | undefined {
   let index = text.indexOf("`", start);
   while (index >= 0) {
     const end = countBacktickRunEnd(text, index);
@@ -717,7 +721,7 @@ function findNextBacktickRun(text, start) {
  * @param {number} delimiterLength Backtick run length to match.
  * @returns {{start: number, end: number, length: number} | undefined}
  */
-function findMatchingBacktickRun(text, start, delimiterLength) {
+function findMatchingBacktickRun(text: string, start: number, delimiterLength: number): BacktickRun | undefined {
   let run = findNextBacktickRun(text, start);
   while (run) {
     if (run.length === delimiterLength) {
@@ -735,7 +739,7 @@ function findMatchingBacktickRun(text, start, delimiterLength) {
  * @param {number} start First backtick index.
  * @returns {number}
  */
-function countBacktickRunEnd(text, start) {
+function countBacktickRunEnd(text: string, start: number): number {
   let end = start;
   while (text[end] === "`") {
     end += 1;
@@ -753,7 +757,7 @@ function countBacktickRunEnd(text, start) {
  * @param {InlineMathEntry[]} entries Target entries.
  * @param {CodeSpanRange[]} ignoredRanges Inline code ranges that must not preview as math.
  */
-function scanDelimitedInlineMath(line, uriText, openDelimiter, closeDelimiter, entries, ignoredRanges) {
+function scanDelimitedInlineMath(line: ParsedLine, uriText: string, openDelimiter: string, closeDelimiter: string, entries: InlineMathEntry[], ignoredRanges: CodeSpanRange[]): void {
   let searchStart = 0;
   while (searchStart < line.text.length) {
     const openIndex = findNextDelimiter(line.text, openDelimiter, searchStart, ignoredRanges);
@@ -808,7 +812,7 @@ function scanDelimitedInlineMath(line, uriText, openDelimiter, closeDelimiter, e
  * @param {CodeSpanRange[]=} ignoredRanges Ranges where delimiters are literal code.
  * @returns {number}
  */
-function findNextDelimiter(text, delimiter, start, ignoredRanges = []) {
+function findNextDelimiter(text: string, delimiter: string, start: number, ignoredRanges: CodeSpanRange[] | undefined = []) {
   let index = text.indexOf(delimiter, start);
   while (index >= 0 && (isEscaped(text, index) || isIndexInRanges(index, ignoredRanges))) {
     index = text.indexOf(delimiter, index + delimiter.length);
@@ -823,7 +827,7 @@ function findNextDelimiter(text, delimiter, start, ignoredRanges = []) {
  * @param {CodeSpanRange[]} ranges Ignored ranges.
  * @returns {boolean}
  */
-function isIndexInRanges(index, ranges) {
+function isIndexInRanges(index: number, ranges: CodeSpanRange[]): boolean {
   return ranges.some((range) => index >= range.start && index < range.end);
 }
 
@@ -834,7 +838,7 @@ function isIndexInRanges(index, ranges) {
  * @param {number} index Character index.
  * @returns {boolean}
  */
-function isEscaped(text, index) {
+function isEscaped(text: string, index: number): boolean {
   let backslashes = 0;
   for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
     backslashes += 1;
@@ -848,7 +852,7 @@ function isEscaped(text, index) {
  * @param {string} lineText Line text.
  * @returns {boolean}
  */
-function isDisplayMathStart(lineText) {
+function isDisplayMathStart(lineText: string): boolean {
   return /^\s*\$\$\s*$/.test(lineText);
 }
 
@@ -859,7 +863,7 @@ function isDisplayMathStart(lineText) {
  * @param {LabelEntry[]} labels Flat label collection.
  * @param {Map<string, LabelEntry[]>} labelMap Label map.
  */
-function addAllLabels(entries, labels, labelMap) {
+function addAllLabels(entries: LabelEntry[], labels: LabelEntry[], labelMap: Map<string, LabelEntry[]>): void {
   for (const entry of entries) {
     labels.push(entry);
     if (!labelMap.has(entry.label)) {
@@ -876,7 +880,7 @@ function addAllLabels(entries, labels, labelMap) {
  * @param {ReferenceEntry[]} references Flat reference collection.
  * @param {Map<string, ReferenceEntry[]>} referenceMap Reference map.
  */
-function addAllReferences(entries, references, referenceMap) {
+function addAllReferences(entries: ReferenceEntry[], references: ReferenceEntry[], referenceMap: Map<string, ReferenceEntry[]>): void {
   for (const entry of entries) {
     references.push(entry);
     if (!referenceMap.has(entry.label)) {
@@ -892,7 +896,7 @@ function addAllReferences(entries, references, referenceMap) {
  * @param {string} value Heading text.
  * @returns {string}
  */
-function stripTrailingAttribute(value) {
+function stripTrailingAttribute(value: string): string {
   return value.replace(/\s*\{[^}]+\}\s*$/, "").trim();
 }
 
@@ -902,7 +906,7 @@ function stripTrailingAttribute(value) {
  * @param {string} label Pandoc label.
  * @returns {string}
  */
-function getLabelPrefix(label) {
+function getLabelPrefix(label: string): string {
   return label.split(":", 1)[0];
 }
 
@@ -912,7 +916,7 @@ function getLabelPrefix(label) {
  * @param {string} label Pandoc label.
  * @returns {string}
  */
-function getLabelKind(label) {
+function getLabelKind(label: string): string {
   const prefix = getLabelPrefix(label);
   if (prefix === "sec") {
     return "Section";
@@ -938,7 +942,7 @@ function getLabelKind(label) {
  * @param {number} endCharacter End character.
  * @returns {PlainRange}
  */
-function createRange(startLine, startCharacter, endLine, endCharacter) {
+function createRange(startLine: number, startCharacter: number, endLine: number, endCharacter: number): PlainRange {
   return {
     start: { line: startLine, character: startCharacter },
     end: { line: endLine, character: endCharacter },
@@ -952,7 +956,7 @@ function createRange(startLine, startCharacter, endLine, endCharacter) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {{type: string, entry: LabelEntry | ReferenceEntry} | undefined}
  */
-export function findTokenAtPosition(parsed, position) {
+export function findTokenAtPosition(parsed: ParsedPandocDocument, position: PlainPosition): PandocTokenAtPosition | undefined {
   const reference = parsed.references.find((entry) => containsPosition(entry.fullRange, position));
   if (reference) {
     return { type: "reference", entry: reference };
@@ -973,7 +977,7 @@ export function findTokenAtPosition(parsed, position) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {MathBlockEntry | undefined}
  */
-export function findMathBlockAtPosition(parsed, position) {
+export function findMathBlockAtPosition(parsed: ParsedPandocDocument, position: PlainPosition): MathBlockEntry | undefined {
   return parsed.mathBlocks.find((entry) => containsPosition(entry.range, position));
 }
 
@@ -984,7 +988,7 @@ export function findMathBlockAtPosition(parsed, position) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {InlineMathEntry | undefined}
  */
-export function findInlineMathAtPosition(parsed, position) {
+export function findInlineMathAtPosition(parsed: ParsedPandocDocument, position: PlainPosition): InlineMathEntry | undefined {
   return parsed.inlineMath.find((entry) => containsPosition(entry.fullRange, position));
 }
 
@@ -995,7 +999,7 @@ export function findInlineMathAtPosition(parsed, position) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {boolean}
  */
-export function containsPosition(range, position) {
+export function containsPosition(range: PlainRange, position: PlainPosition): boolean {
   if (position.line < range.start.line || position.line > range.end.line) {
     return false;
   }
@@ -1007,5 +1011,4 @@ export function containsPosition(range, position) {
   }
   return true;
 }
-
 

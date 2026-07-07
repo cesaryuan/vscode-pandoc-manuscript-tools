@@ -1,3 +1,4 @@
+import type * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import * as vm from "vm";
@@ -27,7 +28,7 @@ export class MathJaxRenderer {
    *
    * @param {vscode.OutputChannel} output Output channel for render failures.
    */
-  constructor(output) {
+  constructor(output: vscode.OutputChannel) {
     this.output = output;
     this.readyPromise = undefined;
     this.svgCache = new Map();
@@ -42,7 +43,7 @@ export class MathJaxRenderer {
    * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
    * @returns {Promise<string | undefined>}
    */
-  async renderToDataUri(tex, display, foregroundColor) {
+  async renderToDataUri(tex: string, display: boolean, foregroundColor: string | undefined) {
     const svg = await this.renderToSvg(tex, display, foregroundColor);
     if (!svg) {
       return undefined;
@@ -58,7 +59,7 @@ export class MathJaxRenderer {
    * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
    * @returns {Promise<string | undefined>}
    */
-  async renderToSvg(tex, display, foregroundColor) {
+  async renderToSvg(tex: string, display: boolean, foregroundColor: string | undefined) {
     const trimmedTex = tex.trim();
     if (!trimmedTex) {
       return undefined;
@@ -80,7 +81,7 @@ export class MathJaxRenderer {
    * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
    * @returns {Promise<string | undefined>}
    */
-  async renderToSvgUncached(tex, display, foregroundColor) {
+  async renderToSvgUncached(tex: string, display: boolean, foregroundColor: string | undefined) {
     try {
       const renderer = await this.ensureMathJax();
       if (!renderer) {
@@ -201,7 +202,7 @@ export class MathJaxRenderer {
  * @param {unknown} node MathJax conversion result node.
  * @returns {unknown[]}
  */
-function getTopLevelSvgNodes(adaptor, node) {
+function getTopLevelSvgNodes(adaptor: MathJaxAdaptor, node: unknown) {
   return adaptor.childNodes(node).filter((child) => adaptor.kind(child) === "svg");
 }
 
@@ -213,7 +214,7 @@ function getTopLevelSvgNodes(adaptor, node) {
  *
  * @param {MathJaxNamespace} mathjax MathJax direct API namespace.
  */
-function configureMathJaxAsyncLoad(mathjax) {
+function configureMathJaxAsyncLoad(mathjax: MathJaxNamespace) {
   mathjax.asyncLoad = loadPackagedMathJaxDynamicModule;
   mathjax.asyncIsSynchronous = true;
 }
@@ -224,7 +225,7 @@ function configureMathJaxAsyncLoad(mathjax) {
  * @param {string} name Module name requested by MathJax.
  * @returns {unknown}
  */
-function loadPackagedMathJaxDynamicModule(name) {
+function loadPackagedMathJaxDynamicModule(name: string) {
   const normalizedName = name.replace(/\\/g, "/");
   const dynamicChunkMatch = normalizedName.match(/@mathjax\/mathjax-newcm-font\/js\/svg\/dynamic\/([^/]+)\.js$/);
   if (dynamicChunkMatch) {
@@ -243,7 +244,7 @@ function loadPackagedMathJaxDynamicModule(name) {
  * @param {string} chunkName NewCM SVG dynamic chunk name.
  * @returns {unknown}
  */
-function loadPackagedNewcmDynamicChunk(chunkName) {
+function loadPackagedNewcmDynamicChunk(chunkName: string) {
   if (loadedMathJaxDynamicChunks.has(chunkName)) {
     return loadedMathJaxDynamicChunks.get(chunkName);
   }
@@ -256,7 +257,7 @@ function loadPackagedNewcmDynamicChunk(chunkName) {
   const context = {
     exports: moduleExports,
     module,
-    require: (request) => requireMathJaxDynamicChunkDependency(request, Font.DefaultFont),
+    require: (request: string) => requireMathJaxDynamicChunkDependency(request, Font.DefaultFont),
   };
 
   vm.runInNewContext(code, context, { filename: chunkPath });
@@ -273,7 +274,7 @@ function loadPackagedNewcmDynamicChunk(chunkName) {
  * @param {string} chunkName NewCM SVG dynamic chunk name.
  * @returns {string}
  */
-function getPackagedNewcmDynamicChunkPath(chunkName) {
+function getPackagedNewcmDynamicChunkPath(chunkName: string) {
   if (!MATHJAX_DYNAMIC_CHUNK_NAME_PATTERN.test(chunkName)) {
     throw new Error(`Unsupported MathJax dynamic font chunk name: ${chunkName}`);
   }
@@ -287,7 +288,7 @@ function getPackagedNewcmDynamicChunkPath(chunkName) {
  * @param {unknown} MathJaxNewcmFont Bundled NewCM font class.
  * @returns {unknown}
  */
-function requireMathJaxDynamicChunkDependency(request, MathJaxNewcmFont) {
+function requireMathJaxDynamicChunkDependency(request: string, MathJaxNewcmFont: unknown) {
   if (request === "../../svg.js") {
     return { MathJaxNewcmFont };
   }
@@ -303,7 +304,7 @@ function requireMathJaxDynamicChunkDependency(request, MathJaxNewcmFont) {
  * @param {string} svg Serialized MathJax SVG.
  * @returns {string | undefined}
  */
-function getMathJaxSvgError(svg) {
+function getMathJaxSvgError(svg: string) {
   const match = svg.match(/\bdata-mjx-error="([^"]+)"/);
   return match ? decodeHtmlAttribute(match[1]) : undefined;
 }
@@ -314,7 +315,7 @@ function getMathJaxSvgError(svg) {
  * @param {string} value Attribute value.
  * @returns {string}
  */
-function decodeHtmlAttribute(value) {
+function decodeHtmlAttribute(value: string) {
   return value
     .replace(/&quot;/g, "\"")
     .replace(/&apos;/g, "'")
@@ -329,7 +330,7 @@ function decodeHtmlAttribute(value) {
  * @param {string} tex TeX source.
  * @returns {string}
  */
-function formatTexForLog(tex) {
+function formatTexForLog(tex: string) {
   const compactTex = tex.replace(/\s+/g, " ").trim();
   const truncatedTex = compactTex.length > 160 ? `${compactTex.slice(0, 157)}...` : compactTex;
   return `"${truncatedTex}"`;
@@ -342,7 +343,7 @@ function formatTexForLog(tex) {
  * @param {string | undefined} foregroundColor CSS color for SVG glyphs.
  * @returns {string}
  */
-function makeSvgHoverFriendly(svg, foregroundColor) {
+function makeSvgHoverFriendly(svg: string, foregroundColor: string | undefined) {
   const sizedSvg = setSvgPixelSize(svg, 720);
   const colorStyle = foregroundColor ? `color:${foregroundColor};` : "";
   // Data-URI SVG images do not inherit VS Code hover foreground reliably, so
@@ -364,7 +365,7 @@ function makeSvgHoverFriendly(svg, foregroundColor) {
  * @param {number} maxWidthPx Maximum rendered width.
  * @returns {string}
  */
-function setSvgPixelSize(svg, maxWidthPx) {
+function setSvgPixelSize(svg: string, maxWidthPx: number) {
   const viewBoxMatch = svg.match(/\bviewBox="(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
   if (!viewBoxMatch) {
     return svg;
@@ -392,7 +393,7 @@ function setSvgPixelSize(svg, maxWidthPx) {
  * @param {string} value Attribute value.
  * @returns {string}
  */
-function upsertSvgAttribute(svg, attribute, value) {
+function upsertSvgAttribute(svg: string, attribute: string, value: string) {
   const pattern = new RegExp(`(<svg\\b[^>]*\\s)${attribute}="[^"]*"`);
   if (pattern.test(svg)) {
     return svg.replace(pattern, `$1${attribute}="${value}"`);

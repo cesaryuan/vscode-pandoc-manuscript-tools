@@ -17,7 +17,7 @@ export class PandocWorkspaceIndex {
    *
    * @param {vscode.OutputChannel} output Output channel for useful diagnostics.
    */
-  constructor(output) {
+  constructor(output: vscode.OutputChannel) {
     this.output = output;
     this.documents = new Map();
   }
@@ -66,7 +66,7 @@ export class PandocWorkspaceIndex {
    * @param {vscode.TextDocument} document Markdown document.
    * @returns {ParsedCacheEntry}
    */
-  updateDocument(document) {
+  updateDocument(document: vscode.TextDocument) {
     const uriText = document.uri.toString();
     const existing = this.documents.get(uriText);
     if (existing && existing.version === document.version) {
@@ -85,12 +85,12 @@ export class PandocWorkspaceIndex {
    * @param {vscode.Uri} uri Markdown file URI.
    * @returns {Promise<ParsedCacheEntry | undefined>}
    */
-  async updateUri(uri) {
+  async updateUri(uri: vscode.Uri) {
     try {
       const bytes = await vscode.workspace.fs.readFile(uri);
       const text = new TextDecoder("utf-8").decode(bytes);
       const parsed = parsePandocDocument(text, uri.toString());
-      const entry = { uri, version: undefined, parsed };
+      const entry: ParsedCacheEntry = { uri, version: undefined, parsed };
       this.documents.set(uri.toString(), entry);
       return entry;
     } catch (error) {
@@ -105,7 +105,7 @@ export class PandocWorkspaceIndex {
    * @param {vscode.TextDocument} document Markdown document.
    * @returns {import("./parser").ParsedPandocDocument}
    */
-  getParsedDocument(document) {
+  getParsedDocument(document: vscode.TextDocument) {
     return this.updateDocument(document).parsed;
   }
 
@@ -116,8 +116,8 @@ export class PandocWorkspaceIndex {
    * @param {string} label Pandoc label.
    * @returns {import("./parser").LabelEntry[]}
    */
-  getDefinitions(document, label) {
-    return this.getDocumentEntriesByLabel(document, "labels", label);
+  getDefinitions(document: vscode.TextDocument, label: string): import("./parser").LabelEntry[] {
+    return this.getParsedDocument(document).labels.filter((entry) => entry.label === label);
   }
 
   /**
@@ -127,8 +127,8 @@ export class PandocWorkspaceIndex {
    * @param {string} label Pandoc label.
    * @returns {import("./parser").ReferenceEntry[]}
    */
-  getReferences(document, label) {
-    return this.getDocumentEntriesByLabel(document, "references", label);
+  getReferences(document: vscode.TextDocument, label: string): import("./parser").ReferenceEntry[] {
+    return this.getParsedDocument(document).references.filter((entry) => entry.label === label);
   }
 
   /**
@@ -137,7 +137,7 @@ export class PandocWorkspaceIndex {
    * @param {vscode.TextDocument} document Markdown document whose labels should be returned.
    * @returns {import("./parser").LabelEntry[]}
    */
-  getAllLabels(document) {
+  getAllLabels(document: vscode.TextDocument) {
     return this.getParsedDocument(document).labels;
   }
 
@@ -149,7 +149,7 @@ export class PandocWorkspaceIndex {
    * @param {string} label Pandoc label.
    * @returns {Array<import("./parser").LabelEntry | import("./parser").ReferenceEntry>}
    */
-  getDocumentEntriesByLabel(document, collection, label) {
+  getDocumentEntriesByLabel(document: vscode.TextDocument, collection: "labels" | "references", label: string): Array<import("./parser").LabelEntry | import("./parser").ReferenceEntry> {
     const parsed = this.getParsedDocument(document);
     return parsed[collection].filter((entry) => entry.label === label);
   }
@@ -160,7 +160,7 @@ export class PandocWorkspaceIndex {
    * @param {vscode.TextDocument} document Markdown document whose labels define the duplicate scope.
    * @returns {Map<string, import("./parser").LabelEntry[]>}
    */
-  getDefinitionMap(document) {
+  getDefinitionMap(document: vscode.TextDocument) {
     const map = new Map();
     // Duplicate and undefined-reference diagnostics are document-local because
     // separate manuscripts often reuse labels intentionally.

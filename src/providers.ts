@@ -3,16 +3,27 @@ import { EXTENSION_NAME } from "./constants";
 import { getConfiguration } from "./configuration";
 import { parsePandocDocument, findMathBlockAtPosition, findInlineMathAtPosition, findTokenAtPosition, containsPosition } from "./parser";
 import { toRange, toLocation, toLocationLink, toPlainPosition, toSymbolKind, isPandocDocument, supportsPandocTextFeatures } from "./vscodeUtils";
+import type { PandocWorkspaceIndex } from "./workspaceIndex";
+import type { MathJaxRenderer } from "./mathJaxRenderer";
+import type { ParagraphTranslator, TranslationEngine } from "./paragraphTranslator";
+import type { ImagePreviewRenderer } from "./imagePreview";
+import type { HeadingEntry, InlineMathEntry, LabelEntry, MathBlockEntry, PandocTokenAtPosition, ParsedPandocDocument, PlainPosition, PlainRange, ReferenceEntry } from "./parser";
 
 const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
 
+type ParagraphHover = { range: vscode.Range; text: string; translationText: string; startOffset: number; inlineMath: InlineMathEntry[]; showMathPreview: boolean; showTranslation: boolean };
+type RenderedTranslation = { markdown: string; engine: TranslationEngine };
+type MarkdownPipeTable = { rows: { cells: string[] }[]; separatorIndex: number; captionLines: string[] };
+type TranslatedPipeTableHtml = { rows: string[][]; caption: string };
+type SimpleMarkdownList = { items: { prefix: string; text: string }[] };
+
 
 export class PandocDefinitionProvider {
-  declare index;
+  declare index: PandocWorkspaceIndex;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
-  constructor(index) {
+  constructor(index: PandocWorkspaceIndex) {
     this.index = index;
   }
 
@@ -23,7 +34,7 @@ export class PandocDefinitionProvider {
    * @param {vscode.Position} position Cursor position.
    * @returns {vscode.LocationLink[] | undefined}
    */
-  provideDefinition(document, position) {
+  provideDefinition(document: vscode.TextDocument, position: vscode.Position) {
     const token = getTokenAtDocumentPosition(this.index, document, position);
     if (!token) {
       return undefined;
@@ -34,11 +45,11 @@ export class PandocDefinitionProvider {
 }
 
 export class PandocReferenceProvider {
-  declare index;
+  declare index: PandocWorkspaceIndex;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
-  constructor(index) {
+  constructor(index: PandocWorkspaceIndex) {
     this.index = index;
   }
 
@@ -50,7 +61,7 @@ export class PandocReferenceProvider {
    * @param {{includeDeclaration: boolean}} options Reference options.
    * @returns {vscode.Location[] | undefined}
    */
-  provideReferences(document, position, options) {
+  provideReferences(document: vscode.TextDocument, position: vscode.Position, options: { includeDeclaration: boolean }) {
     const token = getTokenAtDocumentPosition(this.index, document, position);
     if (!token) {
       return undefined;
@@ -65,9 +76,9 @@ export class PandocReferenceProvider {
 }
 
 export class PandocHoverProvider {
-  declare index;
-  declare mathRenderer;
-  declare paragraphTranslator;
+  declare index: PandocWorkspaceIndex;
+  declare mathRenderer: MathJaxRenderer;
+  declare paragraphTranslator: ParagraphTranslator;
   declare output: import("vscode").OutputChannel;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
@@ -75,7 +86,7 @@ export class PandocHoverProvider {
    * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
    * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
    */
-  constructor(index, mathRenderer, paragraphTranslator, output) {
+  constructor(index: PandocWorkspaceIndex, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator, output: vscode.OutputChannel) {
     this.index = index;
     this.mathRenderer = mathRenderer;
     this.paragraphTranslator = paragraphTranslator;
@@ -89,7 +100,7 @@ export class PandocHoverProvider {
    * @param {vscode.Position} position Cursor position.
    * @returns {Promise<vscode.Hover | undefined>}
    */
-  async provideHover(document, position) {
+  async provideHover(document: vscode.TextDocument, position: vscode.Position) {
     try {
       return await this.provideHoverUnchecked(document, position);
     } catch (error) {
@@ -105,7 +116,7 @@ export class PandocHoverProvider {
    * @param {vscode.Position} position Cursor position.
    * @returns {Promise<vscode.Hover | undefined>}
    */
-  async provideHoverUnchecked(document, position) {
+  async provideHoverUnchecked(document: vscode.TextDocument, position: vscode.Position) {
     const parsed = this.index.getParsedDocument(document);
     const plainPosition = toPlainPosition(position);
     if (supportsPandocTextFeatures(document)) {
@@ -152,7 +163,7 @@ export class PandocHoverProvider {
 }
 
 export class ImagePreviewHoverProvider {
-  declare imagePreviewRenderer;
+  declare imagePreviewRenderer: ImagePreviewRenderer;
   declare output: import("vscode").OutputChannel;
   /**
    * Creates a hover provider for standalone image previews.
@@ -163,7 +174,7 @@ export class ImagePreviewHoverProvider {
    * @param {ImagePreviewRenderer} imagePreviewRenderer SVG/EMF/WMF image preview renderer.
    * @param {vscode.OutputChannel} output Output channel for hover diagnostics.
    */
-  constructor(imagePreviewRenderer, output) {
+  constructor(imagePreviewRenderer: ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
     this.output = output;
   }
@@ -178,7 +189,7 @@ export class ImagePreviewHoverProvider {
    * @param {vscode.Position} position Cursor position.
    * @returns {Promise<vscode.Hover | undefined>}
    */
-  async provideImageHover(document, position) {
+  async provideImageHover(document: vscode.TextDocument, position: vscode.Position) {
     try {
       return await this.imagePreviewRenderer.provideHover(document, position);
     } catch (error) {
@@ -194,7 +205,7 @@ export class ImagePreviewHoverProvider {
    * @param {vscode.Position} position Hover position.
    * @returns {Promise<vscode.Hover | undefined>}
    */
-  async provideHover(document, position) {
+  async provideHover(document: vscode.TextDocument, position: vscode.Position) {
     return this.provideImageHover(document, position);
   }
 }
@@ -205,7 +216,7 @@ export class ImagePreviewHoverProvider {
  * @param {unknown} error Error-like value.
  * @returns {string}
  */
-function formatError(error) {
+function formatError(error: unknown) {
   return error instanceof Error ? error.stack || error.message : String(error);
 }
 
@@ -221,7 +232,7 @@ function formatError(error) {
  * @param {{line: number, character: number}} position Cursor position.
  * @returns {import("./parser").MathBlockEntry | undefined}
  */
-function findMathBlockForEquationLabelHover(parsed, token, position) {
+function findMathBlockForEquationLabelHover(parsed: ParsedPandocDocument, token: PandocTokenAtPosition, position: PlainPosition): MathBlockEntry | undefined {
   if (token.type !== "label" || token.entry.prefix !== "eq" || token.entry.source !== "math") {
     return undefined;
   }
@@ -245,7 +256,7 @@ function findMathBlockForEquationLabelHover(parsed, token, position) {
  * @param {vscode.Position} position Hover position.
  * @returns {ParagraphHover | undefined}
  */
-function findParagraphHover(document, parsed, position) {
+function findParagraphHover(document: vscode.TextDocument, parsed: import("./parser").ParsedPandocDocument, position: vscode.Position) {
   if (isBlankParagraphLine(document, position.line)) {
     return undefined;
   }
@@ -282,7 +293,7 @@ function findParagraphHover(document, parsed, position) {
  * @param {import("./parser").InlineMathEntry[]} inlineMath Inline math spans inside the paragraph.
  * @returns {boolean}
  */
-function shouldShowInlineMathParagraphPreview(paragraphText, inlineMath) {
+function shouldShowInlineMathParagraphPreview(paragraphText: string, inlineMath: import("./parser").InlineMathEntry[]) {
   return getConfiguration().get("enableInlineMathParagraphHover", false)
     && inlineMath.length > 0
     && !isParagraphTooLongForHover(paragraphText);
@@ -297,7 +308,7 @@ function shouldShowInlineMathParagraphPreview(paragraphText, inlineMath) {
  * @param {string} paragraphText Raw paragraph text.
  * @returns {boolean}
  */
-function isParagraphTooLongForHover(paragraphText) {
+function isParagraphTooLongForHover(paragraphText: string) {
   const maxCharacters = getConfiguration().get("inlineMathParagraphHoverMaxCharacters", 1000);
   return Number.isFinite(maxCharacters) && paragraphText.length > maxCharacters;
 }
@@ -308,7 +319,7 @@ function isParagraphTooLongForHover(paragraphText) {
  * @param {string} paragraphText Raw paragraph text.
  * @returns {boolean}
  */
-function shouldTranslateParagraphHover(paragraphText) {
+function shouldTranslateParagraphHover(paragraphText: string) {
   if (!getConfiguration().get("enableParagraphHoverTranslation", false)) {
     return false;
   }
@@ -331,7 +342,7 @@ function shouldTranslateParagraphHover(paragraphText) {
  * @param {number} lineNumber Zero-based line number inside the paragraph.
  * @returns {vscode.Range}
  */
-function findParagraphRange(document, lineNumber) {
+function findParagraphRange(document: vscode.TextDocument, lineNumber: number) {
   let startLine = lineNumber;
   while (startLine > 0 && !isParagraphBoundaryLine(document, startLine - 1)) {
     startLine -= 1;
@@ -352,7 +363,7 @@ function findParagraphRange(document, lineNumber) {
  * @param {number} lineNumber Zero-based line number.
  * @returns {boolean}
  */
-function isParagraphBoundaryLine(document, lineNumber) {
+function isParagraphBoundaryLine(document: vscode.TextDocument, lineNumber: number) {
   return isBlankParagraphLine(document, lineNumber)
     || isStandaloneHtmlCommentLine(document, lineNumber);
 }
@@ -364,7 +375,7 @@ function isParagraphBoundaryLine(document, lineNumber) {
  * @param {number} lineNumber Zero-based line number.
  * @returns {boolean}
  */
-function isBlankParagraphLine(document, lineNumber) {
+function isBlankParagraphLine(document: vscode.TextDocument, lineNumber: number) {
   return document.lineAt(lineNumber).text.trim().length === 0;
 }
 
@@ -380,7 +391,7 @@ function isBlankParagraphLine(document, lineNumber) {
  * @param {number} lineNumber Zero-based line number.
  * @returns {boolean}
  */
-function isStandaloneHtmlCommentLine(document, lineNumber) {
+function isStandaloneHtmlCommentLine(document: vscode.TextDocument, lineNumber: number) {
   return findStandaloneHtmlCommentBlockRange(document, lineNumber) !== undefined;
 }
 
@@ -394,7 +405,7 @@ function isStandaloneHtmlCommentLine(document, lineNumber) {
  * @param {number} lineNumber Zero-based line number.
  * @returns {vscode.Range | undefined}
  */
-function findStandaloneHtmlCommentBlockRange(document, lineNumber) {
+function findStandaloneHtmlCommentBlockRange(document: vscode.TextDocument, lineNumber: number) {
   const startLine = findStandaloneHtmlCommentStartLine(document, lineNumber);
   if (startLine === undefined) {
     return undefined;
@@ -415,7 +426,7 @@ function findStandaloneHtmlCommentBlockRange(document, lineNumber) {
  * @param {number} lineNumber Zero-based line number inside the comment.
  * @returns {number | undefined}
  */
-function findStandaloneHtmlCommentStartLine(document, lineNumber) {
+function findStandaloneHtmlCommentStartLine(document: vscode.TextDocument, lineNumber: number) {
   for (let currentLine = lineNumber; currentLine >= 0; currentLine -= 1) {
     const trimmed = document.lineAt(currentLine).text.trim();
     if (trimmed.length === 0) {
@@ -453,7 +464,7 @@ function findStandaloneHtmlCommentStartLine(document, lineNumber) {
  * @param {number} startLine Zero-based comment opening line.
  * @returns {number | undefined}
  */
-function findStandaloneHtmlCommentEndLine(document, startLine) {
+function findStandaloneHtmlCommentEndLine(document: vscode.TextDocument, startLine: number) {
   for (let currentLine = startLine; currentLine < document.lineCount; currentLine += 1) {
     const trimmed = document.lineAt(currentLine).text.trim();
     if (trimmed.length === 0) {
@@ -481,7 +492,7 @@ function findStandaloneHtmlCommentEndLine(document, startLine) {
  * @param {string} text Raw standalone HTML comment block.
  * @returns {string}
  */
-function extractStandaloneHtmlCommentText(text) {
+function extractStandaloneHtmlCommentText(text: string) {
   return text
     .replace(/^\s*<!--[ \t]?/, "")
     .replace(/[ \t]?-->\s*$/, "")
@@ -489,11 +500,11 @@ function extractStandaloneHtmlCommentText(text) {
 }
 
 export class PandocDocumentSymbolProvider {
-  declare index;
+  declare index: PandocWorkspaceIndex;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
-  constructor(index) {
+  constructor(index: PandocWorkspaceIndex) {
     this.index = index;
   }
 
@@ -503,7 +514,7 @@ export class PandocDocumentSymbolProvider {
    * @param {vscode.TextDocument} document Markdown document.
    * @returns {vscode.DocumentSymbol[]}
    */
-  provideDocumentSymbols(document) {
+  provideDocumentSymbols(document: vscode.TextDocument) {
     const parsed = this.index.getParsedDocument(document);
     const headingSymbols = buildHeadingTree(parsed.headings);
     if (getConfiguration().get("includeLabelSymbols", true)) {
@@ -514,11 +525,11 @@ export class PandocDocumentSymbolProvider {
 }
 
 export class PandocCompletionProvider {
-  declare index;
+  declare index: PandocWorkspaceIndex;
   /**
    * @param {PandocWorkspaceIndex} index Workspace index.
    */
-  constructor(index) {
+  constructor(index: PandocWorkspaceIndex) {
     this.index = index;
   }
 
@@ -529,7 +540,7 @@ export class PandocCompletionProvider {
    * @param {vscode.Position} position Cursor position.
    * @returns {vscode.CompletionItem[] | undefined}
    */
-  provideCompletionItems(document, position) {
+  provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
     const linePrefix = document.lineAt(position).text.slice(0, position.character);
     const match = linePrefix.match(/@([A-Za-z0-9_:.~-]*)$/);
     if (!match) {
@@ -538,7 +549,7 @@ export class PandocCompletionProvider {
 
     const replacementStart = position.translate(0, -match[1].length);
     const replacementRange = new vscode.Range(replacementStart, position);
-    const seen = new Set();
+    const seen = new Set<string>();
 
     return this.index.getAllLabels(document)
       .filter((entry) => !seen.has(entry.label) && seen.add(entry.label))
@@ -563,7 +574,7 @@ export class PandocCompletionProvider {
  * @param {string} tokenType Parsed token type, for example `label` or `reference`.
  * @returns {vscode.MarkdownString}
  */
-function buildLabelHover(entry, index, document, tokenType) {
+function buildLabelHover(entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry, index: PandocWorkspaceIndex, document: vscode.TextDocument, tokenType: string) {
   const definitions = index.getDefinitions(document, entry.label);
   const references = index.getReferences(document, entry.label);
   const markdown = new vscode.MarkdownString(undefined, true);
@@ -591,7 +602,7 @@ function buildLabelHover(entry, index, document, tokenType) {
  * @param {string} tokenType Parsed token type.
  * @returns {boolean}
  */
-function isDefinitionHover(tokenType) {
+function isDefinitionHover(tokenType: string) {
   return tokenType === "label";
 }
 
@@ -624,7 +635,7 @@ function getMathPreviewForegroundColor() {
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<vscode.MarkdownString>}
  */
-async function buildMathHover(mathBlock, index, document, mathRenderer) {
+async function buildMathHover(mathBlock: import("./parser").MathBlockEntry, index: PandocWorkspaceIndex, document: vscode.TextDocument, mathRenderer: MathJaxRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
   const label = mathBlock.label || "unlabeled equation";
   const referenceCount = mathBlock.label ? index.getReferences(document, mathBlock.label).length : 0;
@@ -656,7 +667,7 @@ async function buildMathHover(mathBlock, index, document, mathRenderer) {
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<vscode.MarkdownString>}
  */
-async function buildInlineMathHover(inlineMath, mathRenderer) {
+async function buildInlineMathHover(inlineMath: import("./parser").InlineMathEntry, mathRenderer: MathJaxRenderer) {
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown("**Inline math**");
 
@@ -681,7 +692,7 @@ async function buildInlineMathHover(inlineMath, mathRenderer) {
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<vscode.MarkdownString | undefined>}
  */
-async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator) {
+async function buildParagraphHover(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const markdown = new vscode.MarkdownString(undefined, true);
   let hasContent = false;
 
@@ -716,7 +727,7 @@ async function buildParagraphHover(paragraph, mathRenderer, paragraphTranslator)
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<RenderedTranslation | undefined>}
  */
-async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator) {
+async function buildParagraphTranslation(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   if (!paragraph.showTranslation) {
     return undefined;
   }
@@ -753,7 +764,7 @@ async function buildParagraphTranslation(paragraph, mathRenderer, paragraphTrans
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<RenderedTranslation | undefined>} Undefined means "not a simple list"; empty markdown means translation failed.
  */
-async function buildMarkdownListTranslation(text, mathRenderer, paragraphTranslator) {
+async function buildMarkdownListTranslation(text: string, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const list = parseSimpleMarkdownList(text);
   if (!list) {
     return undefined;
@@ -785,7 +796,7 @@ async function buildMarkdownListTranslation(text, mathRenderer, paragraphTransla
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<RenderedTranslation | undefined>} Undefined means "not a table"; empty markdown means table translation failed.
  */
-async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator) {
+async function buildPipeTableTranslation(text: string, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const table = parseMarkdownPipeTable(text);
   if (!table) {
     return undefined;
@@ -839,7 +850,7 @@ async function buildPipeTableTranslation(text, mathRenderer, paragraphTranslator
  * @param {ParagraphTranslator} paragraphTranslator Paragraph translation service.
  * @returns {Promise<RenderedTranslation | undefined>}
  */
-async function buildDirectMarkdownPipeTableTranslation(text, sourceTable, mathRenderer, paragraphTranslator) {
+async function buildDirectMarkdownPipeTableTranslation(text: string, sourceTable: MarkdownPipeTable, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
   const translatedMarkdown = await paragraphTranslator.translateText(text);
   if (translatedMarkdown === undefined) {
     return undefined;
@@ -863,7 +874,7 @@ async function buildDirectMarkdownPipeTableTranslation(text, sourceTable, mathRe
  * @param {"google" | "microsoft" | undefined} engine Translation engine.
  * @returns {RenderedTranslation | undefined}
  */
-function createRenderedTranslation(markdown, engine) {
+function createRenderedTranslation(markdown: string, engine: "google" | "microsoft" | undefined) {
   return engine ? { markdown, engine } : undefined;
 }
 
@@ -873,7 +884,7 @@ function createRenderedTranslation(markdown, engine) {
  * @param {"google" | "microsoft"} engine Translation engine id.
  * @returns {string}
  */
-function formatTranslationEngineName(engine) {
+function formatTranslationEngineName(engine: "google" | "microsoft") {
   return engine === "microsoft" ? "Microsoft Translator" : "Google Translate";
 }
 
@@ -884,7 +895,7 @@ function formatTranslationEngineName(engine) {
  * @param {{rows: {cells: string[]}[], separatorIndex: number}} sourceTable Source table.
  * @returns {boolean}
  */
-function hasMatchingPipeTableShape(translatedTable, sourceTable) {
+function hasMatchingPipeTableShape(translatedTable: MarkdownPipeTable, sourceTable: MarkdownPipeTable): boolean {
   if (translatedTable.separatorIndex !== sourceTable.separatorIndex || translatedTable.rows.length !== sourceTable.rows.length) {
     return false;
   }
@@ -900,7 +911,7 @@ function hasMatchingPipeTableShape(translatedTable, sourceTable) {
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<string>}
  */
-async function renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathRenderer) {
+async function renderParsedPipeTableMarkdown(translatedTable: MarkdownPipeTable, sourceTable: MarkdownPipeTable, mathRenderer: MathJaxRenderer): Promise<string> {
   const translatedRows = [];
   for (let rowIndex = 0; rowIndex < translatedTable.rows.length; rowIndex += 1) {
     if (rowIndex === translatedTable.separatorIndex) {
@@ -929,7 +940,7 @@ async function renderParsedPipeTableMarkdown(translatedTable, sourceTable, mathR
  * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} table Parsed pipe table.
  * @returns {string}
  */
-function formatPipeTableTranslationHtml(table) {
+function formatPipeTableTranslationHtml(table: MarkdownPipeTable): string {
   const htmlRows = [];
   for (let rowIndex = 0; rowIndex < table.rows.length; rowIndex += 1) {
     if (rowIndex === table.separatorIndex) {
@@ -954,14 +965,14 @@ function formatPipeTableTranslationHtml(table) {
  * @param {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]}} table Source table shape.
  * @returns {{rows: string[][], caption: string} | undefined}
  */
-function parseTranslatedPipeTableHtml(html, table) {
+function parseTranslatedPipeTableHtml(html: string, table: MarkdownPipeTable): TranslatedPipeTableHtml | undefined {
   const expectedRows = table.rows.filter((_row, rowIndex) => rowIndex !== table.separatorIndex);
   const rowMatches = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
   if (rowMatches.length !== expectedRows.length) {
     return undefined;
   }
 
-  const rows = [];
+  const rows: string[][] = [];
   for (let rowIndex = 0; rowIndex < rowMatches.length; rowIndex += 1) {
     const cellMatches = [...rowMatches[rowIndex][1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)];
     if (cellMatches.length !== expectedRows[rowIndex].cells.length) {
@@ -985,8 +996,8 @@ function parseTranslatedPipeTableHtml(html, table) {
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<string[]>}
  */
-async function renderMarkdownTableCells(cells, mathRenderer) {
-  const renderedCells = [];
+async function renderMarkdownTableCells(cells: string[], mathRenderer: MathJaxRenderer): Promise<string[]> {
+  const renderedCells: string[] = [];
   for (const cell of cells) {
     renderedCells.push(escapeMarkdownTableCellPipes(await renderInlineMathTextMarkdown(cell, mathRenderer)));
   }
@@ -999,7 +1010,7 @@ async function renderMarkdownTableCells(cells, mathRenderer) {
  * @param {string} value Markdown table cell content.
  * @returns {string}
  */
-function escapeMarkdownTableCellPipes(value) {
+function escapeMarkdownTableCellPipes(value: string) {
   return value.replace(/(^|[^\\])\|/g, "$1\\|");
 }
 
@@ -1012,14 +1023,14 @@ function escapeMarkdownTableCellPipes(value) {
  * @param {string} text Raw paragraph text.
  * @returns {{rows: {cells: string[]}[], separatorIndex: number, captionLines: string[]} | undefined}
  */
-function parseMarkdownPipeTable(text) {
+function parseMarkdownPipeTable(text: string): MarkdownPipeTable | undefined {
   const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
   const separatorIndex = lines.findIndex(isPipeTableSeparatorLine);
   if (separatorIndex !== 1) {
     return undefined;
   }
 
-  const rows = [];
+  const rows: { cells: string[] }[] = [];
   let lineIndex = 0;
   while (lineIndex < lines.length && isPipeTableRowLine(lines[lineIndex])) {
     const cells = splitMarkdownPipeTableRow(lines[lineIndex]).map((cell) => cell.trim());
@@ -1052,13 +1063,13 @@ function parseMarkdownPipeTable(text) {
  * @param {string} text Raw paragraph text.
  * @returns {{items: {prefix: string, text: string}[]} | undefined}
  */
-function parseSimpleMarkdownList(text) {
+function parseSimpleMarkdownList(text: string): SimpleMarkdownList | undefined {
   const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.replace(/[ \t]+$/g, "")).filter((line) => line.trim().length > 0);
   if (lines.length < 2) {
     return undefined;
   }
 
-  const items = [];
+  const items: { prefix: string; text: string }[] = [];
   for (const line of lines) {
     const item = parseSimpleMarkdownListItem(line);
     if (!item) {
@@ -1080,7 +1091,7 @@ function parseSimpleMarkdownList(text) {
  * @param {string} line Markdown line without trailing whitespace.
  * @returns {{prefix: string, text: string} | undefined}
  */
-function parseSimpleMarkdownListItem(line) {
+function parseSimpleMarkdownListItem(line: string) {
   const unorderedMatch = line.match(/^([ \t]*[-+*]\s+)(.+)$/);
   if (unorderedMatch) {
     return { prefix: unorderedMatch[1], text: unorderedMatch[2].trim() };
@@ -1100,7 +1111,7 @@ function parseSimpleMarkdownListItem(line) {
  * @param {string} line Trimmed Markdown line.
  * @returns {boolean}
  */
-function isPipeTableRowLine(line) {
+function isPipeTableRowLine(line: string) {
   const cells = splitMarkdownPipeTableRow(line);
   // Single-column pipe tables such as `|---|` need outer fences; otherwise a
   // lone pipe in prose would be too easy to misclassify as a table row.
@@ -1113,7 +1124,7 @@ function isPipeTableRowLine(line) {
  * @param {string} line Trimmed Markdown line.
  * @returns {boolean}
  */
-function isPipeTableSeparatorLine(line) {
+function isPipeTableSeparatorLine(line: string) {
   if (!isPipeTableRowLine(line)) {
     return false;
   }
@@ -1127,7 +1138,7 @@ function isPipeTableSeparatorLine(line) {
  * @param {string} line Trimmed Markdown table row.
  * @returns {string[]}
  */
-function splitMarkdownPipeTableRow(line) {
+function splitMarkdownPipeTableRow(line: string) {
   const row = stripOuterPipe(line.trim());
   const cells = [];
   let cell = "";
@@ -1150,7 +1161,7 @@ function splitMarkdownPipeTableRow(line) {
  * @param {string} row Trimmed Markdown table row.
  * @returns {string}
  */
-function stripOuterPipe(row) {
+function stripOuterPipe(row: string) {
   let stripped = row;
   if (stripped.startsWith("|")) {
     stripped = stripped.slice(1);
@@ -1167,7 +1178,7 @@ function stripOuterPipe(row) {
  * @param {string} line Trimmed Markdown table row.
  * @returns {boolean}
  */
-function hasOuterPipeTableFences(line) {
+function hasOuterPipeTableFences(line: string) {
   const trimmed = line.trim();
   return trimmed.startsWith("|")
     && trimmed.endsWith("|")
@@ -1181,7 +1192,7 @@ function hasOuterPipeTableFences(line) {
  * @param {number} index Character index to inspect.
  * @returns {boolean}
  */
-function isEscapedMarkdownCharacter(value, index) {
+function isEscapedMarkdownCharacter(value: string, index: number) {
   let slashCount = 0;
   for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
     slashCount += 1;
@@ -1195,7 +1206,7 @@ function isEscapedMarkdownCharacter(value, index) {
  * @param {string[]} cells Escaped table cells.
  * @returns {string}
  */
-function formatPipeTableRow(cells) {
+function formatPipeTableRow(cells: string[]) {
   return `| ${cells.map((cell) => cell.trim()).join(" | ")} |`;
 }
 
@@ -1205,7 +1216,7 @@ function formatPipeTableRow(cells) {
  * @param {string} value Raw table cell or caption text.
  * @returns {string}
  */
-function escapeHtmlText(value) {
+function escapeHtmlText(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -1218,7 +1229,7 @@ function escapeHtmlText(value) {
  * @param {string} value HTML text content from a translated cell or caption.
  * @returns {string}
  */
-function normalizeTranslatedTableHtmlText(value) {
+function normalizeTranslatedTableHtmlText(value: string) {
   return value
     .replace(/<[^>]*>/g, "")
     .replace(/\s+/g, " ")
@@ -1231,7 +1242,7 @@ function normalizeTranslatedTableHtmlText(value) {
  * @param {string} text Raw paragraph text.
  * @returns {boolean}
  */
-function isLikelyEnglishParagraph(text) {
+function isLikelyEnglishParagraph(text: string) {
   const latinLetters = text.match(/[A-Za-z]/g) || [];
   const cjkCharacters = text.match(/[\u3400-\u9FFF]/g) || [];
   const wordMatches = text.match(/[A-Za-z]{2,}/g) || [];
@@ -1254,7 +1265,7 @@ function isLikelyEnglishParagraph(text) {
  * @param {MathJaxRenderer} mathRenderer MathJax SVG renderer.
  * @returns {Promise<string>}
  */
-async function renderInlineMathParagraphMarkdown(paragraph, mathRenderer) {
+async function renderInlineMathParagraphMarkdown(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer) {
   return renderInlineMathTextMarkdown(paragraph.text, mathRenderer, paragraph.inlineMath, paragraph.startOffset);
 }
 
@@ -1270,7 +1281,7 @@ async function renderInlineMathParagraphMarkdown(paragraph, mathRenderer) {
  * @param {number=} startOffset Offset used by precomputed inline math entries.
  * @returns {Promise<string>}
  */
-async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath = undefined, startOffset = 0) {
+async function renderInlineMathTextMarkdown(text: string, mathRenderer: MathJaxRenderer, inlineMath: import("./parser").InlineMathEntry[] | undefined = undefined, startOffset: number | undefined = 0) {
   const mathEntries = inlineMath || parsePandocDocument(text).inlineMath;
   const parts = [];
   let cursor = 0;
@@ -1302,7 +1313,7 @@ async function renderInlineMathTextMarkdown(text, mathRenderer, inlineMath = und
  * @param {string} value Markdown text.
  * @returns {string}
  */
-function normalizeMarkdownLineBreaks(value) {
+function normalizeMarkdownLineBreaks(value: string) {
   return value.replace(/\r\n/g, "\n");
 }
 
@@ -1312,7 +1323,7 @@ function normalizeMarkdownLineBreaks(value) {
  * @param {string} value TeX source.
  * @returns {string}
  */
-function escapeMarkdownCodeSpan(value) {
+function escapeMarkdownCodeSpan(value: string) {
   return value.replace(/`/g, "\\`");
 }
 
@@ -1321,14 +1332,14 @@ function escapeMarkdownCodeSpan(value) {
  *
  * @param {vscode.MarkdownString} markdown Hover markdown being built.
  */
-function appendMathJaxUnavailableMessage(markdown) {
+function appendMathJaxUnavailableMessage(markdown: vscode.MarkdownString) {
   markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Pandoc Manuscript Tools output for the TeX source and error details.\n\n");
 }
 
 
-function buildHeadingTree(headings) {
-  const roots = [];
-  const stack = [];
+function buildHeadingTree(headings: HeadingEntry[]): vscode.DocumentSymbol[] {
+  const roots: vscode.DocumentSymbol[] = [];
+  const stack: Array<{ level: number; symbol: vscode.DocumentSymbol }> = [];
 
   for (const heading of headings) {
     const symbol = new vscode.DocumentSymbol(
@@ -1364,7 +1375,7 @@ function buildHeadingTree(headings) {
  * @param {import("./parser").HeadingEntry} heading Parsed heading.
  * @returns {string}
  */
-function formatHeadingSymbolName(heading) {
+function formatHeadingSymbolName(heading: import("./parser").HeadingEntry) {
   return `${"#".repeat(heading.level)} ${heading.title}`;
 }
 
@@ -1374,7 +1385,7 @@ function formatHeadingSymbolName(heading) {
  * @param {import("./parser").LabelEntry[]} labels Parsed label definitions.
  * @param {vscode.DocumentSymbol[]} headingSymbols Heading symbols.
  */
-function addLabelSymbols(labels, headingSymbols) {
+function addLabelSymbols(labels: import("./parser").LabelEntry[], headingSymbols: vscode.DocumentSymbol[]) {
   const nonSectionLabels = labels.filter((entry) => entry.prefix !== "sec");
   const headingCandidates = flattenDocumentSymbols(headingSymbols);
   const labelSymbols = new Map(nonSectionLabels.map((label) => [label, createLabelSymbol(label)]));
@@ -1398,7 +1409,7 @@ function addLabelSymbols(labels, headingSymbols) {
  * @param {import("./parser").LabelEntry} label Parsed label definition.
  * @returns {vscode.DocumentSymbol}
  */
-function createLabelSymbol(label) {
+function createLabelSymbol(label: import("./parser").LabelEntry) {
   return new vscode.DocumentSymbol(
     label.label,
     label.kind,
@@ -1414,8 +1425,8 @@ function createLabelSymbol(label) {
  * @param {vscode.DocumentSymbol[]} symbols Heading symbols.
  * @returns {vscode.DocumentSymbol[]}
  */
-function flattenDocumentSymbols(symbols) {
-  const flattened = [];
+function flattenDocumentSymbols(symbols: vscode.DocumentSymbol[]) {
+  const flattened: vscode.DocumentSymbol[] = [];
   for (const symbol of symbols) {
     flattened.push(symbol, ...flattenDocumentSymbols(symbol.children));
   }
@@ -1429,8 +1440,8 @@ function flattenDocumentSymbols(symbols) {
  * @param {number} line Target line.
  * @returns {vscode.DocumentSymbol | undefined}
  */
-function findNearestHeadingSymbol(symbols, line) {
-  let nearest;
+function findNearestHeadingSymbol(symbols: vscode.DocumentSymbol[], line: number) {
+  let nearest: vscode.DocumentSymbol | undefined;
   for (const symbol of symbols) {
     const symbolLine = symbol.selectionRange.start.line;
     if (symbolLine <= line) {
@@ -1450,7 +1461,7 @@ function findNearestHeadingSymbol(symbols, line) {
  * @param {import("./parser").LabelEntry} child Child label.
  * @returns {import("./parser").LabelEntry | undefined}
  */
-function findNearestContainerLabel(labels, child) {
+function findNearestContainerLabel(labels: import("./parser").LabelEntry[], child: import("./parser").LabelEntry) {
   let nearest;
   for (const candidate of labels) {
     if (candidate === child || !candidate.containerRange) {
@@ -1473,7 +1484,7 @@ function findNearestContainerLabel(labels, child) {
  * @param {import("./parser").PlainRange} right Right range.
  * @returns {boolean}
  */
-function isRangeStartAfter(left, right) {
+function isRangeStartAfter(left: import("./parser").PlainRange, right: import("./parser").PlainRange) {
   if (left.start.line !== right.start.line) {
     return left.start.line > right.start.line;
   }
@@ -1486,7 +1497,7 @@ function isRangeStartAfter(left, right) {
  * @param {PandocWorkspaceIndex} index Workspace index.
  * @param {vscode.DiagnosticCollection} diagnostics Diagnostic collection.
  */
-export function updateDiagnosticsForOpenDocuments(index, diagnostics) {
+export function updateDiagnosticsForOpenDocuments(index: PandocWorkspaceIndex, diagnostics: vscode.DiagnosticCollection): void {
   for (const document of vscode.workspace.textDocuments) {
     if (isPandocDocument(document)) {
       updateDiagnostics(document, index, diagnostics);
@@ -1501,7 +1512,7 @@ export function updateDiagnosticsForOpenDocuments(index, diagnostics) {
  * @param {PandocWorkspaceIndex} index Workspace index.
  * @param {vscode.DiagnosticCollection} diagnostics Diagnostic collection.
  */
-export function updateDiagnostics(document, index, diagnostics) {
+export function updateDiagnostics(document: vscode.TextDocument, index: PandocWorkspaceIndex, diagnostics: vscode.DiagnosticCollection): void {
   if (!getConfiguration().get("enableDiagnostics", true)) {
     diagnostics.delete(document.uri);
     return;
@@ -1509,7 +1520,7 @@ export function updateDiagnostics(document, index, diagnostics) {
 
   const parsed = index.getParsedDocument(document);
   const definitionMap = index.getDefinitionMap(document);
-  const documentDiagnostics = [];
+  const documentDiagnostics: vscode.Diagnostic[] = [];
 
   for (const reference of parsed.references) {
     if (!definitionMap.has(reference.label)) {
@@ -1547,16 +1558,12 @@ export function updateDiagnostics(document, index, diagnostics) {
  * @param {vscode.Position} position Cursor position.
  * @returns {{type: string, entry: import("./parser").LabelEntry | import("./parser").ReferenceEntry} | undefined}
  */
-function getTokenAtDocumentPosition(index, document, position) {
+function getTokenAtDocumentPosition(index: PandocWorkspaceIndex, document: vscode.TextDocument, position: vscode.Position): PandocTokenAtPosition | undefined {
   const parsed = index.getParsedDocument(document);
   return findTokenAtPosition(parsed, toPlainPosition(position));
 }
 
 
-/**
- * @typedef {{range: vscode.Range, text: string, translationText: string, startOffset: number, inlineMath: import("./parser").InlineMathEntry[], showMathPreview: boolean, showTranslation: boolean}} ParagraphHover
- * @typedef {{markdown: string, engine: "google" | "microsoft"}} RenderedTranslation
- */
 
 
 

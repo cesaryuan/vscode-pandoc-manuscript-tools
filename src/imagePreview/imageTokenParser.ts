@@ -13,7 +13,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
  * @param {vscode.Position} position Hover position.
  * @returns {ImageToken | undefined}
  */
-export function findImageTokenAtPosition(document, position) {
+export function findImageTokenAtPosition(document: vscode.TextDocument, position: vscode.Position) {
   const line = document.lineAt(position.line).text;
   const markdownToken = findMarkdownImageToken(line, position);
   if (markdownToken) {
@@ -29,7 +29,7 @@ export function findImageTokenAtPosition(document, position) {
  * @param {vscode.Position} position Hover position.
  * @returns {ImageToken | undefined}
  */
-function findMarkdownImageToken(line, position) {
+function findMarkdownImageToken(line: string, position: vscode.Position) {
   const imagePattern = /!\[[^\]\n]*(?:\\.[^\]\n]*)*\]\(([^)\n]+)\)/g;
   for (const match of line.matchAll(imagePattern)) {
     const start = match.index || 0;
@@ -56,7 +56,7 @@ function findMarkdownImageToken(line, position) {
  * @param {string} rawDestination Raw text inside image parentheses.
  * @returns {string}
  */
-function extractMarkdownImageDestination(rawDestination) {
+function extractMarkdownImageDestination(rawDestination: string) {
   const trimmed = rawDestination.trim();
   if (trimmed.startsWith("<")) {
     const closingIndex = trimmed.indexOf(">");
@@ -81,7 +81,7 @@ function extractMarkdownImageDestination(rawDestination) {
  * @param {vscode.Position} position Hover position.
  * @returns {ImageToken | undefined}
  */
-function findHtmlImageToken(line, position) {
+function findHtmlImageToken(line: string, position: vscode.Position) {
   const imagePattern = /<img\b[^>]*>/gi;
   for (const match of line.matchAll(imagePattern)) {
     const start = match.index || 0;
@@ -106,7 +106,7 @@ function findHtmlImageToken(line, position) {
  * @param {string} attribute Attribute name.
  * @returns {string | undefined}
  */
-function getHtmlAttribute(tag, attribute) {
+function getHtmlAttribute(tag: string, attribute: string) {
   const pattern = new RegExp(`\\b${attribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
   const match = tag.match(pattern);
   return match ? (match[1] || match[2] || match[3]) : undefined;
@@ -121,7 +121,7 @@ function getHtmlAttribute(tag, attribute) {
  * @param {number} end End character.
  * @returns {ImageToken | undefined}
  */
-function createImageToken(rawTarget, line, start, end) {
+function createImageToken(rawTarget: string | undefined, line: number, start: number, end: number) {
   if (!rawTarget) {
     return undefined;
   }
@@ -145,7 +145,7 @@ function createImageToken(rawTarget, line, start, end) {
  * @param {string} value URL or path from Markdown/HTML.
  * @returns {string}
  */
-function decodeMarkdownUrl(value) {
+function decodeMarkdownUrl(value: string) {
   try {
     return decodeURI(value);
   } catch (_error) {
@@ -159,7 +159,7 @@ function decodeMarkdownUrl(value) {
  * @param {string} value URL or path.
  * @returns {string}
  */
-function stripQueryAndHash(value) {
+function stripQueryAndHash(value: string) {
   const suffixIndex = value.search(/[?#]/);
   return suffixIndex === -1 ? value : value.slice(0, suffixIndex);
 }
@@ -172,7 +172,7 @@ function stripQueryAndHash(value) {
  * @param {number} end Exclusive end.
  * @returns {boolean}
  */
-function isCharacterInside(character, start, end) {
+function isCharacterInside(character: number, start: number, end: number) {
   return character >= start && character <= end;
 }
 

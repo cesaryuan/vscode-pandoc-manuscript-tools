@@ -17,7 +17,7 @@ import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider,
  *
  * @param {vscode.ExtensionContext} context VS Code extension context.
  */
-export function activate(context) {
+export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel(EXTENSION_NAME);
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);

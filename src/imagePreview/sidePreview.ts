@@ -14,6 +14,9 @@ import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
+type Replacement = { start: number; end: number; value: string };
+type DocumentLike = { uri: vscode.Uri };
+
 type WebviewPreviewSource = (
   | { kind: "uri"; src: string }
   | { kind: "blob"; mimeType: string; base64: string }
@@ -21,7 +24,7 @@ type WebviewPreviewSource = (
 ) & { localResourceRoots?: import("vscode").Uri[] };
 
 export class ImagePreviewSidePanel {
-  declare imagePreviewRenderer;
+  declare imagePreviewRenderer: import("./index").ImagePreviewRenderer;
   declare output: import("vscode").OutputChannel;
   declare panels: Map<string, import("vscode").WebviewPanel>;
   /**
@@ -30,7 +33,7 @@ export class ImagePreviewSidePanel {
    * @param {import("./index").ImagePreviewRenderer} imagePreviewRenderer Shared preview renderer.
    * @param {{appendLine(message: string): void}} output Output channel.
    */
-  constructor(imagePreviewRenderer, output) {
+  constructor(imagePreviewRenderer: import("./index").ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
     this.output = output;
     this.panels = new Map();
@@ -41,7 +44,7 @@ export class ImagePreviewSidePanel {
    *
    * @param {vscode.Uri=} uri Optional resource URI supplied by VS Code menus.
    */
-  async open(uri) {
+  async open(uri: vscode.Uri | undefined) {
     const imageUri = this.resolveImageUri(uri);
     if (!imageUri) {
       await vscode.window.showWarningMessage("Open an SVG, EMF, or WMF file before starting image preview.");
@@ -74,7 +77,7 @@ export class ImagePreviewSidePanel {
    *
    * @param {vscode.TextDocument} document Saved text document.
    */
-  async refreshIfOpen(document) {
+  async refreshIfOpen(document: vscode.TextDocument) {
     if (document.uri.scheme !== "file") {
       return;
     }
@@ -98,7 +101,7 @@ export class ImagePreviewSidePanel {
    * @param {vscode.Uri=} uri Optional command resource URI.
    * @returns {vscode.Uri | undefined}
    */
-  resolveImageUri(uri) {
+  resolveImageUri(uri: vscode.Uri | undefined) {
     if (uri && uri.scheme === "file") {
       return uri;
     }
@@ -117,7 +120,7 @@ export class ImagePreviewSidePanel {
    * @param {vscode.Uri} imageUri Image file URI.
    * @returns {vscode.WebviewPanel}
    */
-  getOrCreatePanel(imageUri) {
+  getOrCreatePanel(imageUri: vscode.Uri) {
     const key = imageUri.fsPath;
     const existing = this.panels.get(key);
     if (existing) {
@@ -145,7 +148,7 @@ export class ImagePreviewSidePanel {
    * @param {vscode.Uri} imageUri Image file URI.
    * @param {string} extension Lowercase image extension.
    */
-  async renderPanel(panel, imageUri, extension) {
+  async renderPanel(panel: vscode.WebviewPanel, imageUri: vscode.Uri, extension: string) {
     const label = path.basename(imageUri.fsPath);
     panel.title = `Preview ${label}`;
     panel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
@@ -175,7 +178,7 @@ export class ImagePreviewSidePanel {
  * @param {WebviewPreviewSource} previewSource Rendered image source.
  * @returns {string}
  */
-export function buildPreviewHtml(imagePath, extension, previewSource) {
+export function buildPreviewHtml(imagePath: string, extension: string, previewSource: WebviewPreviewSource): string {
   const label = path.basename(imagePath);
   const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
   return buildPanelHtml(`
@@ -209,7 +212,7 @@ export function buildPreviewHtml(imagePath, extension, previewSource) {
  * @param {string} icon Inline SVG icon.
  * @returns {string}
  */
-function buildToolbarButton(action, label, icon) {
+function buildToolbarButton(action: string, label: string, icon: string) {
   return `<button type="button" title="${escapeAttribute(label)}" aria-label="${escapeAttribute(label)}" data-zoom-action="${escapeAttribute(action)}">${icon}</button>`;
 }
 
@@ -277,7 +280,7 @@ function buildFitIcon() {
  * @param {string} body SVG child markup.
  * @returns {string}
  */
-function buildIconSvg(body) {
+function buildIconSvg(body: string) {
   return `<svg class="toolbarIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
@@ -295,7 +298,7 @@ function buildIconSvg(body) {
  * @param {string} extension Lowercase image extension.
  * @returns {Promise<WebviewPreviewSource | undefined>}
  */
-export async function renderWebviewPreviewSource(webview, imagePreviewRenderer, documentUri, imagePath, extension): Promise<WebviewPreviewSource | undefined> {
+export async function renderWebviewPreviewSource(webview: vscode.Webview, imagePreviewRenderer: import("./index").ImagePreviewRenderer, documentUri: vscode.Uri, imagePath: string, extension: string): Promise<WebviewPreviewSource | undefined> {
   if (extension === ".svg") {
     return renderSvgInlinePreviewSource(webview, documentUri, imagePath);
   }
@@ -316,7 +319,7 @@ export async function renderWebviewPreviewSource(webview, imagePreviewRenderer, 
  * @param {string} imagePath Absolute SVG path.
  * @returns {Promise<WebviewPreviewSource>}
  */
-async function renderSvgInlinePreviewSource(webview, documentUri, imagePath): Promise<WebviewPreviewSource> {
+async function renderSvgInlinePreviewSource(webview: vscode.Webview, documentUri: vscode.Uri, imagePath: string): Promise<WebviewPreviewSource> {
   const svg = await fs.readFile(imagePath, "utf8");
   const documentLike = { uri: documentUri };
   const rewritten = rewriteSvgImageReferencesToWebviewUris(webview, documentLike, svg, path.dirname(imagePath));
@@ -335,7 +338,7 @@ async function renderSvgInlinePreviewSource(webview, documentUri, imagePath): Pr
  * @param {string} baseDirectory Directory used for relative nested images.
  * @returns {{svg: string, localResourceRoots: vscode.Uri[]}}
  */
-function rewriteSvgImageReferencesToWebviewUris(webview, document, svg, baseDirectory) {
+function rewriteSvgImageReferencesToWebviewUris(webview: vscode.Webview, document: DocumentLike, svg: string, baseDirectory: string) {
   const replacements = [];
   const localResourceRootPaths = new Set<string>();
   const hrefPattern = /\b((?:xlink:)?href)\s*=\s*(["'])(.*?)\2/gi;
@@ -369,7 +372,7 @@ function rewriteSvgImageReferencesToWebviewUris(webview, document, svg, baseDire
  * @param {string} baseDirectory Directory used for relative nested images.
  * @returns {{webviewUri: string, localPath: string} | undefined}
  */
-function resolveSvgHrefToWebviewUri(webview, document, rawHref, baseDirectory) {
+function resolveSvgHrefToWebviewUri(webview: vscode.Webview, document: DocumentLike, rawHref: string, baseDirectory: string) {
   if (!rawHref || rawHref.startsWith("#") || isDataUri(rawHref) || isRemoteUrl(rawHref)) {
     return undefined;
   }
@@ -392,7 +395,7 @@ function resolveSvgHrefToWebviewUri(webview, document, rawHref, baseDirectory) {
  * @param {string} value Raw SVG href.
  * @returns {string}
  */
-function getQueryAndHashSuffix(value) {
+function getQueryAndHashSuffix(value: string) {
   const suffixIndex = value.search(/[?#]/);
   return suffixIndex === -1 ? "" : value.slice(suffixIndex);
 }
@@ -406,7 +409,7 @@ function getQueryAndHashSuffix(value) {
  * @param {string} dataUri Rendered image data URI.
  * @returns {WebviewPreviewSource | undefined}
  */
-function dataUriToWebviewPreviewSource(dataUri): WebviewPreviewSource | undefined {
+function dataUriToWebviewPreviewSource(dataUri: string): WebviewPreviewSource | undefined {
   const match = dataUri.match(/^data:([^;,]+);base64,(.*)$/s);
   if (!match) {
     return undefined;
@@ -431,7 +434,7 @@ function dataUriToWebviewPreviewSource(dataUri): WebviewPreviewSource | undefine
  * @param {string} svg Raw SVG text.
  * @returns {WebviewPreviewSource}
  */
-function createInlineSvgPreviewSource(svg): WebviewPreviewSource {
+function createInlineSvgPreviewSource(svg: string): WebviewPreviewSource {
   const dimensions = getSvgNaturalDimensions(svg);
   return {
     kind: "inlineSvg",
@@ -448,7 +451,7 @@ function createInlineSvgPreviewSource(svg): WebviewPreviewSource {
  * @param {string} label Accessible preview label.
  * @returns {string}
  */
-function previewSourceToPreviewMarkup(previewSource, label) {
+function previewSourceToPreviewMarkup(previewSource: WebviewPreviewSource, label: string) {
   if (previewSource.kind === "inlineSvg") {
     return [
       `<div data-preview-image data-preview-frame="true" data-preview-kind="inline-svg" class="svgPreview" role="img" aria-label="${escapeAttribute(label)}"`,
@@ -469,7 +472,7 @@ function previewSourceToPreviewMarkup(previewSource, label) {
  * @param {Extract<WebviewPreviewSource, {kind: "uri" | "blob"}>} previewSource Rendered image source.
  * @returns {string}
  */
-function previewSourceToImageAttributes(previewSource) {
+function previewSourceToImageAttributes(previewSource: Extract<WebviewPreviewSource, {kind: "uri" | "blob"}>): string {
   if (previewSource.kind === "uri") {
     return `src="${escapeAttribute(previewSource.src)}"`;
   }
@@ -490,7 +493,7 @@ function previewSourceToImageAttributes(previewSource) {
  * @param {string} svg Raw SVG text.
  * @returns {string}
  */
-function sanitizeInlineSvgForWebview(svg) {
+function sanitizeInlineSvgForWebview(svg: string) {
   return svg
     .replace(/^\s*<\?xml\b[^?]*\?>/i, "")
     .replace(/^\s*<!doctype\b[^>]*>/i, "")
@@ -506,7 +509,7 @@ function sanitizeInlineSvgForWebview(svg) {
  * @param {string} svg Raw SVG text.
  * @returns {{width: number, height: number}}
  */
-function getSvgNaturalDimensions(svg) {
+function getSvgNaturalDimensions(svg: string) {
   const openTag = svg.match(/<svg\b[^>]*>/i);
   if (!openTag) {
     return { width: 300, height: 150 };
@@ -537,7 +540,7 @@ function getSvgNaturalDimensions(svg) {
  * @param {string} name Attribute name.
  * @returns {string | undefined}
  */
-function readAttribute(tag, name) {
+function readAttribute(tag: string, name: string) {
   const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"));
   return match ? match[1] : undefined;
 }
@@ -548,7 +551,7 @@ function readAttribute(tag, name) {
  * @param {string | undefined} value Raw length value.
  * @returns {number | undefined}
  */
-function parseSvgLength(value) {
+function parseSvgLength(value: string | undefined) {
   if (!value) {
     return undefined;
   }
@@ -569,7 +572,7 @@ function parseSvgLength(value) {
  * @param {{start: number, end: number, value: string}[]} replacements Replacements.
  * @returns {string}
  */
-function applyReplacements(value, replacements) {
+function applyReplacements(value: string, replacements: Replacement[]): string {
   let result = value;
   for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
     result = `${result.slice(0, replacement.start)}${replacement.value}${result.slice(replacement.end)}`;
@@ -584,7 +587,7 @@ function applyReplacements(value, replacements) {
  * @param {vscode.Uri[]=} additionalRoots Additional local resource roots.
  * @returns {vscode.WebviewPanelOptions & vscode.WebviewOptions}
  */
-function createWebviewOptions(imageUri, additionalRoots = []) {
+function createWebviewOptions(imageUri: vscode.Uri, additionalRoots: vscode.Uri[] | undefined = []) {
   return {
     enableScripts: true,
     localResourceRoots: getLocalResourceRoots(imageUri, additionalRoots),
@@ -598,7 +601,7 @@ function createWebviewOptions(imageUri, additionalRoots = []) {
  * @param {vscode.Uri[]} additionalRoots Additional local resource roots.
  * @returns {vscode.Uri[]}
  */
-function getLocalResourceRoots(imageUri, additionalRoots) {
+function getLocalResourceRoots(imageUri: vscode.Uri, additionalRoots: vscode.Uri[]) {
   const rootsByPath = new Map();
   rootsByPath.set(path.dirname(imageUri.fsPath), vscode.Uri.file(path.dirname(imageUri.fsPath)));
   for (const folder of vscode.workspace.workspaceFolders || []) {
@@ -617,7 +620,7 @@ function getLocalResourceRoots(imageUri, additionalRoots) {
  * @param {string=} script Optional inline script.
  * @returns {string}
  */
-export function buildPanelHtml(body, script = "") {
+export function buildPanelHtml(body: string, script = ""): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -919,7 +922,7 @@ function getPreviewScript() {
  * @param {string} value Raw text.
  * @returns {string}
  */
-function escapeHtml(value) {
+function escapeHtml(value: string) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -933,7 +936,7 @@ function escapeHtml(value) {
  * @param {string} value Raw text.
  * @returns {string}
  */
-function escapeAttribute(value) {
+function escapeAttribute(value: string) {
   return escapeHtml(value).replace(/'/g, "&#39;");
 }
 
@@ -943,7 +946,7 @@ function escapeAttribute(value) {
  * @param {unknown} error Error-like value.
  * @returns {string}
  */
-function formatError(error) {
+function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 

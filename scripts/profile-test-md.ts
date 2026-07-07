@@ -7,7 +7,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const targetPath = path.resolve(repoRoot, process.argv[2] || "test.md");
 const uriText = `file:///${targetPath.replace(/\\/g, "/")}`;
 const parseIterations = Number(process.env.PROFILE_PARSE_ITERATIONS || 50);
-const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS = {
+const MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS: Record<string, () => unknown> = {
   "accents-b-i": () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js"),
   accents: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js"),
   arabic: () => require("@mathjax/mathjax-newcm-font/js/svg/dynamic/arabic.js"),
@@ -53,6 +53,13 @@ type MathJaxProfileAdaptor = { serializeXML(node: unknown): string; tags(node: u
 type MathJaxProfileHtmlDocument = { convertPromise(tex: string, options: { display: boolean; em: number; ex: number; containerWidth: number }): Promise<unknown> };
 type MathJaxProfileRenderer = { adaptor: MathJaxProfileAdaptor; html: MathJaxProfileHtmlDocument };
 type MathJaxProfileNamespace = { asyncLoad?: (name: string) => unknown; asyncIsSynchronous?: boolean };
+type OutlineSymbol = { title: string; label: string; line: number; level: number; children: OutlineSymbol[] };
+type ProfileStage<T = unknown> = { name: string; ms: number; result: T };
+type DiagnosticsSummary = { undefinedReferences: number; duplicateLabels: number; total: number };
+type OutlineSummary = { roots: OutlineSymbol[]; totalSymbols: number };
+type LookupSummary = { tokenLookups: number; displayMathLookups: number; inlineMathLookups: number };
+type ParseBenchmark = { iterations: number; totalMs: number; avgMs: number };
+type MathSampleSummary = { displaySvgLength: number; inlineSvgLength: number };
 
 let mathJaxReadyPromise: Promise<MathJaxProfileRenderer> | undefined;
 
@@ -63,10 +70,10 @@ let mathJaxReadyPromise: Promise<MathJaxProfileRenderer> | undefined;
  * @param {() => unknown | Promise<unknown>} action Stage body.
  * @returns {Promise<{name: string, ms: number, result: unknown}>}
  */
-async function measure(name, action) {
+async function measure<T>(name: string, action: () => T | Promise<T>) {
   const started = performance.now();
   const result = await action();
-  return { name, ms: performance.now() - started, result };
+  return { name, ms: performance.now() - started, result } as ProfileStage<T>;
 }
 
 /**
@@ -75,7 +82,7 @@ async function measure(name, action) {
  * @param {number} ms Duration in milliseconds.
  * @returns {string}
  */
-function formatMs(ms) {
+function formatMs(ms: number) {
   return `${ms.toFixed(3)} ms`;
 }
 
@@ -85,7 +92,7 @@ function formatMs(ms) {
  * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {Map<string, import("../src/parser").LabelEntry[]>}
  */
-function buildDefinitionMap(parsed) {
+function buildDefinitionMap(parsed: import("../src/parser").ParsedPandocDocument) {
   const map = new Map();
   for (const label of parsed.labels) {
     if (!map.has(label.label)) {
@@ -102,7 +109,7 @@ function buildDefinitionMap(parsed) {
  * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {{undefinedReferences: number, duplicateLabels: number, total: number}}
  */
-function buildDiagnostics(parsed) {
+function buildDiagnostics(parsed: import("../src/parser").ParsedPandocDocument) {
   const definitionMap = buildDefinitionMap(parsed);
   let undefinedReferences = 0;
   let duplicateLabels = 0;
@@ -133,12 +140,12 @@ function buildDiagnostics(parsed) {
  * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {{roots: unknown[], totalSymbols: number}}
  */
-function buildOutline(parsed) {
-  const roots = [];
-  const stack = [];
+function buildOutline(parsed: import("../src/parser").ParsedPandocDocument) {
+  const roots: OutlineSymbol[] = [];
+  const stack: Array<{ level: number; symbol: OutlineSymbol }> = [];
 
   for (const heading of parsed.headings) {
-    const symbol = { title: formatHeadingTitle(heading), label: heading.label || "", line: heading.line, level: heading.level, children: [] };
+    const symbol = { title: formatHeadingTitle(heading), label: heading.label || "", line: heading.line, level: heading.level, children: [] as OutlineSymbol[] };
     while (stack.length > 0 && stack[stack.length - 1].level >= heading.level) {
       stack.pop();
     }
@@ -151,7 +158,7 @@ function buildOutline(parsed) {
   }
 
   for (const label of parsed.labels.filter((entry) => entry.prefix !== "sec")) {
-    const symbol = { title: label.label, label: label.kind, line: label.line, level: 7, children: [] };
+    const symbol = { title: label.label, label: label.kind, line: label.line, level: 7, children: [] as OutlineSymbol[] };
     const parent = findNearestHeadingSymbol(roots, label.line);
     if (parent) {
       parent.children.push(symbol);
@@ -169,7 +176,7 @@ function buildOutline(parsed) {
  * @param {import("../src/parser").HeadingEntry} heading Parsed heading.
  * @returns {string}
  */
-function formatHeadingTitle(heading) {
+function formatHeadingTitle(heading: import("../src/parser").HeadingEntry) {
   return `${"#".repeat(heading.level)} ${heading.title}`;
 }
 
@@ -180,13 +187,13 @@ function formatHeadingTitle(heading) {
  * @param {number} line Target line.
  * @returns {{line: number, children: unknown[]} | undefined}
  */
-function findNearestHeadingSymbol(symbols, line) {
+function findNearestHeadingSymbol(symbols: OutlineSymbol[], line: number): OutlineSymbol | undefined {
   let nearest;
   for (const symbol of symbols) {
     if (symbol.line <= line) {
       nearest = symbol;
     }
-    const childNearest = findNearestHeadingSymbol(symbol.children, line);
+    const childNearest: OutlineSymbol | undefined = findNearestHeadingSymbol(symbol.children, line);
     if (childNearest && childNearest.line <= line) {
       nearest = childNearest;
     }
@@ -200,7 +207,7 @@ function findNearestHeadingSymbol(symbols, line) {
  * @param {Array<{children: unknown[]}>} symbols Root symbols.
  * @returns {number}
  */
-function countSymbols(symbols) {
+function countSymbols(symbols: OutlineSymbol[]): number {
   let total = 0;
   for (const symbol of symbols) {
     total += 1 + countSymbols(symbol.children);
@@ -214,7 +221,7 @@ function countSymbols(symbols) {
  * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {string[]}
  */
-function buildCompletions(parsed) {
+function buildCompletions(parsed: import("../src/parser").ParsedPandocDocument) {
   const seen = new Set();
   return parsed.labels
     .filter((entry) => !seen.has(entry.label) && seen.add(entry.label))
@@ -228,7 +235,7 @@ function buildCompletions(parsed) {
  * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {{tokenLookups: number, displayMathLookups: number, inlineMathLookups: number}}
  */
-function runHoverAndNavigationLookups(parsed) {
+function runHoverAndNavigationLookups(parsed: import("../src/parser").ParsedPandocDocument) {
   let tokenLookups = 0;
   let displayMathLookups = 0;
   let inlineMathLookups = 0;
@@ -295,7 +302,7 @@ async function loadMathJax() {
  *
  * @param {MathJaxProfileNamespace} mathjax MathJax direct API namespace.
  */
-function configureMathJaxAsyncLoad(mathjax) {
+function configureMathJaxAsyncLoad(mathjax: MathJaxProfileNamespace) {
   mathjax.asyncLoad = loadBundledMathJaxDynamicModule;
   mathjax.asyncIsSynchronous = true;
 }
@@ -306,7 +313,7 @@ function configureMathJaxAsyncLoad(mathjax) {
  * @param {string} name Module name requested by MathJax.
  * @returns {unknown}
  */
-function loadBundledMathJaxDynamicModule(name) {
+function loadBundledMathJaxDynamicModule(name: string) {
   const normalizedName = name.replace(/\\/g, "/");
   const dynamicChunkMatch = normalizedName.match(/@mathjax\/mathjax-newcm-font\/js\/svg\/dynamic\/([^/]+)\.js$/);
   if (dynamicChunkMatch && MATHJAX_NEWCM_SVG_DYNAMIC_CHUNKS[dynamicChunkMatch[1]]) {
@@ -321,7 +328,7 @@ function loadBundledMathJaxDynamicModule(name) {
  * @param {import("../src/parser").ParsedPandocDocument} parsed Parsed document.
  * @returns {Promise<{displaySvgLength: number, inlineSvgLength: number}>}
  */
-async function renderMathSamples(parsed) {
+async function renderMathSamples(parsed: import("../src/parser").ParsedPandocDocument) {
   const renderer = await loadMathJax();
   const adaptor = renderer.adaptor;
   const displayTex = parsed.mathBlocks[0] && parsed.mathBlocks[0].tex;
@@ -348,7 +355,7 @@ async function renderMathSamples(parsed) {
  * @param {string} text Markdown source.
  * @returns {{iterations: number, totalMs: number, avgMs: number}}
  */
-function benchmarkParse(text) {
+function benchmarkParse(text: string) {
   const started = performance.now();
   for (let index = 0; index < parseIterations; index += 1) {
     parsePandocDocument(text, uriText);
@@ -365,22 +372,22 @@ async function main() {
     throw new Error(`Target Markdown file does not exist: ${targetPath}`);
   }
 
-  const stages = [];
+  const stages: ProfileStage[] = [];
   stages.push(await measure("read file", () => fs.readFileSync(targetPath, "utf8")));
-  const text = stages[0].result;
+  const text = stages[0].result as string;
 
   stages.push(await measure("parse document", () => parsePandocDocument(text, uriText)));
-  const parsed = stages[1].result;
+  const parsed = stages[1].result as import("../src/parser").ParsedPandocDocument;
 
-  stages.push(await measure("build diagnostics", () => buildDiagnostics(parsed)));
-  stages.push(await measure("build outline symbols", () => buildOutline(parsed)));
-  stages.push(await measure("build completions", () => buildCompletions(parsed)));
-  stages.push(await measure("hover/navigation lookups", () => runHoverAndNavigationLookups(parsed)));
-  stages.push(await measure("repeated parse benchmark", () => benchmarkParse(text)));
+  stages.push(await measure<DiagnosticsSummary>("build diagnostics", () => buildDiagnostics(parsed)));
+  stages.push(await measure<OutlineSummary>("build outline symbols", () => buildOutline(parsed)));
+  stages.push(await measure<string[]>("build completions", () => buildCompletions(parsed)));
+  stages.push(await measure<LookupSummary>("hover/navigation lookups", () => runHoverAndNavigationLookups(parsed)));
+  stages.push(await measure<ParseBenchmark>("repeated parse benchmark", () => benchmarkParse(text)));
 
-  const mathStage = await measure("MathJax cold render samples", () => renderMathSamples(parsed));
+  const mathStage = await measure<MathSampleSummary>("MathJax cold render samples", () => renderMathSamples(parsed));
   stages.push(mathStage);
-  stages.push(await measure("MathJax warm render samples", () => renderMathSamples(parsed)));
+  stages.push(await measure<MathSampleSummary>("MathJax warm render samples", () => renderMathSamples(parsed)));
 
   console.log(`Profile target: ${path.relative(repoRoot, targetPath)}`);
   console.log(`Document: ${text.length} chars, ${text.split(/\r?\n/).length} lines`);
@@ -401,10 +408,10 @@ async function main() {
   console.log("");
   console.log("Stage details:");
   console.log(`- diagnostics: ${JSON.stringify(stages[2].result)}`);
-  console.log(`- outline symbols: ${stages[3].result.totalSymbols}`);
-  console.log(`- completions: ${stages[4].result.length}`);
+  console.log(`- outline symbols: ${(stages[3].result as OutlineSummary).totalSymbols}`);
+  console.log(`- completions: ${(stages[4].result as string[]).length}`);
   console.log(`- lookups: ${JSON.stringify(stages[5].result)}`);
-  console.log(`- parse benchmark: ${stages[6].result.iterations} iterations, avg ${formatMs(stages[6].result.avgMs)}`);
+  console.log(`- parse benchmark: ${(stages[6].result as ParseBenchmark).iterations} iterations, avg ${formatMs((stages[6].result as ParseBenchmark).avgMs)}`);
   console.log(`- MathJax sample SVG lengths: ${JSON.stringify(mathStage.result)}`);
 
 }

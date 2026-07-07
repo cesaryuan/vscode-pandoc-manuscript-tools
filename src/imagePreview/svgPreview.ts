@@ -1,3 +1,4 @@
+import type * as vscode from "vscode";
 import * as fs from "fs/promises";
 import * as path from "path";
 const { createJimp } = require("@jimp/core");
@@ -5,6 +6,9 @@ const jpeg = require("@jimp/js-jpeg").default;
 const png = require("@jimp/js-png").default;
 const resize = require("@jimp/plugin-resize");
 import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
+
+type OutputChannelLike = { appendLine(message: string): void };
+type Replacement = { start: number; end: number; value: string };
 
 const MAX_NESTED_RASTER_DIMENSION = 100;
 const NESTED_RASTER_OUTPUT_MIME_TYPE = "image/png";
@@ -41,7 +45,7 @@ const NestedRasterJimp = createJimp({
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-export async function renderSvgPreviewDataUri(document, svgPath, output) {
+export async function renderSvgPreviewDataUri(document: { uri: vscode.Uri }, svgPath: string, output: OutputChannelLike): Promise<string | undefined> {
   try {
     const svg = await fs.readFile(svgPath, "utf8");
     const inlinedSvg = await inlineSvgImageReferences(document, svg, path.dirname(svgPath), output);
@@ -61,8 +65,8 @@ export async function renderSvgPreviewDataUri(document, svgPath, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string>}
  */
-async function inlineSvgImageReferences(document, svg, baseDirectory, output) {
-  const replacements = [];
+async function inlineSvgImageReferences(document: { uri: vscode.Uri }, svg: string, baseDirectory: string, output: OutputChannelLike): Promise<string> {
+  const replacements: Replacement[] = [];
   const hrefPattern = /\b((?:xlink:)?href)\s*=\s*(["'])(.*?)\2/gi;
   for (const match of svg.matchAll(hrefPattern)) {
     const rawHref = match[3];
@@ -97,7 +101,7 @@ async function inlineSvgImageReferences(document, svg, baseDirectory, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function readImageAsDataUri(imagePath, output) {
+async function readImageAsDataUri(imagePath: string, output: OutputChannelLike) {
   const mimeType = MIME_TYPES.get(path.extname(imagePath).toLowerCase());
   if (!mimeType) {
     output.appendLine(`SVG image preview skipped unsupported nested image type: ${imagePath}`);
@@ -127,7 +131,7 @@ async function readImageAsDataUri(imagePath, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<{bytes: Buffer, mimeType: string}>}
  */
-async function prepareNestedImageForDataUri(imageBytes, mimeType, imagePath, output) {
+async function prepareNestedImageForDataUri(imageBytes: Buffer, mimeType: string, imagePath: string, output: OutputChannelLike) {
   if (!RESIZABLE_RASTER_MIME_TYPES.has(mimeType)) {
     return { bytes: imageBytes, mimeType };
   }
@@ -147,7 +151,7 @@ async function prepareNestedImageForDataUri(imageBytes, mimeType, imagePath, out
  * @param {string} mimeType Source MIME type.
  * @returns {Promise<{bytes: Buffer, mimeType: string}>}
  */
-async function resizeNestedRasterImage(imageBytes, mimeType) {
+async function resizeNestedRasterImage(imageBytes: Buffer, mimeType: string) {
   const image = await NestedRasterJimp.fromBuffer(imageBytes);
   const dimensions = fitWithinBounds(image.width, image.height, MAX_NESTED_RASTER_DIMENSION);
   if (!dimensions) {
@@ -170,7 +174,7 @@ async function resizeNestedRasterImage(imageBytes, mimeType) {
  * @param {number} maxDimension Maximum allowed width or height.
  * @returns {{width: number, height: number} | undefined}
  */
-function fitWithinBounds(width, height, maxDimension) {
+function fitWithinBounds(width: number, height: number, maxDimension: number) {
   if (!width || !height || width <= maxDimension && height <= maxDimension) {
     return undefined;
   }
@@ -189,7 +193,7 @@ function fitWithinBounds(width, height, maxDimension) {
  * @param {{start: number, end: number, value: string}[]} replacements Replacements.
  * @returns {string}
  */
-function applyReplacements(value, replacements) {
+function applyReplacements(value: string, replacements: Replacement[]): string {
   let result = value;
   for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
     result = `${result.slice(0, replacement.start)}${replacement.value}${result.slice(replacement.end)}`;
@@ -203,7 +207,7 @@ function applyReplacements(value, replacements) {
  * @param {unknown} error Error-like value.
  * @returns {string}
  */
-function formatError(error) {
+function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 

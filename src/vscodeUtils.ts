@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { LabelEntry, PlainPosition, PlainRange, ReferenceEntry } from "./parser";
 
 const PANDOC_LANGUAGE_IDS = new Set(["markdown", "mdx"]);
 
@@ -8,7 +9,7 @@ const PANDOC_LANGUAGE_IDS = new Set(["markdown", "mdx"]);
  * @param {import("./parser").PlainRange} range Plain parser range.
  * @returns {vscode.Range}
  */
-export function toRange(range) {
+export function toRange(range: PlainRange): vscode.Range {
   return new vscode.Range(
     new vscode.Position(range.start.line, range.start.character),
     new vscode.Position(range.end.line, range.end.character),
@@ -21,7 +22,7 @@ export function toRange(range) {
  * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} entry Parsed entry.
  * @returns {vscode.Location}
  */
-export function toLocation(entry) {
+export function toLocation(entry: LabelEntry | ReferenceEntry): vscode.Location {
   return new vscode.Location(vscode.Uri.parse(entry.uriText), toRange(entry.range));
 }
 
@@ -35,7 +36,7 @@ export function toLocation(entry) {
  * @param {import("./parser").LabelEntry | import("./parser").ReferenceEntry} origin Origin token under the cursor.
  * @returns {vscode.LocationLink}
  */
-export function toLocationLink(target, origin) {
+export function toLocationLink(target: LabelEntry, origin: LabelEntry | ReferenceEntry): vscode.LocationLink {
   return {
     originSelectionRange: toRange(origin.fullRange),
     targetUri: vscode.Uri.parse(target.uriText),
@@ -50,7 +51,7 @@ export function toLocationLink(target, origin) {
  * @param {vscode.Position} position VS Code position.
  * @returns {{line: number, character: number}}
  */
-export function toPlainPosition(position) {
+export function toPlainPosition(position: vscode.Position): PlainPosition {
   return { line: position.line, character: position.character };
 }
 
@@ -60,7 +61,7 @@ export function toPlainPosition(position) {
  * @param {string} prefix Pandoc label prefix.
  * @returns {vscode.SymbolKind}
  */
-export function toSymbolKind(prefix) {
+export function toSymbolKind(prefix: string): vscode.SymbolKind {
   if (prefix === "eq") {
     return vscode.SymbolKind.Number;
   }
@@ -82,7 +83,7 @@ export function toSymbolKind(prefix) {
  * @param {vscode.TextDocument} document Text document.
  * @returns {boolean}
  */
-function isEditorBackedDocument(document) {
+function isEditorBackedDocument(document: vscode.TextDocument) {
   return document.uri.scheme === "file" || document.uri.scheme === "untitled";
 }
 
@@ -93,7 +94,7 @@ function isEditorBackedDocument(document) {
  * @param {Set<string>} languageIds Supported VS Code language IDs.
  * @returns {boolean}
  */
-function isSupportedLanguageDocument(document, languageIds) {
+function isSupportedLanguageDocument(document: vscode.TextDocument, languageIds: Set<string>) {
   return languageIds.has(document.languageId);
 }
 
@@ -107,7 +108,7 @@ function isSupportedLanguageDocument(document, languageIds) {
  * @param {vscode.TextDocument} document Text document.
  * @returns {boolean}
  */
-export function isPandocDocument(document) {
+export function isPandocDocument(document: vscode.TextDocument): boolean {
   return isEditorBackedDocument(document) && isSupportedLanguageDocument(document, PANDOC_LANGUAGE_IDS);
 }
 
@@ -121,7 +122,7 @@ export function isPandocDocument(document) {
  * @param {vscode.TextDocument} document Text document.
  * @returns {boolean}
  */
-export function supportsPandocTextFeatures(document) {
+export function supportsPandocTextFeatures(document: vscode.TextDocument): boolean {
   return isSupportedLanguageDocument(document, PANDOC_LANGUAGE_IDS);
 }
 
@@ -134,7 +135,7 @@ export function supportsPandocTextFeatures(document) {
  * @param {vscode.TextDocument} document Text document.
  * @returns {boolean}
  */
-export function isBuildableMarkdownDocument(document) {
+export function isBuildableMarkdownDocument(document: vscode.TextDocument): boolean {
   return document.languageId === "markdown" && document.uri.scheme === "file";
 }
 

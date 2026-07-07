@@ -23,7 +23,7 @@ const DECORATION_COLORS = [
 const SPAN_DECORATION_BACKGROUND = "rgba(255, 197, 92, 0.16)";
 
 export class FencedDivHighlighter {
-  declare index;
+  declare index: import("./workspaceIndex").PandocWorkspaceIndex;
   declare output: import("vscode").OutputChannel;
   declare decorationTypes: import("vscode").TextEditorDecorationType[];
   declare spanDecorationType: import("vscode").TextEditorDecorationType;
@@ -33,7 +33,7 @@ export class FencedDivHighlighter {
    * @param {import("./workspaceIndex").PandocWorkspaceIndex} index Workspace index.
    * @param {vscode.OutputChannel} output Output channel for useful diagnostics.
    */
-  constructor(index, output) {
+  constructor(index: import("./workspaceIndex").PandocWorkspaceIndex, output: vscode.OutputChannel) {
     this.index = index;
     this.output = output;
     this.decorationTypes = DECORATION_COLORS.map(createFencedDivDecorationType);
@@ -45,7 +45,7 @@ export class FencedDivHighlighter {
    *
    * @param {vscode.TextDocument=} changedDocument Optional changed document to refresh.
    */
-  updateVisibleEditors(changedDocument = undefined) {
+  updateVisibleEditors(changedDocument: vscode.TextDocument | undefined = undefined) {
     for (const editor of vscode.window.visibleTextEditors) {
       if (!changedDocument || editor.document === changedDocument) {
         this.updateEditor(editor);
@@ -58,7 +58,7 @@ export class FencedDivHighlighter {
    *
    * @param {vscode.TextEditor} editor Text editor.
    */
-  updateEditor(editor) {
+  updateEditor(editor: vscode.TextEditor) {
     const configuration = getConfiguration();
     const highlightFencedDivs = configuration.get("highlightFencedDivs", true);
     const highlightBracketedSpans = configuration.get("highlightBracketedSpans", true);
@@ -107,7 +107,7 @@ export class FencedDivHighlighter {
    * @param {boolean} highlightFencedDivs Whether fenced div block highlights are enabled.
    * @param {boolean} highlightBracketedSpans Whether bracketed span highlights are enabled.
    */
-  applyDecorations(editor, highlightFencedDivs, highlightBracketedSpans) {
+  applyDecorations(editor: vscode.TextEditor, highlightFencedDivs: boolean, highlightBracketedSpans: boolean) {
     const parsed = this.index.getParsedDocument(editor.document);
     this.applyFencedDivDecorations(editor, parsed.fencedDivs, highlightFencedDivs);
     this.applySpanDecorations(editor, parsed.spans, highlightBracketedSpans);
@@ -120,8 +120,8 @@ export class FencedDivHighlighter {
    * @param {import("./parser").FencedDivEntry[]} fencedDivs Parsed fenced div blocks.
    * @param {boolean} enabled Whether fenced div block highlights are enabled.
    */
-  applyFencedDivDecorations(editor, fencedDivs, enabled) {
-    const groupedRanges = this.decorationTypes.map(() => []);
+  applyFencedDivDecorations(editor: vscode.TextEditor, fencedDivs: import("./parser").FencedDivEntry[], enabled: boolean) {
+    const groupedRanges = this.decorationTypes.map((): vscode.Range[] => []);
 
     if (enabled) {
       for (const fencedDiv of fencedDivs) {
@@ -142,7 +142,7 @@ export class FencedDivHighlighter {
    * @param {import("./parser").SpanEntry[]} spans Parsed bracketed spans.
    * @param {boolean} enabled Whether bracketed span highlights are enabled.
    */
-  applySpanDecorations(editor, spans, enabled) {
+  applySpanDecorations(editor: vscode.TextEditor, spans: import("./parser").SpanEntry[], enabled: boolean) {
     const ranges = enabled ? spans.map(toInlineRange) : [];
     editor.setDecorations(this.spanDecorationType, ranges);
   }
@@ -152,7 +152,7 @@ export class FencedDivHighlighter {
    *
    * @param {vscode.TextEditor} editor Text editor.
    */
-  clearEditor(editor) {
+  clearEditor(editor: vscode.TextEditor) {
     for (const decorationType of this.decorationTypes) {
       editor.setDecorations(decorationType, []);
     }
@@ -166,7 +166,7 @@ export class FencedDivHighlighter {
  * @param {{backgroundColor: string, markerColor: string}} colors Decoration colors.
  * @returns {vscode.TextEditorDecorationType}
  */
-function createFencedDivDecorationType(colors) {
+function createFencedDivDecorationType(colors: { backgroundColor: string; markerColor: string }): vscode.TextEditorDecorationType {
   return vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: colors.backgroundColor,
@@ -180,7 +180,7 @@ function createFencedDivDecorationType(colors) {
  *
  * @returns {vscode.TextEditorDecorationType}
  */
-function createSpanDecorationType() {
+function createSpanDecorationType(): vscode.TextEditorDecorationType {
   return vscode.window.createTextEditorDecorationType({
     backgroundColor: SPAN_DECORATION_BACKGROUND,
   });
@@ -196,7 +196,7 @@ function createSpanDecorationType() {
  * @param {import("./parser").FencedDivEntry} fencedDiv Parsed fenced div.
  * @returns {vscode.Range}
  */
-function toWholeLineRange(document, fencedDiv) {
+function toWholeLineRange(document: vscode.TextDocument, fencedDiv: import("./parser").FencedDivEntry): vscode.Range {
   const startLine = Math.max(0, Math.min(fencedDiv.range.start.line, document.lineCount - 1));
   const endLine = Math.max(startLine, Math.min(fencedDiv.range.end.line, document.lineCount - 1));
   return new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length);
@@ -208,7 +208,7 @@ function toWholeLineRange(document, fencedDiv) {
  * @param {import("./parser").SpanEntry} entry Parsed bracketed span.
  * @returns {vscode.Range}
  */
-function toInlineRange(entry) {
+function toInlineRange(entry: import("./parser").SpanEntry): vscode.Range {
   return new vscode.Range(
     entry.range.start.line,
     entry.range.start.character,

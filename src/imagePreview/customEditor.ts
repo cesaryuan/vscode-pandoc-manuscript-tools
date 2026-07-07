@@ -21,7 +21,7 @@ export class MetafilePreviewCustomEditorProvider {
    * @param {import("./index").ImagePreviewRenderer} imagePreviewRenderer Shared preview renderer.
    * @param {{appendLine(message: string): void}} output Output channel.
    */
-  constructor(imagePreviewRenderer, output) {
+  constructor(imagePreviewRenderer: import("./index").ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
     this.output = output;
   }
@@ -32,7 +32,7 @@ export class MetafilePreviewCustomEditorProvider {
    * @param {vscode.Uri} uri Resource URI.
    * @returns {vscode.CustomDocument}
    */
-  async openCustomDocument(uri) {
+  async openCustomDocument(uri: vscode.Uri) {
     return {
       uri,
       dispose() {},
@@ -45,7 +45,7 @@ export class MetafilePreviewCustomEditorProvider {
    * @param {vscode.CustomDocument} document Custom document.
    * @param {vscode.WebviewPanel} webviewPanel Preview webview panel.
    */
-  async resolveCustomEditor(document, webviewPanel) {
+  async resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel) {
     const imagePath = document.uri.fsPath;
     const extension = path.extname(imagePath).toLowerCase();
     const label = path.basename(imagePath);
@@ -81,7 +81,7 @@ export class MetafilePreviewCustomEditorProvider {
  * @param {string} value Raw text.
  * @returns {string}
  */
-function escapeHtml(value) {
+function escapeHtml(value: string) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -95,7 +95,7 @@ function escapeHtml(value) {
  * @param {unknown} error Error-like value.
  * @returns {string}
  */
-function formatError(error) {
+function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 

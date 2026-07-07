@@ -15,6 +15,7 @@ type LibEmf2SvgModule = {
   _emf2svg_wasm_convert(inputPtr: number, inputLength: number, crop: number, textAsPath: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
   _wmf2svg_wasm_convert(inputPtr: number, inputLength: number, crop: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
 };
+type OutputChannelLike = { appendLine(message: string): void };
 type EmscriptenFactoryOptions = { locateFile(fileName: string): string; print(message: string): void; printErr(message: string): void };
 
 let modulePromise: Promise<LibEmf2SvgModule> | undefined;
@@ -26,7 +27,7 @@ let modulePromise: Promise<LibEmf2SvgModule> | undefined;
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-export async function convertEmfToSvg(bytes, output) {
+export async function convertEmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike) {
   return convertMetafileToSvg(bytes, "EMF", output);
 }
 
@@ -41,7 +42,7 @@ export async function convertEmfToSvg(bytes, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-export async function convertWmfToSvg(bytes, output) {
+export async function convertWmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike) {
   return convertMetafileToSvg(bytes, "WMF", output);
 }
 
@@ -53,7 +54,7 @@ export async function convertWmfToSvg(bytes, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function convertMetafileToSvg(bytes, format, output) {
+async function convertMetafileToSvg(bytes: Buffer | Uint8Array, format: "EMF" | "WMF", output: OutputChannelLike) {
   const module = await loadLibemf2svgModule(output);
   const inputPtr = module._malloc(bytes.byteLength);
   const outputPtrSlot = module._malloc(POINTER_SIZE);
@@ -97,7 +98,7 @@ async function convertMetafileToSvg(bytes, format, output) {
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {string}
  */
-function addMissingSvgViewBox(svg, format, output) {
+function addMissingSvgViewBox(svg: string, format: "EMF" | "WMF", output: OutputChannelLike): string {
   const openTag = svg.match(/<svg\b[^>]*>/i);
   if (!openTag || /\bviewBox\s*=/i.test(openTag[0])) {
     return svg;
@@ -121,7 +122,7 @@ function addMissingSvgViewBox(svg, format, output) {
  * @param {string} name Attribute name.
  * @returns {string | undefined}
  */
-function readSvgAttribute(tag, name) {
+function readSvgAttribute(tag: string, name: string) {
   const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"));
   return match ? match[1] : undefined;
 }
@@ -132,7 +133,7 @@ function readSvgAttribute(tag, name) {
  * @param {string | undefined} value Raw SVG length.
  * @returns {number | undefined}
  */
-function parseSvgLength(value) {
+function parseSvgLength(value: string | undefined) {
   if (!value) {
     return undefined;
   }
@@ -152,7 +153,7 @@ function parseSvgLength(value) {
  * @param {number} value Numeric SVG coordinate.
  * @returns {string}
  */
-function formatSvgNumber(value) {
+function formatSvgNumber(value: number) {
   return Number(value.toFixed(4)).toString();
 }
 
@@ -167,7 +168,7 @@ function formatSvgNumber(value) {
  * @param {number} outputLenSlot Pointer slot receiving the SVG byte length.
  * @returns {number} Native success flag.
  */
-function callMetafileConverter(module, format, inputPtr, inputLength, outputPtrSlot, outputLenSlot) {
+function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", inputPtr: number, inputLength: number, outputPtrSlot: number, outputLenSlot: number) {
   if (format === "WMF") {
     return module._wmf2svg_wasm_convert(
       inputPtr,
@@ -198,18 +199,18 @@ function callMetafileConverter(module, format, inputPtr, inputLength, outputPtrS
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<LibEmf2SvgModule>}
  */
-function loadLibemf2svgModule(output) {
+function loadLibemf2svgModule(output: OutputChannelLike): Promise<LibEmf2SvgModule> {
   if (!modulePromise) {
     const wasmPath = resolveBundledWasmPath();
     output.appendLine(`Loading libemf2svg WASM from ${wasmPath}.`);
     modulePromise = createEmf2SvgModule({
-      locateFile(fileName) {
+      locateFile(fileName: string) {
         return fileName === "emf2svg.wasm" ? wasmPath : fileName;
       },
-      print(message) {
+      print(message: string) {
         output.appendLine(`libemf2svg: ${message}`);
       },
-      printErr(message) {
+      printErr(message: string) {
         output.appendLine(`libemf2svg error: ${message}`);
       },
     });

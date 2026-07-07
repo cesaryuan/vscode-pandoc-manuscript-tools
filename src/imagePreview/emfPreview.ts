@@ -1,4 +1,6 @@
 import * as fs from "fs/promises";
+
+type OutputChannelLike = { appendLine(message: string): void };
 import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
 
 /**
@@ -12,7 +14,7 @@ import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-export async function renderMetafilePreviewDataUri(imagePath, extension, output) {
+export async function renderMetafilePreviewDataUri(imagePath: string, extension: ".emf" | ".wmf", output: OutputChannelLike): Promise<string | undefined> {
   try {
     const bytes = await fs.readFile(imagePath);
     const dataUri = await renderSvgMetafilePreviewDataUri(bytes, extension, output);
@@ -36,7 +38,7 @@ export async function renderMetafilePreviewDataUri(imagePath, extension, output)
  * @param {{appendLine(message: string): void}} output Output channel.
  * @returns {Promise<string | undefined>}
  */
-async function renderSvgMetafilePreviewDataUri(bytes, extension, output) {
+async function renderSvgMetafilePreviewDataUri(bytes: Buffer, extension: ".emf" | ".wmf", output: OutputChannelLike): Promise<string | undefined> {
   const svg = extension === ".emf"
     ? await convertEmfToSvg(bytes, output)
     : await convertWmfToSvg(bytes, output);
@@ -52,7 +54,7 @@ async function renderSvgMetafilePreviewDataUri(bytes, extension, output) {
  * @param {unknown} error Error-like value.
  * @returns {string}
  */
-function formatError(error) {
+function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
