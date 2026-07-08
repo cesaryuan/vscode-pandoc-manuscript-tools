@@ -367,7 +367,8 @@ function rewriteSvgImageReferencesToWebviewUris(webview: vscode.Webview, documen
   const hrefPattern = /\b((?:xlink:)?href)\s*=\s*(["'])(.*?)\2/gi;
   for (const match of svg.matchAll(hrefPattern)) {
     const rawHref = match[3];
-    const resolved = resolveSvgHrefToWebviewUri(webview, document, rawHref, baseDirectory);
+    const decodedHref = decodeSvgHrefForLocalResolution(rawHref);
+    const resolved = resolveSvgHrefToWebviewUri(webview, document, decodedHref, baseDirectory);
     if (!resolved) {
       continue;
     }
@@ -384,6 +385,23 @@ function rewriteSvgImageReferencesToWebviewUris(webview: vscode.Webview, documen
     svg: applyReplacements(svg, replacements),
     localResourceRoots: Array.from(localResourceRootPaths, (rootPath) => vscode.Uri.file(rootPath)),
   };
+}
+
+/**
+ * Decodes percent-encoded SVG href values before local file resolution.
+ *
+ * This guards the side-preview rewrite path against nested image filenames like
+ * `my%20image.png`. Invalid percent-encoding is left untouched so malformed SVG
+ * input does not introduce a new preview failure.
+ *
+ * @param rawHref Raw SVG href.
+ */
+function decodeSvgHrefForLocalResolution(rawHref: string) {
+  try {
+    return decodeURIComponent(rawHref);
+  } catch (_error) {
+    return rawHref;
+  }
 }
 
 /**
