@@ -182,10 +182,11 @@ export class ImagePreviewSidePanel {
 export function buildPreviewHtml(imagePath: string, previewSource: WebviewPreviewSource, options: PreviewHtmlOptions = {}): string {
   const label = path.basename(imagePath);
   const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
+  const toolbarActions = options.toolbarActions ? `${options.toolbarActions}${buildToolbarSeparator()}` : "";
   return buildPanelHtml(`
     <header>
       <div class="toolbar" role="toolbar">
-        ${options.toolbarActions || ""}
+        ${toolbarActions}
         ${buildToolbarButton("out", "Zoom out", buildZoomOutIcon())}
         ${buildToolbarButton("in", "Zoom in", buildZoomInIcon())}
         ${buildToolbarButton("actual", "Actual size", buildActualSizeIcon())}
@@ -210,6 +211,14 @@ export function buildPreviewHtml(imagePath: string, previewSource: WebviewPrevie
  */
 export function buildPreviewActionButton(command: string, label: string, icon: string): string {
   return `<button type="button" title="${escapeAttribute(label)}" aria-label="${escapeAttribute(label)}" data-preview-command="${escapeAttribute(command)}">${icon}</button>`;
+}
+
+/**
+ * Builds a thin separator between toolbar action groups.
+ *
+ */
+function buildToolbarSeparator(): string {
+  return "<span class=\"toolbarSeparator\" aria-hidden=\"true\"></span>";
 }
 
 /**
@@ -283,11 +292,10 @@ function buildFitIcon() {
  */
 export function buildSourceTextIcon() {
   return buildIconSvg(`
-    <path d="M8 7h8"></path>
-    <path d="M8 12h8"></path>
-    <path d="M8 17h5"></path>
-    <path d="m4.5 9 2-2-2-2"></path>
-    <path d="m4.5 15 2 2-2 2"></path>
+    <path d="M8 4.75h6l3 3V19.25H8z"></path>
+    <path d="M14 4.75v3.5h3"></path>
+    <path d="m5.75 10.5-2.5 2.5 2.5 2.5"></path>
+    <path d="m2.75 13 3 0"></path>
   `);
 }
 
@@ -652,34 +660,44 @@ export function buildPanelHtml(body: string, script = ""): string {
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 4px;
       flex: 0 0 auto;
+      padding: 2px 4px;
+      border: 1px solid var(--vscode-widget-border, transparent);
+      border-radius: 6px;
+      background: var(--vscode-editorWidget-background, transparent);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
     }
     button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 28px;
-      height: 26px;
+      width: 24px;
+      height: 24px;
       padding: 0;
-      border: 1px solid var(--vscode-button-border, transparent);
-      color: var(--vscode-button-secondaryForeground);
-      background: var(--vscode-button-secondaryBackground);
-      border-radius: 3px;
+      border: 1px solid transparent;
+      color: var(--vscode-icon-foreground, var(--vscode-descriptionForeground));
+      background: transparent;
+      border-radius: 4px;
       font: inherit;
       line-height: 1;
       cursor: pointer;
+      transition: background-color 80ms linear, color 80ms linear, border-color 80ms linear;
     }
     button:hover {
-      background: var(--vscode-button-secondaryHoverBackground);
+      color: var(--vscode-foreground);
+      background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
+    }
+    button:active {
+      background: var(--vscode-toolbar-activeBackground, rgba(128, 128, 128, 0.22));
     }
     button:focus-visible {
       outline: 1px solid var(--vscode-focusBorder);
-      outline-offset: 2px;
+      outline-offset: 1px;
     }
     .toolbarIcon {
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
       fill: none;
       stroke: currentColor;
       stroke-width: 1.8;
@@ -687,11 +705,20 @@ export function buildPanelHtml(body: string, script = ""): string {
       stroke-linejoin: round;
       pointer-events: none;
     }
+    .toolbarSeparator {
+      width: 1px;
+      height: 16px;
+      margin: 0 2px;
+      background: var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+      opacity: 0.9;
+    }
     .zoomValue {
       min-width: 42px;
       color: var(--vscode-descriptionForeground);
       font-size: 0.85em;
       text-align: right;
+      padding-left: 4px;
+      font-variant-numeric: tabular-nums;
     }
     main {
       flex: 1 1 auto;
