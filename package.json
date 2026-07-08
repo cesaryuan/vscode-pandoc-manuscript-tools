@@ -41,7 +41,8 @@
     "onCommand:pandocManuscriptTools.rebuildIndex",
     "onCommand:pandocManuscriptTools.buildDocxAndOpen",
     "onCommand:pandocManuscriptTools.openImagePreviewToSide",
-    "onCustomEditor:pandocManuscriptTools.metafilePreviewEditor"
+    "onCustomEditor:pandocManuscriptTools.metafilePreviewEditor",
+    "onCustomEditor:pandocManuscriptTools.svgPreviewEditor"
   ],
   "main": "./dist/extension.js",
   "dependencies": {
@@ -105,6 +106,16 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "pandocManuscriptTools.svgPreviewEditor",
+        "displayName": "SVG Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.svg"
+          }
+        ],
+        "priority": "option"
       }
     ],
     "configuration": {

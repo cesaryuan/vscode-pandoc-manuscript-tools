@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
+import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
 import { FencedDivHighlighter } from "./fencedDivHighlighter";
@@ -40,6 +40,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, output)));
   context.subscriptions.push(vscode.window.registerCustomEditorProvider(METAFILE_PREVIEW_EDITOR_VIEW_TYPE, metafilePreviewEditorProvider, {
+    webviewOptions: {
+      retainContextWhenHidden: true,
+    },
+  }));
+  context.subscriptions.push(vscode.window.registerCustomEditorProvider(SVG_PREVIEW_EDITOR_VIEW_TYPE, metafilePreviewEditorProvider, {
     webviewOptions: {
       retainContextWhenHidden: true,
     },
@@ -121,4 +126,3 @@ export function activate(context: vscode.ExtensionContext) {
  * Deactivates the extension.
  */
 export function deactivate() {}
-

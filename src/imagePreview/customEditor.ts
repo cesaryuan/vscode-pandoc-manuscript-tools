@@ -1,22 +1,21 @@
 /*
- * Read-only custom editor for EMF/WMF files.
+ * Read-only custom editor for SVG/EMF/WMF files.
  *
- * VS Code's default text editor cannot display these binary metafiles, so this
- * provider makes opening an EMF/WMF file show the same rendered preview used by
- * hover and side-preview panels.
+ * EMF/WMF use this editor by default, while SVG is exposed as an optional
+ * "Reopen With" preview so source text remains the default SVG editor.
  */
 
 import * as path from "path";
 import * as vscode from "vscode";
 import { buildPanelHtml, buildPreviewHtml, renderWebviewPreviewSource } from "./sidePreview";
 
-const SUPPORTED_METAFILE_EXTENSIONS = new Set([".emf", ".wmf"]);
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
 export class MetafilePreviewCustomEditorProvider {
   declare imagePreviewRenderer;
   declare output: import("vscode").OutputChannel;
   /**
-   * Creates a read-only custom editor provider for EMF/WMF previews.
+   * Creates a read-only custom editor provider for SVG/EMF/WMF previews.
    *
    * @param imagePreviewRenderer Shared preview renderer.
    * @param output Output channel.
@@ -27,7 +26,7 @@ export class MetafilePreviewCustomEditorProvider {
   }
 
   /**
-   * Opens the binary metafile as a lightweight custom document.
+   * Opens the image as a lightweight custom document.
    *
    * @param uri Resource URI.
    */
@@ -39,7 +38,7 @@ export class MetafilePreviewCustomEditorProvider {
   }
 
   /**
-   * Resolves the custom editor webview for one EMF/WMF document.
+   * Resolves the custom editor webview for one SVG/EMF/WMF document.
    *
    * @param document Custom document.
    * @param webviewPanel Preview webview panel.
@@ -54,8 +53,8 @@ export class MetafilePreviewCustomEditorProvider {
     };
     webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
 
-    if (!SUPPORTED_METAFILE_EXTENSIONS.has(extension)) {
-      webviewPanel.webview.html = buildPanelHtml("<p class=\"muted\">This custom editor only supports EMF and WMF files.</p>");
+    if (!SUPPORTED_IMAGE_EXTENSIONS.has(extension)) {
+      webviewPanel.webview.html = buildPanelHtml("<p class=\"muted\">This custom editor only supports SVG, EMF, and WMF files.</p>");
       return;
     }
 
@@ -68,7 +67,7 @@ export class MetafilePreviewCustomEditorProvider {
 
       webviewPanel.webview.html = buildPreviewHtml(imagePath, extension, previewSource);
     } catch (error) {
-      this.output.appendLine(`Metafile custom editor preview failed for ${imagePath}: ${formatError(error)}`);
+      this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
       webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
     }
   }
@@ -95,5 +94,3 @@ function escapeHtml(value: string) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
-
-
