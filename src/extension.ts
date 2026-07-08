@@ -140,12 +140,12 @@ export function deactivate() {}
  */
 async function reopenResourceWithSvgPreview(uri: vscode.Uri | undefined): Promise<void> {
   const resourceUri = uri || vscode.window.activeTextEditor?.document.uri;
-  if (!resourceUri) {
+  if (!resourceUri && !hasActiveEditorTab()) {
     await vscode.window.showWarningMessage("No SVG source editor is active.");
     return;
   }
 
-  await vscode.commands.executeCommand("vscode.openWith", resourceUri, SVG_PREVIEW_EDITOR_VIEW_TYPE, vscode.ViewColumn.Active);
+  await reopenActiveEditorWith(SVG_PREVIEW_EDITOR_VIEW_TYPE, resourceUri);
 }
 
 /**
@@ -155,12 +155,42 @@ async function reopenResourceWithSvgPreview(uri: vscode.Uri | undefined): Promis
  */
 async function reopenResourceWithDefaultEditor(uri: vscode.Uri | undefined): Promise<void> {
   const resourceUri = uri || getActiveCustomEditorUri();
-  if (!resourceUri) {
+  if (!resourceUri && !hasActiveEditorTab()) {
     await vscode.window.showWarningMessage("No SVG preview is active.");
     return;
   }
 
-  await vscode.commands.executeCommand("vscode.openWith", resourceUri, "default", vscode.ViewColumn.Active);
+  await reopenActiveEditorWith("default", resourceUri);
+}
+
+/**
+ * Reopens the active editor with a specific editor id.
+ *
+ * VS Code's public `vscode.openWith` command operates on one URI. In a diff
+ * editor that drops the original side, so use the workbench reopen command first
+ * and keep `openWith` only as a single-resource fallback.
+ *
+ * @param editorId Target editor id, for example `default` or the SVG preview id.
+ * @param fallbackUri Optional single-resource fallback URI.
+ */
+async function reopenActiveEditorWith(editorId: string, fallbackUri: vscode.Uri | undefined): Promise<void> {
+  try {
+    await vscode.commands.executeCommand("reopenActiveEditorWith", editorId);
+    return;
+  } catch (error) {
+    if (!fallbackUri) {
+      throw error;
+    }
+  }
+
+  await vscode.commands.executeCommand("vscode.openWith", fallbackUri, editorId, vscode.ViewColumn.Active);
+}
+
+/**
+ * Checks whether VS Code currently has an active editor tab.
+ */
+function hasActiveEditorTab(): boolean {
+  return Boolean(vscode.window.tabGroups.activeTabGroup.activeTab);
 }
 
 /**
