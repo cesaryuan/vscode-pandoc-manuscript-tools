@@ -7,8 +7,9 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import { OPEN_SVG_SOURCE_TEXT_COMMAND } from "../constants";
 import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
-import { buildPanelHtml, buildPreviewHtml, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
+import { buildPanelHtml, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
@@ -66,7 +67,19 @@ export class MetafilePreviewCustomEditorProvider {
         return;
       }
 
-      webviewPanel.webview.html = buildPreviewHtml(imagePath, previewSource);
+      // SVG source files need an in-webview fallback because diff custom editors
+      // do not reliably expose a title-bar toggle back to text mode.
+      webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string }) => {
+        if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
+          await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
+        }
+      });
+
+      webviewPanel.webview.html = buildPreviewHtml(imagePath, previewSource, {
+        toolbarActions: extension === ".svg"
+          ? buildPreviewActionButton(OPEN_SVG_SOURCE_TEXT_COMMAND, "Source Text", buildSourceTextIcon())
+          : "",
+      });
     } catch (error) {
       this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
       webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);

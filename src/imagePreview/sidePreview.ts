@@ -23,6 +23,10 @@ export type WebviewPreviewSource = (
   | { kind: "inlineSvg"; svg: string; width: number; height: number }
 ) & { localResourceRoots?: import("vscode").Uri[] };
 
+type PreviewHtmlOptions = {
+  toolbarActions?: string;
+};
+
 export class ImagePreviewSidePanel {
   declare imagePreviewRenderer: import("./index").ImagePreviewRenderer;
   declare output: import("vscode").OutputChannel;
@@ -173,13 +177,15 @@ export class ImagePreviewSidePanel {
  *
  * @param imagePath Absolute image path.
  * @param previewSource Rendered image source.
+ * @param options Optional toolbar actions for custom editor workflows.
  */
-export function buildPreviewHtml(imagePath: string, previewSource: WebviewPreviewSource): string {
+export function buildPreviewHtml(imagePath: string, previewSource: WebviewPreviewSource, options: PreviewHtmlOptions = {}): string {
   const label = path.basename(imagePath);
   const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
   return buildPanelHtml(`
     <header>
       <div class="toolbar" role="toolbar">
+        ${options.toolbarActions || ""}
         ${buildToolbarButton("out", "Zoom out", buildZoomOutIcon())}
         ${buildToolbarButton("in", "Zoom in", buildZoomInIcon())}
         ${buildToolbarButton("actual", "Actual size", buildActualSizeIcon())}
@@ -193,6 +199,17 @@ export function buildPreviewHtml(imagePath: string, previewSource: WebviewPrevie
       </div>
     </main>
   `, getPreviewScript());
+}
+
+/**
+ * Builds a command button that matches the zoom toolbar style.
+ *
+ * @param command Webview command identifier.
+ * @param label Accessible label and tooltip.
+ * @param icon Inline SVG icon.
+ */
+export function buildPreviewActionButton(command: string, label: string, icon: string): string {
+  return `<button type="button" title="${escapeAttribute(label)}" aria-label="${escapeAttribute(label)}" data-preview-command="${escapeAttribute(command)}">${icon}</button>`;
 }
 
 /**
@@ -257,6 +274,20 @@ function buildFitIcon() {
     <path d="m15 9 4-4"></path>
     <path d="m9 15-4 4"></path>
     <path d="m15 15 4 4"></path>
+  `);
+}
+
+/**
+ * Builds a source-text icon for the SVG preview fallback action.
+ *
+ */
+export function buildSourceTextIcon() {
+  return buildIconSvg(`
+    <path d="M8 7h8"></path>
+    <path d="M8 12h8"></path>
+    <path d="M8 17h5"></path>
+    <path d="m4.5 9 2-2-2-2"></path>
+    <path d="m4.5 15 2 2-2 2"></path>
   `);
 }
 
@@ -726,6 +757,7 @@ export function buildPanelHtml(body: string, script = ""): string {
 function getPreviewScript() {
   return `<script>
 (() => {
+  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
   const viewport = document.querySelector("[data-preview-viewport]");
   const stage = document.querySelector("[data-preview-stage]");
   const preview = document.querySelector("[data-preview-image]");
@@ -905,6 +937,14 @@ function getPreviewScript() {
   }
 
   document.addEventListener("click", (event) => {
+    const commandButton = event.target.closest("[data-preview-command]");
+    if (commandButton) {
+      if (vscode) {
+        vscode.postMessage({ command: commandButton.getAttribute("data-preview-command") });
+      }
+      return;
+    }
+
     const button = event.target.closest("[data-zoom-action]");
     if (!button) {
       return;
