@@ -818,7 +818,7 @@ function getPreviewScript() {
 
   // Large source images need a lower floor than VS Code's default-like 10%.
   const minScale = 0.01;
-  const maxScale = 8;
+  const maxScale = 100;
   const zoomStep = 1.2;
   let naturalWidth = 1;
   let naturalHeight = 1;
