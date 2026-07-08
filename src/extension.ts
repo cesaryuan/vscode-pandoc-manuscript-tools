@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
+import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
 import { FencedDivHighlighter } from "./fencedDivHighlighter";
@@ -69,6 +69,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
     await imagePreviewSidePanel.open(uri);
   }));
+  context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, async (uri) => {
+    await reopenResourceWithDefaultEditor(uri);
+  }));
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
     void buildRunner.refreshContext();
@@ -126,3 +129,27 @@ export function activate(context: vscode.ExtensionContext) {
  * Deactivates the extension.
  */
 export function deactivate() {}
+
+/**
+ * Reopens the active custom-editor resource with VS Code's default text editor.
+ *
+ * @param uri Optional command resource URI supplied by editor/title.
+ */
+async function reopenResourceWithDefaultEditor(uri: vscode.Uri | undefined): Promise<void> {
+  const resourceUri = uri || getActiveCustomEditorUri();
+  if (!resourceUri) {
+    await vscode.window.showWarningMessage("No SVG preview is active.");
+    return;
+  }
+
+  await vscode.commands.executeCommand("vscode.openWith", resourceUri, "default", vscode.ViewColumn.Active);
+}
+
+/**
+ * Returns the URI from the active custom editor tab, if any.
+ */
+function getActiveCustomEditorUri(): vscode.Uri | undefined {
+  const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+  const input = activeTab?.input;
+  return input instanceof vscode.TabInputCustom ? input.uri : undefined;
+}
