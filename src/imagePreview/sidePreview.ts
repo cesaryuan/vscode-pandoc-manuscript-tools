@@ -238,9 +238,9 @@ function buildToolbarButton(action: string, label: string, icon: string) {
  */
 function buildZoomOutIcon() {
   return buildIconSvg(`
-    <circle cx="10" cy="10" r="5.5"></circle>
-    <path d="M7.5 10h5"></path>
-    <path d="m14.5 14.5 4 4"></path>
+    <circle cx="9.5" cy="9.5" r="5.25"></circle>
+    <path d="M6.75 9.5h5.5"></path>
+    <path d="m13.4 13.4 5.1 5.1"></path>
   `);
 }
 
@@ -250,10 +250,10 @@ function buildZoomOutIcon() {
  */
 function buildZoomInIcon() {
   return buildIconSvg(`
-    <circle cx="10" cy="10" r="5.5"></circle>
-    <path d="M10 7.5v5"></path>
-    <path d="M7.5 10h5"></path>
-    <path d="m14.5 14.5 4 4"></path>
+    <circle cx="9.5" cy="9.5" r="5.25"></circle>
+    <path d="M9.5 6.75v5.5"></path>
+    <path d="M6.75 9.5h5.5"></path>
+    <path d="m13.4 13.4 5.1 5.1"></path>
   `);
 }
 
@@ -263,11 +263,11 @@ function buildZoomInIcon() {
  */
 function buildActualSizeIcon() {
   return buildIconSvg(`
-    <path d="M5.5 5.5h13v13h-13z"></path>
-    <path d="M8.75 9.25v5.5"></path>
-    <circle cx="12" cy="10.5" r="0.8" fill="currentColor" stroke="none"></circle>
-    <circle cx="12" cy="13.5" r="0.8" fill="currentColor" stroke="none"></circle>
-    <path d="M15.25 9.25v5.5"></path>
+    <path d="M5 5h14v14H5z"></path>
+    <path d="M8.5 8.75v6.5"></path>
+    <circle cx="12" cy="10.6" r="0.85" fill="currentColor" stroke="none"></circle>
+    <circle cx="12" cy="13.4" r="0.85" fill="currentColor" stroke="none"></circle>
+    <path d="M15.5 8.75v6.5"></path>
   `);
 }
 
@@ -277,10 +277,10 @@ function buildActualSizeIcon() {
  */
 function buildFitIcon() {
   return buildIconSvg(`
-    <path d="M4 9V4h5"></path>
-    <path d="M20 9V4h-5"></path>
-    <path d="M4 15v5h5"></path>
-    <path d="M20 15v5h-5"></path>
+    <path d="M5 9V5h4"></path>
+    <path d="M19 9V5h-4"></path>
+    <path d="M5 15v4h4"></path>
+    <path d="M19 15v4h-4"></path>
     <path d="m9 9-4-4"></path>
     <path d="m15 9 4-4"></path>
     <path d="m9 15-4 4"></path>
@@ -294,10 +294,10 @@ function buildFitIcon() {
  */
 export function buildSourceTextIcon() {
   return buildIconSvg(`
-    <path d="M8 4.75h6l3 3V19.25H8z"></path>
-    <path d="M14 4.75v3.5h3"></path>
-    <path d="m5.75 10.5-2.5 2.5 2.5 2.5"></path>
-    <path d="m2.75 13 3 0"></path>
+    <path d="M8 5h6.5l3.5 3.5V19H8z"></path>
+    <path d="M14.5 5v3.5H18"></path>
+    <path d="m5.5 10.5-2.75 2.5 2.75 2.5"></path>
+    <path d="M3 13h3.5"></path>
   `);
 }
 
