@@ -17,7 +17,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 type Replacement = { start: number; end: number; value: string };
 type DocumentLike = { uri: vscode.Uri };
 
-type WebviewPreviewSource = (
+export type WebviewPreviewSource = (
   | { kind: "uri"; src: string }
   | { kind: "blob"; mimeType: string; base64: string }
   | { kind: "inlineSvg"; svg: string; width: number; height: number }
@@ -412,7 +412,7 @@ function dataUriToWebviewPreviewSource(dataUri: string): WebviewPreviewSource | 
  *
  * @param svg Raw SVG text.
  */
-function createInlineSvgPreviewSource(svg: string): WebviewPreviewSource {
+export function createInlineSvgPreviewSource(svg: string): WebviewPreviewSource {
   const dimensions = getSvgNaturalDimensions(svg);
   return {
     kind: "inlineSvg",

@@ -7,7 +7,8 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
-import { buildPanelHtml, buildPreviewHtml, renderWebviewPreviewSource } from "./sidePreview";
+import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
+import { buildPanelHtml, buildPreviewHtml, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
@@ -59,7 +60,7 @@ export class MetafilePreviewCustomEditorProvider {
     }
 
     try {
-      const previewSource = await renderWebviewPreviewSource(webviewPanel.webview, this.imagePreviewRenderer, document.uri, imagePath, extension);
+      const previewSource = await renderCustomEditorPreviewSource(webviewPanel.webview, this.imagePreviewRenderer, document.uri, imagePath, extension, this.output);
       if (!previewSource) {
         webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Pandoc Manuscript Tools output for details.</p>`);
         return;
@@ -71,6 +72,44 @@ export class MetafilePreviewCustomEditorProvider {
       webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
     }
   }
+}
+
+/**
+ * Renders a custom-editor image from the exact URI VS Code opened.
+ *
+ * Diff editors pass virtual URIs for the original side. Reading through
+ * `workspace.fs` keeps EMF/WMF previews tied to the correct revision instead
+ * of falling back to the working-tree `fsPath`.
+ *
+ * @param webview Target webview.
+ * @param imagePreviewRenderer Shared preview renderer for normal file previews.
+ * @param uri Image resource URI.
+ * @param imagePath Display path or local file path.
+ * @param extension Lowercase image extension.
+ * @param output Output channel.
+ */
+async function renderCustomEditorPreviewSource(
+  webview: vscode.Webview,
+  imagePreviewRenderer: import("./index").ImagePreviewRenderer,
+  uri: vscode.Uri,
+  imagePath: string,
+  extension: string,
+  output: vscode.OutputChannel,
+): Promise<WebviewPreviewSource | undefined> {
+  if (extension === ".emf" || extension === ".wmf") {
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    const svg = extension === ".emf"
+      ? await convertEmfToSvg(bytes, output)
+      : await convertWmfToSvg(bytes, output);
+    return svg ? createInlineSvgPreviewSource(svg) : undefined;
+  }
+
+  if (extension === ".svg" && uri.scheme !== "file") {
+    const svg = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+    return createInlineSvgPreviewSource(svg);
+  }
+
+  return renderWebviewPreviewSource(webview, imagePreviewRenderer, uri, imagePath, extension);
 }
 
 /**
