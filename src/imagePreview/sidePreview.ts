@@ -160,7 +160,7 @@ export class ImagePreviewSidePanel {
       if (previewSource.localResourceRoots) {
         panel.webview.options = createWebviewOptions(imageUri, previewSource.localResourceRoots);
       }
-      panel.webview.html = buildPreviewHtml(imageUri.fsPath, extension, previewSource);
+      panel.webview.html = buildPreviewHtml(imageUri.fsPath, previewSource);
     } catch (error) {
       this.output.appendLine(`Image side preview failed for ${imageUri.fsPath}: ${formatError(error)}`);
       panel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
@@ -172,18 +172,13 @@ export class ImagePreviewSidePanel {
  * Builds the full image-preview panel HTML.
  *
  * @param imagePath Absolute image path.
- * @param extension Lowercase image extension.
  * @param previewSource Rendered image source.
  */
-export function buildPreviewHtml(imagePath: string, extension: string, previewSource: WebviewPreviewSource): string {
+export function buildPreviewHtml(imagePath: string, previewSource: WebviewPreviewSource): string {
   const label = path.basename(imagePath);
   const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
   return buildPanelHtml(`
     <header>
-      <div class="heading">
-        <div class="title">${escapeHtml(label)}</div>
-        <div class="subtitle">${escapeHtml(extension.toUpperCase().slice(1))}</div>
-      </div>
       <div class="toolbar" role="toolbar">
         ${buildToolbarButton("out", "Zoom out", buildZoomOutIcon())}
         ${buildToolbarButton("in", "Zoom in", buildZoomInIcon())}
@@ -197,7 +192,6 @@ export function buildPreviewHtml(imagePath: string, extension: string, previewSo
         ${previewMarkup}
       </div>
     </main>
-    <footer>${escapeHtml(imagePath)}</footer>
   `, getPreviewScript());
 }
 
@@ -609,31 +603,20 @@ export function buildPanelHtml(body: string, script = ""): string {
       background: var(--vscode-editor-background);
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size);
+      display: flex;
+      flex-direction: column;
       height: 100vh;
       overflow: hidden;
     }
     header {
       display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
+      align-items: center;
+      justify-content: flex-end;
       gap: 12px;
       margin-bottom: 12px;
     }
-    .heading {
-      min-width: 0;
-    }
-    .title {
-      font-weight: 600;
-      overflow-wrap: anywhere;
-    }
-    .subtitle,
-    .muted,
-    footer {
+    .muted {
       color: var(--vscode-descriptionForeground);
-    }
-    .subtitle {
-      margin-top: 2px;
-      font-size: 0.9em;
     }
     .toolbar {
       display: flex;
@@ -680,7 +663,8 @@ export function buildPanelHtml(body: string, script = ""): string {
       text-align: right;
     }
     main {
-      height: calc(100vh - 118px);
+      flex: 1 1 auto;
+      min-height: 0;
       overflow: auto;
       background: var(--vscode-editor-background);
     }
@@ -718,11 +702,6 @@ export function buildPanelHtml(body: string, script = ""): string {
       box-shadow:
         0 0 0 1px var(--vscode-panel-border, rgba(128, 128, 128, 0.55)),
         0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.28));
-    }
-    footer {
-      margin-top: 12px;
-      font-size: 0.85em;
-      overflow-wrap: anywhere;
     }
   </style>
 </head>
@@ -928,4 +907,3 @@ function escapeAttribute(value: string) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
-
