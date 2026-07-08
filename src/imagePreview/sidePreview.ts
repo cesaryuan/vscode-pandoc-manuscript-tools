@@ -813,7 +813,8 @@ function getPreviewScript() {
     return;
   }
 
-  const minScale = 0.1;
+  // Large source images need a lower floor than VS Code's default-like 10%.
+  const minScale = 0.01;
   const maxScale = 8;
   const zoomStep = 1.2;
   let naturalWidth = 1;
