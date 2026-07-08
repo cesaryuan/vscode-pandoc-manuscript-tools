@@ -662,7 +662,7 @@ export function buildPanelHtml(body: string, script = ""): string {
       align-items: center;
       gap: 4px;
       flex: 0 0 auto;
-      padding: 2px 4px;
+      padding: 3px 5px;
       border: 1px solid var(--vscode-widget-border, transparent);
       border-radius: 6px;
       background: var(--vscode-editorWidget-background, transparent);
@@ -672,8 +672,8 @@ export function buildPanelHtml(body: string, script = ""): string {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
+      width: 26px;
+      height: 26px;
       padding: 0;
       border: 1px solid transparent;
       color: var(--vscode-icon-foreground, var(--vscode-descriptionForeground));
@@ -696,11 +696,11 @@ export function buildPanelHtml(body: string, script = ""): string {
       outline-offset: 1px;
     }
     .toolbarIcon {
-      width: 15px;
-      height: 15px;
+      width: 18px;
+      height: 18px;
       fill: none;
       stroke: currentColor;
-      stroke-width: 1.8;
+      stroke-width: 1.9;
       stroke-linecap: round;
       stroke-linejoin: round;
       pointer-events: none;
@@ -713,11 +713,11 @@ export function buildPanelHtml(body: string, script = ""): string {
       opacity: 0.9;
     }
     .zoomValue {
-      min-width: 42px;
+      min-width: 46px;
       color: var(--vscode-descriptionForeground);
       font-size: 0.85em;
       text-align: right;
-      padding-left: 4px;
+      padding-left: 6px;
       font-variant-numeric: tabular-nums;
     }
     main {
