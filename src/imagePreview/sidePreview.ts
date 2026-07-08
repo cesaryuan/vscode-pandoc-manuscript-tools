@@ -706,6 +706,15 @@ export function buildPanelHtml(body: string, script = ""): string {
       height: 100%;
     }
     [data-preview-frame="true"] {
+      /* Checkerboard makes transparent SVG/EMF/WMF regions visible without changing the image data. */
+      background-color: var(--vscode-editor-background);
+      background-image:
+        linear-gradient(45deg, rgba(127, 127, 127, 0.22) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(127, 127, 127, 0.22) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(127, 127, 127, 0.22) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(127, 127, 127, 0.22) 75%);
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      background-size: 16px 16px;
       box-shadow:
         0 0 0 1px var(--vscode-panel-border, rgba(128, 128, 128, 0.55)),
         0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.28));
@@ -919,7 +928,4 @@ function escapeAttribute(value: string) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
-
-
-
 

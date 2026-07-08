@@ -65,7 +65,7 @@ export class MetafilePreviewCustomEditorProvider {
         return;
       }
 
-      webviewPanel.webview.html = buildPreviewHtml(imagePath, extension, previewSource);
+      webviewPanel.webview.html = buildPreviewHtml(imagePath, previewSource);
     } catch (error) {
       this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
       webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
