@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
+import { EXTENSION_NAME, PANDOC_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_SVG_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
 import { FencedDivHighlighter } from "./fencedDivHighlighter";
@@ -69,6 +69,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
     await imagePreviewSidePanel.open(uri);
   }));
+  context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_PREVIEW_COMMAND, async (uri) => {
+    await reopenResourceWithSvgPreview(uri);
+  }));
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, async (uri) => {
     await reopenResourceWithDefaultEditor(uri);
   }));
@@ -129,6 +132,21 @@ export function activate(context: vscode.ExtensionContext) {
  * Deactivates the extension.
  */
 export function deactivate() {}
+
+/**
+ * Reopens an SVG source document with the extension's SVG preview custom editor.
+ *
+ * @param uri Optional command resource URI supplied by editor/title.
+ */
+async function reopenResourceWithSvgPreview(uri: vscode.Uri | undefined): Promise<void> {
+  const resourceUri = uri || vscode.window.activeTextEditor?.document.uri;
+  if (!resourceUri) {
+    await vscode.window.showWarningMessage("No SVG source editor is active.");
+    return;
+  }
+
+  await vscode.commands.executeCommand("vscode.openWith", resourceUri, SVG_PREVIEW_EDITOR_VIEW_TYPE, vscode.ViewColumn.Active);
+}
 
 /**
  * Reopens the active custom-editor resource with VS Code's default text editor.

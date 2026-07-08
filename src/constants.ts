@@ -4,6 +4,7 @@ export const MATH_HOVER_SELECTOR = [...PANDOC_SELECTOR, { language: "latex" }];
 export const BUILD_DOCX_COMMAND = "pandocManuscriptTools.buildDocxAndOpen";
 export const CAN_BUILD_DOCX_CONTEXT = "pandocManuscriptTools.canBuildDocx";
 export const OPEN_IMAGE_PREVIEW_COMMAND = "pandocManuscriptTools.openImagePreviewToSide";
+export const OPEN_SVG_PREVIEW_COMMAND = "pandocManuscriptTools.openSvgPreview";
 export const OPEN_SVG_SOURCE_TEXT_COMMAND = "pandocManuscriptTools.openSvgSourceText";
 export const METAFILE_PREVIEW_EDITOR_VIEW_TYPE = "pandocManuscriptTools.metafilePreviewEditor";
 export const SVG_PREVIEW_EDITOR_VIEW_TYPE = "pandocManuscriptTools.svgPreviewEditor";

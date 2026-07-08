@@ -69,6 +69,11 @@
         "icon": "$(open-preview)"
       },
       {
+        "command": "pandocManuscriptTools.openSvgPreview",
+        "title": "Pandoc Manuscript Tools: Open SVG Preview",
+        "icon": "$(preview)"
+      },
+      {
         "command": "pandocManuscriptTools.openSvgSourceText",
         "title": "Pandoc Manuscript Tools: Reopen SVG as Source Text",
         "icon": "$(file-code)"
@@ -87,6 +92,11 @@
           "group": "navigation"
         },
         {
+          "command": "pandocManuscriptTools.openSvgPreview",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.svg$/i && !activeCustomEditorId",
+          "group": "navigation"
+        },
+        {
           "command": "pandocManuscriptTools.openSvgSourceText",
           "when": "activeCustomEditorId == pandocManuscriptTools.svgPreviewEditor",
           "group": "navigation"
@@ -100,6 +110,10 @@
         {
           "command": "pandocManuscriptTools.openImagePreviewToSide",
           "when": "resourceScheme == file && resourceExtname =~ /\\.(svg|emf|wmf)$/i"
+        },
+        {
+          "command": "pandocManuscriptTools.openSvgPreview",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.svg$/i && !activeCustomEditorId"
         },
         {
           "command": "pandocManuscriptTools.openSvgSourceText",
