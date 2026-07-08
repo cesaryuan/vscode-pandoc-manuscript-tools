@@ -4,9 +4,12 @@ import * as vscode from "vscode";
 import { findImageTokenAtPosition } from "./imageTokenParser";
 import { resolveLocalPath } from "./pathResolver";
 import { renderSvgPreviewDataUri } from "./svgPreview";
-import { renderMetafilePreviewDataUri } from "./emfPreview";
+import { renderMetafilePreviewDataUri, type MetafilePreviewOptions } from "./emfPreview";
 
 type PreviewDocument = { uri: vscode.Uri };
+type ImagePreviewRenderOptions = {
+  metafile?: MetafilePreviewOptions;
+};
 
 export class ImagePreviewRenderer {
   declare output: import("vscode").OutputChannel;
@@ -52,18 +55,19 @@ export class ImagePreviewRenderer {
    * @param document Text document.
    * @param imagePath Absolute image path.
    * @param extension Lowercase image extension.
+   * @param options Optional render settings for non-hover preview contexts.
    */
-  async renderToDataUri(document: PreviewDocument, imagePath: string, extension: string) {
+  async renderToDataUri(document: PreviewDocument, imagePath: string, extension: string, options: ImagePreviewRenderOptions = {}) {
     let cacheKey;
     try {
-      cacheKey = await this.createCacheKey(imagePath, extension);
+      cacheKey = await this.createCacheKey(imagePath, extension, options);
     } catch (error) {
       this.output.appendLine(`Image preview could not read ${imagePath}: ${formatError(error)}`);
       return undefined;
     }
 
     if (!this.cache.has(cacheKey)) {
-      this.cache.set(cacheKey, this.renderToDataUriUncached(document, imagePath, extension));
+      this.cache.set(cacheKey, this.renderToDataUriUncached(document, imagePath, extension, options));
     }
     return this.cache.get(cacheKey);
   }
@@ -73,10 +77,11 @@ export class ImagePreviewRenderer {
    *
    * @param imagePath Absolute image path.
    * @param extension Lowercase image extension.
+   * @param options Optional render settings included in the cache key.
    */
-  async createCacheKey(imagePath: string, extension: string) {
+  async createCacheKey(imagePath: string, extension: string, options: ImagePreviewRenderOptions = {}) {
     const stats = await fs.stat(imagePath);
-    return `${extension}:${imagePath}:${stats.size}:${stats.mtimeMs}`;
+    return `${extension}:${imagePath}:${stats.size}:${stats.mtimeMs}:${renderOptionsCacheSuffix(options)}`;
   }
 
   /**
@@ -85,13 +90,14 @@ export class ImagePreviewRenderer {
    * @param document Document URI used to resolve nested assets.
    * @param imagePath Absolute image path.
    * @param extension Lowercase image extension.
+   * @param options Optional render settings for non-hover preview contexts.
    */
-  async renderToDataUriUncached(document: PreviewDocument, imagePath: string, extension: string) {
+  async renderToDataUriUncached(document: PreviewDocument, imagePath: string, extension: string, options: ImagePreviewRenderOptions = {}) {
     if (extension === ".svg") {
       return renderSvgPreviewDataUri(document, imagePath, this.output);
     }
     if (extension === ".emf" || extension === ".wmf") {
-      return renderMetafilePreviewDataUri(imagePath, extension, this.output);
+      return renderMetafilePreviewDataUri(imagePath, extension, this.output, options.metafile);
     }
     return undefined;
   }
@@ -102,6 +108,15 @@ export class ImagePreviewRenderer {
   dispose() {
     this.cache.clear();
   }
+}
+
+/**
+ * Builds the cache suffix for render options that change generated image data.
+ *
+ * @param options Optional render settings.
+ */
+function renderOptionsCacheSuffix(options: ImagePreviewRenderOptions) {
+  return `metafileMaxHeight=${options.metafile?.maxHeight ?? "default"}`;
 }
 
 /**

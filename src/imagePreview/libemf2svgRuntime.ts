@@ -2,8 +2,11 @@ import * as fs from "fs";
 import * as path from "path";
 const createEmf2SvgModule = require("../../assets/libemf2svg/emf2svg.js");
 
-const DEFAULT_MAX_WIDTH = 450;
-const DEFAULT_MAX_HEIGHT = 150;
+const DEFAULT_MAX_WIDTH = 600;
+const HOVER_METAFILE_MAX_HEIGHT = 150;
+// Webview previews have more room than hovers, so they request taller SVGs
+// directly from the wasm converter instead of resizing Webview DOM nodes.
+export const WEBVIEW_METAFILE_MAX_HEIGHT = 450;
 const POINTER_SIZE = 4;
 
 type LibEmf2SvgModule = {
@@ -17,6 +20,10 @@ type LibEmf2SvgModule = {
 };
 type OutputChannelLike = { appendLine(message: string): void };
 type EmscriptenFactoryOptions = { locateFile(fileName: string): string; print(message: string): void; printErr(message: string): void };
+type MetafileConversionOptions = {
+  maxHeight?: number;
+  maxWidth?: number;
+};
 
 let modulePromise: Promise<LibEmf2SvgModule> | undefined;
 
@@ -25,9 +32,10 @@ let modulePromise: Promise<LibEmf2SvgModule> | undefined;
  *
  * @param bytes EMF file bytes.
  * @param output Output channel.
+ * @param options Optional wasm conversion size limits.
  */
-export async function convertEmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike) {
-  return convertMetafileToSvg(bytes, "EMF", output);
+export async function convertEmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike, options: MetafileConversionOptions = {}) {
+  return convertMetafileToSvg(bytes, "EMF", output, options);
 }
 
 /**
@@ -39,9 +47,10 @@ export async function convertEmfToSvg(bytes: Buffer | Uint8Array, output: Output
  *
  * @param bytes WMF file bytes.
  * @param output Output channel.
+ * @param options Optional wasm conversion size limits.
  */
-export async function convertWmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike) {
-  return convertMetafileToSvg(bytes, "WMF", output);
+export async function convertWmfToSvg(bytes: Buffer | Uint8Array, output: OutputChannelLike, options: MetafileConversionOptions = {}) {
+  return convertMetafileToSvg(bytes, "WMF", output, options);
 }
 
 /**
@@ -50,8 +59,9 @@ export async function convertWmfToSvg(bytes: Buffer | Uint8Array, output: Output
  * @param bytes Metafile bytes.
  * @param format Metafile format.
  * @param output Output channel.
+ * @param options Optional wasm conversion size limits.
  */
-async function convertMetafileToSvg(bytes: Buffer | Uint8Array, format: "EMF" | "WMF", output: OutputChannelLike) {
+async function convertMetafileToSvg(bytes: Buffer | Uint8Array, format: "EMF" | "WMF", output: OutputChannelLike, options: MetafileConversionOptions) {
   const module = await loadLibemf2svgModule(output);
   const inputPtr = module._malloc(bytes.byteLength);
   const outputPtrSlot = module._malloc(POINTER_SIZE);
@@ -63,7 +73,7 @@ async function convertMetafileToSvg(bytes: Buffer | Uint8Array, format: "EMF" | 
     module.setValue(outputPtrSlot, 0, "*");
     module.setValue(outputLenSlot, 0, "i32");
 
-    const ok = callMetafileConverter(module, format, inputPtr, bytes.byteLength, outputPtrSlot, outputLenSlot);
+    const ok = callMetafileConverter(module, format, inputPtr, bytes.byteLength, outputPtrSlot, outputLenSlot, options);
 
     svgPtr = module.getValue(outputPtrSlot, "*");
     const svgLength = module.getValue(outputLenSlot, "i32");
@@ -159,16 +169,20 @@ function formatSvgNumber(value: number) {
  * @param inputLength Input byte length.
  * @param outputPtrSlot Pointer slot receiving the SVG buffer pointer.
  * @param outputLenSlot Pointer slot receiving the SVG byte length.
+ * @param options Optional wasm conversion size limits.
  * @returns Native success flag.
  */
-function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", inputPtr: number, inputLength: number, outputPtrSlot: number, outputLenSlot: number) {
+function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", inputPtr: number, inputLength: number, outputPtrSlot: number, outputLenSlot: number, options: MetafileConversionOptions) {
+  const maxWidth = options.maxWidth ?? DEFAULT_MAX_WIDTH;
+  const maxHeight = options.maxHeight ?? HOVER_METAFILE_MAX_HEIGHT;
+
   if (format === "WMF") {
     return module._wmf2svg_wasm_convert(
       inputPtr,
       inputLength,
       1,
-      DEFAULT_MAX_WIDTH,
-      DEFAULT_MAX_HEIGHT,
+      maxWidth,
+      maxHeight,
       outputPtrSlot,
       outputLenSlot,
     );
@@ -179,8 +193,8 @@ function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", 
     inputLength,
     1,
     1,
-    DEFAULT_MAX_WIDTH,
-    DEFAULT_MAX_HEIGHT,
+    maxWidth,
+    maxHeight,
     outputPtrSlot,
     outputLenSlot,
   );
@@ -227,4 +241,3 @@ function resolveBundledWasmPath() {
 
   throw new Error(`Bundled libemf2svg WASM file is missing. Checked: ${candidates.join("; ")}`);
 }
-
