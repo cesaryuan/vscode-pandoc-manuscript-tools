@@ -63,7 +63,19 @@ export class ParagraphTranslator {
     const cacheKey = `${engine}:${targetLanguage}:${text}`;
     if (!this.translationCache.has(cacheKey)) {
       this.translationCache.set(cacheKey, this.translateTextWithEngine(text, targetLanguage, engine)
-        .then((translatedText) => translatedText === undefined ? undefined : { text: translatedText, engine }));
+        .then((translatedText) => {
+          // Do not cache transient translation failures; the next hover should retry.
+          if (translatedText === undefined) {
+            this.translationCache.delete(cacheKey);
+            return undefined;
+          }
+          return { text: translatedText, engine };
+        })
+        .catch((error): TranslationResult | undefined => {
+          this.translationCache.delete(cacheKey);
+          this.output.appendLine(`Paragraph translation failed unexpectedly: ${String(error)}`);
+          return undefined;
+        }));
     }
 
     return this.translationCache.get(cacheKey);
