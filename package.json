@@ -93,7 +93,7 @@
         },
         {
           "command": "pandocManuscriptTools.openSvgPreview",
-          "when": "resourceScheme == file && resourceExtname =~ /\\.svg$/i && !activeCustomEditorId",
+          "when": "resourceExtname =~ /\\.svg$/i && !activeCustomEditorId",
           "group": "navigation"
         },
         {
@@ -113,7 +113,7 @@
         },
         {
           "command": "pandocManuscriptTools.openSvgPreview",
-          "when": "resourceScheme == file && resourceExtname =~ /\\.svg$/i && !activeCustomEditorId"
+          "when": "resourceExtname =~ /\\.svg$/i && !activeCustomEditorId"
         },
         {
           "command": "pandocManuscriptTools.openSvgSourceText",
