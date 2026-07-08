@@ -71,7 +71,7 @@
       {
         "command": "pandocManuscriptTools.openSvgPreview",
         "title": "Pandoc Manuscript Tools: Open SVG Preview",
-        "icon": "$(preview)"
+        "icon": "$(eye)"
       },
       {
         "command": "pandocManuscriptTools.openSvgSourceText",
