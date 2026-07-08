@@ -668,6 +668,12 @@ export function buildPanelHtml(body: string, script = ""): string {
       overflow: auto;
       background: var(--vscode-editor-background);
     }
+    main.canPan {
+      cursor: grab;
+    }
+    main.isPanning {
+      cursor: grabbing;
+    }
     .stage {
       box-sizing: border-box;
       display: flex;
@@ -683,6 +689,10 @@ export function buildPanelHtml(body: string, script = ""): string {
       flex: 0 0 auto;
       max-width: none;
       max-height: none;
+      user-select: none;
+    }
+    img {
+      -webkit-user-drag: none;
     }
     .svgPreview svg {
       display: block;
@@ -733,6 +743,12 @@ function getPreviewScript() {
   let fitMode = false;
   let blobUrl = "";
   let pendingFitFrame = 0;
+  let isPanning = false;
+  let panPointerId = 0;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panStartScrollLeft = 0;
+  let panStartScrollTop = 0;
 
   /** Converts base64 converter output into bytes for fallback metafile previews. */
   function base64ToBytes(base64) {
@@ -773,6 +789,16 @@ function getPreviewScript() {
     return clampScale(Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight));
   }
 
+  /** Returns whether the rendered image currently overflows the viewport. */
+  function canPanViewport() {
+    return viewport.scrollWidth > viewport.clientWidth + 1 || viewport.scrollHeight > viewport.clientHeight + 1;
+  }
+
+  /** Updates the pan cursor state after zoom or viewport size changes. */
+  function updatePanState() {
+    viewport.classList.toggle("canPan", canPanViewport());
+  }
+
   /** Applies the current scale to the preview image and stage. */
   function render() {
     const width = Math.max(1, Math.round(naturalWidth * scale));
@@ -787,6 +813,7 @@ function getPreviewScript() {
     stage.style.width = Math.max(viewport.clientWidth, width + 32) + "px";
     stage.style.height = Math.max(viewport.clientHeight, height + 32) + "px";
     zoomValue.textContent = Math.round(scale * 100) + "%";
+    updatePanState();
   }
 
   /** Defers fit until the Webview has reported stable viewport dimensions. */
@@ -822,6 +849,47 @@ function getPreviewScript() {
   /** Changes the current zoom by a multiplicative factor. */
   function zoomBy(factor) {
     setScale(scale * factor, false);
+  }
+
+  /** Starts drag-to-pan when the preview is larger than the visible viewport. */
+  function startPan(event) {
+    if (event.button !== 0 || !canPanViewport()) {
+      return;
+    }
+
+    event.preventDefault();
+    isPanning = true;
+    panPointerId = event.pointerId;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    panStartScrollLeft = viewport.scrollLeft;
+    panStartScrollTop = viewport.scrollTop;
+    viewport.classList.add("isPanning");
+    viewport.setPointerCapture(event.pointerId);
+  }
+
+  /** Moves the scroll viewport while the pointer is dragging the preview. */
+  function movePan(event) {
+    if (!isPanning || event.pointerId !== panPointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    viewport.scrollLeft = panStartScrollLeft - (event.clientX - panStartX);
+    viewport.scrollTop = panStartScrollTop - (event.clientY - panStartY);
+  }
+
+  /** Ends drag-to-pan and restores the normal cursor state. */
+  function endPan(event) {
+    if (!isPanning || event.pointerId !== panPointerId) {
+      return;
+    }
+
+    isPanning = false;
+    viewport.classList.remove("isPanning");
+    if (viewport.hasPointerCapture(event.pointerId)) {
+      viewport.releasePointerCapture(event.pointerId);
+    }
   }
 
   /** Sets natural image dimensions after the image has loaded. */
@@ -860,6 +928,11 @@ function getPreviewScript() {
     event.preventDefault();
     zoomBy(event.deltaY < 0 ? zoomStep : 1 / zoomStep);
   }, { passive: false });
+  viewport.addEventListener("pointerdown", startPan);
+  viewport.addEventListener("pointermove", movePan);
+  viewport.addEventListener("pointerup", endPan);
+  viewport.addEventListener("pointercancel", endPan);
+  preview.addEventListener("dragstart", (event) => event.preventDefault());
 
   window.addEventListener("resize", () => {
     if (fitMode) {
