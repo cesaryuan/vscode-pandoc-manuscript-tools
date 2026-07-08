@@ -700,8 +700,8 @@ export function buildPanelHtml(body: string, script = ""): string {
       background-position: 0 0, 0 8px, 8px -8px, -8px 0;
       background-size: 16px 16px;
       box-shadow:
-        0 0 0 1px var(--vscode-panel-border, rgba(128, 128, 128, 0.55)),
-        0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.28));
+        0 16px 42px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.26)),
+        0 4px 14px rgba(0, 0, 0, 0.18);
     }
   </style>
 </head>
@@ -730,7 +730,7 @@ function getPreviewScript() {
   let naturalWidth = 1;
   let naturalHeight = 1;
   let scale = 1;
-  let fitMode = true;
+  let fitMode = false;
   let blobUrl = "";
   let pendingFitFrame = 0;
 
@@ -800,6 +800,18 @@ function getPreviewScript() {
     });
   }
 
+  /** Defers the initial 1:1-or-fit choice until viewport dimensions are stable. */
+  function scheduleInitialScale() {
+    if (pendingFitFrame) {
+      cancelAnimationFrame(pendingFitFrame);
+    }
+    pendingFitFrame = requestAnimationFrame(() => {
+      const fitScale = getFitScale();
+      pendingFitFrame = 0;
+      setScale(fitScale < 1 ? fitScale : 1, fitScale < 1);
+    });
+  }
+
   /** Sets an absolute zoom scale. */
   function setScale(value, nextFitMode) {
     scale = clampScale(value);
@@ -821,7 +833,7 @@ function getPreviewScript() {
       naturalWidth = Number(preview.getAttribute("data-natural-width")) || 1;
       naturalHeight = Number(preview.getAttribute("data-natural-height")) || 1;
     }
-    scheduleFit();
+    scheduleInitialScale();
   }
 
   document.addEventListener("click", (event) => {
