@@ -10,6 +10,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
+import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
 import { WEBVIEW_METAFILE_MAX_HEIGHT } from "./libemf2svgRuntime";
 import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
 
@@ -17,6 +18,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
 type Replacement = { start: number; end: number; value: string };
 type DocumentLike = { uri: vscode.Uri };
+type SidePreviewEntry = { panel: vscode.WebviewPanel; watcher: VisiblePreviewFileWatcher };
 
 export type WebviewPreviewSource = (
   | { kind: "uri"; src: string }
@@ -31,7 +33,7 @@ type PreviewHtmlOptions = {
 export class ImagePreviewSidePanel {
   declare imagePreviewRenderer: import("./index").ImagePreviewRenderer;
   declare output: import("vscode").OutputChannel;
-  declare panels: Map<string, import("vscode").WebviewPanel>;
+  declare panels: Map<string, SidePreviewEntry>;
   /**
    * Creates a side-preview command handler.
    *
@@ -62,17 +64,18 @@ export class ImagePreviewSidePanel {
       return;
     }
 
-    const panel = this.getOrCreatePanel(imageUri);
-    panel.reveal(vscode.ViewColumn.Beside);
-    await this.renderPanel(panel, imageUri, extension);
+    const entry = this.getOrCreatePanel(imageUri);
+    entry.panel.reveal(vscode.ViewColumn.Beside);
+    await this.renderPanel(entry.panel, imageUri, extension);
   }
 
   /**
    * Disposes all side-preview panels.
    */
   dispose() {
-    for (const panel of this.panels.values()) {
-      panel.dispose();
+    for (const entry of this.panels.values()) {
+      entry.watcher.dispose();
+      entry.panel.dispose();
     }
     this.panels.clear();
   }
@@ -87,8 +90,8 @@ export class ImagePreviewSidePanel {
       return;
     }
 
-    const panel = this.panels.get(document.uri.fsPath);
-    if (!panel) {
+    const entry = this.panels.get(document.uri.fsPath);
+    if (!entry) {
       return;
     }
 
@@ -97,7 +100,7 @@ export class ImagePreviewSidePanel {
       return;
     }
 
-    await this.renderPanel(panel, document.uri, extension);
+    entry.watcher.requestRefresh();
   }
 
   /**
@@ -127,21 +130,25 @@ export class ImagePreviewSidePanel {
     const key = imageUri.fsPath;
     const existing = this.panels.get(key);
     if (existing) {
-      existing.webview.options = createWebviewOptions(imageUri);
+      existing.panel.webview.options = createWebviewOptions(imageUri);
       return existing;
     }
 
+    const extension = path.extname(imageUri.fsPath).toLowerCase();
     const panel = vscode.window.createWebviewPanel(
       "pandocManuscriptTools.imagePreview",
       `Preview ${path.basename(imageUri.fsPath)}`,
       vscode.ViewColumn.Beside,
       createWebviewOptions(imageUri),
     );
+    const watcher = new VisiblePreviewFileWatcher(panel, imageUri, () => this.renderPanel(panel, imageUri, extension), this.output);
+    const entry = { panel, watcher };
     panel.onDidDispose(() => {
+      watcher.dispose();
       this.panels.delete(key);
     });
-    this.panels.set(key, panel);
-    return panel;
+    this.panels.set(key, entry);
+    return entry;
   }
 
   /**

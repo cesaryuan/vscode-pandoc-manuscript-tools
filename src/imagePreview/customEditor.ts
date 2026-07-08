@@ -8,6 +8,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { OPEN_SVG_SOURCE_TEXT_COMMAND } from "../constants";
+import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
 import { convertEmfToSvg, convertWmfToSvg, WEBVIEW_METAFILE_MAX_HEIGHT } from "./libemf2svgRuntime";
 import { buildPanelHtml, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
 
@@ -60,20 +61,52 @@ export class MetafilePreviewCustomEditorProvider {
       return;
     }
 
+    const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string }) => {
+      if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
+        await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
+      }
+    });
+    const watcher = new VisiblePreviewFileWatcher(
+      webviewPanel,
+      document.uri,
+      () => this.renderCustomEditorPanel(webviewPanel, document, imagePath, extension, label),
+      this.output,
+    );
+    webviewPanel.onDidDispose(() => {
+      messageListener.dispose();
+      watcher.dispose();
+    });
+
+    await this.renderCustomEditorPanel(webviewPanel, document, imagePath, extension, label);
+  }
+
+  /**
+   * Renders the current custom editor content into its WebviewPanel.
+   *
+   * This method is shared by the initial load and visible-only auto-refresh so
+   * external edits use the same SVG/EMF/WMF rendering path as a newly opened tab.
+   *
+   * @param webviewPanel Preview webview panel.
+   * @param document Custom editor document.
+   * @param imagePath Display path or local file path.
+   * @param extension Lowercase image extension.
+   * @param label File name shown in status text.
+   */
+  private async renderCustomEditorPanel(webviewPanel: vscode.WebviewPanel, document: vscode.CustomDocument, imagePath: string, extension: string, label: string) {
+    webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
+
     try {
       const previewSource = await renderCustomEditorPreviewSource(webviewPanel.webview, this.imagePreviewRenderer, document.uri, imagePath, extension, this.output);
       if (!previewSource) {
         webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Pandoc Manuscript Tools output for details.</p>`);
         return;
       }
-
-      // SVG source files need an in-webview fallback because diff custom editors
-      // do not reliably expose a title-bar toggle back to text mode.
-      webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string }) => {
-        if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
-          await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
-        }
-      });
+      if (previewSource.localResourceRoots) {
+        webviewPanel.webview.options = {
+          enableScripts: true,
+          localResourceRoots: previewSource.localResourceRoots,
+        };
+      }
 
       webviewPanel.webview.html = buildPreviewHtml(imagePath, previewSource, {
         toolbarActions: extension === ".svg"
