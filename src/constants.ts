@@ -1,5 +1,6 @@
 export const EXTENSION_NAME = "Pandoc Manuscript Tools";
 export const PANDOC_SELECTOR = [{ language: "markdown" }, { language: "mdx" }];
+export const IMAGE_PREVIEW_SELECTOR = [...PANDOC_SELECTOR, { language: "html" }, { language: "xml" }, { language: "svg" }];
 export const MATH_HOVER_SELECTOR = [...PANDOC_SELECTOR, { language: "latex" }];
 export const BUILD_DOCX_COMMAND = "pandocManuscriptTools.buildDocxAndOpen";
 export const CAN_BUILD_DOCX_CONTEXT = "pandocManuscriptTools.canBuildDocx";

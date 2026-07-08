@@ -1,7 +1,15 @@
 import * as path from "path";
 import * as vscode from "vscode";
+import { normalizeSupportedImageDataUri } from "./dataUri";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
+
+export type ImageToken = {
+  target: string;
+  extension: string;
+  range: vscode.Range;
+  dataUri?: string;
+};
 
 /**
  * Finds a supported Markdown or HTML image token under the hover position.
@@ -18,7 +26,11 @@ export function findImageTokenAtPosition(document: vscode.TextDocument, position
   if (markdownToken) {
     return markdownToken;
   }
-  return findHtmlImageToken(line, position);
+  const htmlToken = findHtmlImageToken(line, position);
+  if (htmlToken) {
+    return htmlToken;
+  }
+  return findSvgImageToken(line, position);
 }
 
 /**
@@ -96,6 +108,30 @@ function findHtmlImageToken(line: string, position: vscode.Position) {
 }
 
 /**
+ * Finds a supported SVG `<image href="...">` token on one line.
+ *
+ * @param line Source line.
+ * @param position Hover position.
+ */
+function findSvgImageToken(line: string, position: vscode.Position) {
+  const imagePattern = /<image\b[^>]*>/gi;
+  for (const match of line.matchAll(imagePattern)) {
+    const start = match.index || 0;
+    const end = start + match[0].length;
+    if (!isCharacterInside(position.character, start, end)) {
+      continue;
+    }
+
+    const source = getHtmlAttribute(match[0], "href") || getHtmlAttribute(match[0], "xlink:href");
+    const token = createImageToken(source, position.line, start, end);
+    if (token) {
+      return token;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Reads one quoted or unquoted HTML attribute from a tag.
  *
  * @param tag Source HTML tag.
@@ -115,12 +151,22 @@ function getHtmlAttribute(tag: string, attribute: string) {
  * @param start Start character.
  * @param end End character.
  */
-function createImageToken(rawTarget: string | undefined, line: number, start: number, end: number) {
+function createImageToken(rawTarget: string | undefined, line: number, start: number, end: number): ImageToken | undefined {
   if (!rawTarget) {
     return undefined;
   }
 
   const target = decodeMarkdownUrl(rawTarget.trim());
+  const dataUri = normalizeSupportedImageDataUri(target);
+  if (dataUri) {
+    return {
+      target,
+      extension: ".data",
+      dataUri,
+      range: new vscode.Range(line, start, line, end),
+    };
+  }
+
   const extension = path.extname(stripQueryAndHash(target)).toLowerCase();
   if (!SUPPORTED_IMAGE_EXTENSIONS.has(extension)) {
     return undefined;
@@ -166,5 +212,4 @@ function stripQueryAndHash(value: string) {
 function isCharacterInside(character: number, start: number, end: number) {
   return character >= start && character <= end;
 }
-
 

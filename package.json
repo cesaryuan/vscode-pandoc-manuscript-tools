@@ -37,6 +37,9 @@
   "activationEvents": [
     "onLanguage:markdown",
     "onLanguage:mdx",
+    "onLanguage:html",
+    "onLanguage:xml",
+    "onLanguage:svg",
     "onLanguage:latex",
     "onCommand:pandocManuscriptTools.rebuildIndex",
     "onCommand:pandocManuscriptTools.buildDocxAndOpen",

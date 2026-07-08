@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { findImageTokenAtPosition } from "./imageTokenParser";
+import { getDataUriMimeType, prepareImageDataUriForHover } from "./dataUri";
 import { resolveLocalPath } from "./pathResolver";
 import { renderSvgPreviewDataUri } from "./svgPreview";
 import { renderMetafilePreviewDataUri, type MetafilePreviewOptions } from "./emfPreview";
@@ -34,6 +35,14 @@ export class ImagePreviewRenderer {
     const token = findImageTokenAtPosition(document, position);
     if (!token) {
       return undefined;
+    }
+
+    if (token.dataUri) {
+      const dataUri = await prepareImageDataUriForHover(token.dataUri, this.output);
+      if (!dataUri) {
+        return new vscode.Hover(buildImagePreviewUnavailableHover(token.target), token.range);
+      }
+      return new vscode.Hover(buildImagePreviewHover(token.target, dataUri), token.range);
     }
 
     const imagePath = resolveLocalPath(document, token.target);
@@ -127,7 +136,7 @@ function renderOptionsCacheSuffix(options: ImagePreviewRenderOptions) {
  */
 function buildImagePreviewHover(target: string, dataUri: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
-  markdown.appendMarkdown(`**Image preview** \`${path.basename(target)}\`\n\n`);
+  markdown.appendMarkdown(`**Image preview** \`${formatImageTargetLabel(target)}\`\n\n`);
   markdown.appendMarkdown(`![Rendered image preview](${dataUri})`);
   return markdown;
 }
@@ -139,9 +148,23 @@ function buildImagePreviewHover(target: string, dataUri: string) {
  */
 function buildImagePreviewUnavailableHover(target: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
-  markdown.appendMarkdown(`**Image preview** \`${path.basename(target)}\`\n\n`);
+  markdown.appendMarkdown(`**Image preview** \`${formatImageTargetLabel(target)}\`\n\n`);
   markdown.appendMarkdown("$(warning) Preview could not render. See the Pandoc Manuscript Tools output for details.");
   return markdown;
+}
+
+/**
+ * Builds a compact hover label for a file path or embedded data URI.
+ *
+ * @param target Original image target.
+ */
+function formatImageTargetLabel(target: string) {
+  const mimeType = getDataUriMimeType(target);
+  if (mimeType) {
+    return `embedded ${mimeType}`;
+  }
+
+  return path.basename(target);
 }
 
 /**
