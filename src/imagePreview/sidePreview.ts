@@ -263,9 +263,11 @@ function buildZoomInIcon() {
  */
 function buildActualSizeIcon() {
   return buildIconSvg(`
-    <path d="M6 6h12v12H6z"></path>
-    <path d="M9 10h1.5v5"></path>
-    <path d="M13.5 10h1.5v5"></path>
+    <path d="M5.5 5.5h13v13h-13z"></path>
+    <path d="M8.75 9.25v5.5"></path>
+    <circle cx="12" cy="10.5" r="0.8" fill="currentColor" stroke="none"></circle>
+    <circle cx="12" cy="13.5" r="0.8" fill="currentColor" stroke="none"></circle>
+    <path d="M15.25 9.25v5.5"></path>
   `);
 }
 
