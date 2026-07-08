@@ -713,11 +713,11 @@ export function buildPanelHtml(body: string, script = ""): string {
       opacity: 0.9;
     }
     .zoomValue {
-      min-width: 46px;
+      min-width: 40px;
       color: var(--vscode-descriptionForeground);
       font-size: 0.85em;
-      text-align: right;
-      padding-left: 6px;
+      text-align: left;
+      padding-left: 8px;
       font-variant-numeric: tabular-nums;
     }
     main {
