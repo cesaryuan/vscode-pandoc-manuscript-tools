@@ -9,7 +9,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { OPEN_SVG_SOURCE_TEXT_COMMAND } from "../constants";
 import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
-import { convertEmfToSvg, convertWmfToSvg, WEBVIEW_METAFILE_MAX_HEIGHT } from "./libemf2svgRuntime";
+import { convertEmfToSvg, convertWmfToSvg, WEBVIEW_METAFILE_MAX_HEIGHT, WEBVIEW_METAFILE_MAX_WIDTH } from "./libemf2svgRuntime";
 import { buildPanelHtml, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
@@ -144,7 +144,10 @@ async function renderCustomEditorPreviewSource(
 ): Promise<WebviewPreviewSource | undefined> {
   if (extension === ".emf" || extension === ".wmf") {
     const bytes = await vscode.workspace.fs.readFile(uri);
-    const conversionOptions = { maxHeight: WEBVIEW_METAFILE_MAX_HEIGHT };
+    const conversionOptions = {
+      maxWidth: WEBVIEW_METAFILE_MAX_WIDTH,
+      maxHeight: WEBVIEW_METAFILE_MAX_HEIGHT,
+    };
     const svg = extension === ".emf"
       ? await convertEmfToSvg(bytes, output, conversionOptions)
       : await convertWmfToSvg(bytes, output, conversionOptions);

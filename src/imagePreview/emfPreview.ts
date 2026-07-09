@@ -4,6 +4,7 @@ type OutputChannelLike = { appendLine(message: string): void };
 import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
 
 export type MetafilePreviewOptions = {
+  maxWidth?: number;
   maxHeight?: number;
 };
 

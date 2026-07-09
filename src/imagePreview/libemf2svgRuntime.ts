@@ -6,7 +6,8 @@ const DEFAULT_MAX_WIDTH = 600;
 const HOVER_METAFILE_MAX_HEIGHT = 150;
 // Webview previews have more room than hovers, so they request taller SVGs
 // directly from the wasm converter instead of resizing Webview DOM nodes.
-export const WEBVIEW_METAFILE_MAX_HEIGHT = 450;
+export const WEBVIEW_METAFILE_MAX_WIDTH = 0;
+export const WEBVIEW_METAFILE_MAX_HEIGHT = 0;
 const POINTER_SIZE = 4;
 const WASM_EMFPLUS_ENABLED = 1; // Some Visio exported EMF files contain EMF+ data
 const WASM_SVG_DELIMITER_ENABLED = 1;

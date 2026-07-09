@@ -11,7 +11,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
-import { WEBVIEW_METAFILE_MAX_HEIGHT } from "./libemf2svgRuntime";
+import { WEBVIEW_METAFILE_MAX_HEIGHT, WEBVIEW_METAFILE_MAX_WIDTH } from "./libemf2svgRuntime";
 import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
@@ -338,7 +338,10 @@ export async function renderWebviewPreviewSource(webview: vscode.Webview, imageP
 
   const documentLike = { uri: documentUri };
   const dataUri = await imagePreviewRenderer.renderToDataUri(documentLike, imagePath, extension, {
-    metafile: { maxHeight: WEBVIEW_METAFILE_MAX_HEIGHT },
+    metafile: {
+      maxWidth: WEBVIEW_METAFILE_MAX_WIDTH,
+      maxHeight: WEBVIEW_METAFILE_MAX_HEIGHT,
+    },
   });
   return dataUri ? dataUriToWebviewPreviewSource(dataUri) : undefined;
 }

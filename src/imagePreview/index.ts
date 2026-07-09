@@ -125,7 +125,10 @@ export class ImagePreviewRenderer {
  * @param options Optional render settings.
  */
 function renderOptionsCacheSuffix(options: ImagePreviewRenderOptions) {
-  return `metafileMaxHeight=${options.metafile?.maxHeight ?? "default"}`;
+  return [
+    `metafileMaxWidth=${options.metafile?.maxWidth ?? "default"}`,
+    `metafileMaxHeight=${options.metafile?.maxHeight ?? "default"}`,
+  ].join(",");
 }
 
 /**
