@@ -8,6 +8,8 @@ const HOVER_METAFILE_MAX_HEIGHT = 150;
 // directly from the wasm converter instead of resizing Webview DOM nodes.
 export const WEBVIEW_METAFILE_MAX_HEIGHT = 450;
 const POINTER_SIZE = 4;
+const WASM_EMFPLUS_ENABLED = 1; // Some Visio exported EMF files contain EMF+ data
+const WASM_SVG_DELIMITER_ENABLED = 1;
 
 type LibEmf2SvgModule = {
   HEAPU8: Uint8Array;
@@ -15,8 +17,8 @@ type LibEmf2SvgModule = {
   _free(pointer: number): void;
   setValue(pointer: number, value: number, type: "*" | "i32"): void;
   getValue(pointer: number, type: "*" | "i32"): number;
-  _emf2svg_wasm_convert(inputPtr: number, inputLength: number, crop: number, textAsPath: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
-  _wmf2svg_wasm_convert(inputPtr: number, inputLength: number, crop: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
+  _emf2svg_wasm_convert(inputPtr: number, inputLength: number, emfplus: number, svgDelimiter: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
+  _wmf2svg_wasm_convert(inputPtr: number, inputLength: number, svgDelimiter: number, maxWidth: number, maxHeight: number, outputPtrSlot: number, outputLenSlot: number): number;
 };
 type OutputChannelLike = { appendLine(message: string): void };
 type EmscriptenFactoryOptions = { locateFile(fileName: string): string; print(message: string): void; printErr(message: string): void };
@@ -180,7 +182,7 @@ function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", 
     return module._wmf2svg_wasm_convert(
       inputPtr,
       inputLength,
-      1,
+      WASM_SVG_DELIMITER_ENABLED,
       maxWidth,
       maxHeight,
       outputPtrSlot,
@@ -191,8 +193,8 @@ function callMetafileConverter(module: LibEmf2SvgModule, format: "EMF" | "WMF", 
   return module._emf2svg_wasm_convert(
     inputPtr,
     inputLength,
-    1,
-    1,
+    WASM_EMFPLUS_ENABLED,
+    WASM_SVG_DELIMITER_ENABLED,
     maxWidth,
     maxHeight,
     outputPtrSlot,
