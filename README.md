@@ -5,6 +5,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 ## Features
 
 - Go to definition for `@sec:*`, `@fig:*`, `@tbl:*`, and `@eq:*` references.
+- In a file named `reply_to_reviewers.md`, definitions from the workspace-root `manuscript.md` are also available for navigation, hover summaries, completions, and undefined-reference diagnostics.
 - Find all references for Pandoc labels and reference tokens.
 - Hover cards for labels, references, display math blocks, and inline math spans with MathJax-rendered SVG previews. Math hovers work in Markdown, MDX, and LaTeX (`.tex`) editors.
 - Hover previews for local SVG, EMF, and WMF image references in Markdown/MDX. SVG previews inline local `<image href>` assets before rendering, and EMF/WMF previews are shown through SVG preview sources.
@@ -43,7 +44,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 ## Settings
 
 - `pandocManuscriptTools.enableDiagnostics`: report undefined references and duplicate labels.
-- `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document.
+- `pandocManuscriptTools.includeWorkspaceReferences`: preload workspace Markdown files for the index cache; reference lookups stay scoped to the active document except for the built-in `reply_to_reviewers.md` → `manuscript.md` definition link.
 - `pandocManuscriptTools.includeLabelSymbols`: show equation, figure, and table labels in the Outline.
 - `pandocManuscriptTools.highlightFencedDivs`: highlight Pandoc `fenced_divs` blocks with whole-line background colors.
 - `pandocManuscriptTools.highlightBracketedSpans`: highlight Pandoc bracketed spans with inline background colors.

@@ -98,9 +98,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }));
 
-  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
+  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async (document) => {
     if (isPandocDocument(document)) {
-      index.updateDocument(document);
+      await index.prepareDocument(document);
       updateDiagnostics(document, index, diagnostics);
       void buildRunner.refreshContext();
     }
@@ -109,7 +109,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
     if (isPandocDocument(event.document)) {
       index.updateDocument(event.document);
-      updateDiagnostics(event.document, index, diagnostics);
+      if (index.isDefinitionSourceForOpenReviewerReply(event.document)) {
+        updateDiagnosticsForOpenDocuments(index, diagnostics);
+      } else {
+        updateDiagnostics(event.document, index, diagnostics);
+      }
       fencedDivHighlighter.updateVisibleEditors(event.document);
     }
   }));

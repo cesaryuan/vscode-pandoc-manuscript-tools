@@ -1462,7 +1462,7 @@ export function updateDiagnostics(document: vscode.TextDocument, index: PandocWo
   const documentDiagnostics: vscode.Diagnostic[] = [];
 
   for (const reference of parsed.references) {
-    if (!definitionMap.has(reference.label)) {
+    if (index.getDefinitions(document, reference.label).length === 0) {
       const diagnostic = new vscode.Diagnostic(
         toRange(reference.fullRange),
         `Undefined Pandoc cross reference: ${reference.label}`,

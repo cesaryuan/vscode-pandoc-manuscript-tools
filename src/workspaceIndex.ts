@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { parsePandocDocument } from "./parser";
 import { getConfiguration } from "./configuration";
 import { isPandocDocument } from "./vscodeUtils";
+import { isReviewerReplyPath, mergeReviewerReplyDefinitions, resolveReviewerReplyDefinitions } from "./reviewerReplyDefinitions";
 
 export type ParsedCacheEntry = {
   uri: import("vscode").Uri;
@@ -32,13 +33,20 @@ export class PandocWorkspaceIndex {
   async refreshWorkspace() {
     const includeWorkspace = getConfiguration().get("includeWorkspaceReferences", false);
     const openPandocDocuments = vscode.workspace.textDocuments.filter(isPandocDocument);
+    let reviewerManuscriptCount = 0;
 
     for (const document of openPandocDocuments) {
       this.updateDocument(document);
+      if (await this.updateReviewerManuscriptDefinitions(document)) {
+        reviewerManuscriptCount += 1;
+      }
     }
 
     if (!includeWorkspace) {
-      this.output.appendLine(`Indexed ${openPandocDocuments.length} open Pandoc document(s).`);
+      const reviewerSourceSummary = reviewerManuscriptCount > 0
+        ? ` and ${reviewerManuscriptCount} reviewer manuscript definition source(s)`
+        : "";
+      this.output.appendLine(`Indexed ${openPandocDocuments.length} open Pandoc document(s)${reviewerSourceSummary}.`);
       return;
     }
 
@@ -78,6 +86,17 @@ export class PandocWorkspaceIndex {
   }
 
   /**
+   * Prepares one open document and any definition source it depends on.
+   *
+   * @param document Markdown document.
+   */
+  async prepareDocument(document: vscode.TextDocument): Promise<ParsedCacheEntry> {
+    const entry = this.updateDocument(document);
+    await this.updateReviewerManuscriptDefinitions(document);
+    return entry;
+  }
+
+  /**
    * Reads, parses, and caches a Markdown file URI.
    *
    * @param uri Markdown file URI.
@@ -112,7 +131,9 @@ export class PandocWorkspaceIndex {
    * @param label Pandoc label.
    */
   getDefinitions(document: vscode.TextDocument, label: string): import("./parser").LabelEntry[] {
-    return this.getParsedDocument(document).labels.filter((entry) => entry.label === label);
+    const localDefinitions = this.getParsedDocument(document).labels.filter((entry) => entry.label === label);
+    const manuscriptDefinitions = this.getReviewerManuscriptDefinitions(document).filter((entry) => entry.label === label);
+    return resolveReviewerReplyDefinitions(document.uri.path, localDefinitions, manuscriptDefinitions);
   }
 
   /**
@@ -131,7 +152,7 @@ export class PandocWorkspaceIndex {
    * @param document Markdown document whose labels should be returned.
    */
   getAllLabels(document: vscode.TextDocument) {
-    return this.getParsedDocument(document).labels;
+    return this.getEffectiveDefinitions(document);
   }
 
   /**
@@ -153,15 +174,86 @@ export class PandocWorkspaceIndex {
    */
   getDefinitionMap(document: vscode.TextDocument) {
     const map = new Map();
-    // Duplicate and undefined-reference diagnostics are document-local because
-    // separate manuscripts often reuse labels intentionally.
-    for (const label of this.getAllLabels(document)) {
+    // Duplicate-label diagnostics remain document-local. A reviewer reply may
+    // intentionally repeat a manuscript label while quoting revised content.
+    for (const label of this.getParsedDocument(document).labels) {
       if (!map.has(label.label)) {
         map.set(label.label, []);
       }
       map.get(label.label).push(label);
     }
     return map;
+  }
+
+  /**
+   * Checks whether one open document supplies definitions to an open reviewer reply.
+   *
+   * This lets edits in `manuscript.md` refresh dependent reply diagnostics without
+   * broadening every Markdown document to a workspace-wide diagnostic scope.
+   *
+   * @param document Potential manuscript definition source.
+   */
+  isDefinitionSourceForOpenReviewerReply(document: vscode.TextDocument): boolean {
+    return vscode.workspace.textDocuments
+      .filter(isPandocDocument)
+      .some((candidate) => this.getReviewerManuscriptUri(candidate)?.toString() === document.uri.toString());
+  }
+
+  /**
+   * Returns definitions visible from one document.
+   *
+   * Reviewer replies see their local definitions followed by definitions from
+   * `<workspace>/manuscript.md`; every other document remains document-local.
+   *
+   * @param document Markdown document whose definition scope is requested.
+   */
+  private getEffectiveDefinitions(document: vscode.TextDocument): import("./parser").LabelEntry[] {
+    const localDefinitions = this.getParsedDocument(document).labels;
+    const manuscriptDefinitions = this.getReviewerManuscriptDefinitions(document);
+    return mergeReviewerReplyDefinitions(document.uri.path, localDefinitions, manuscriptDefinitions);
+  }
+
+  /**
+   * Returns cached definitions from the reviewer reply's workspace manuscript.
+   *
+   * @param document Potential reviewer-reply document.
+   */
+  private getReviewerManuscriptDefinitions(document: vscode.TextDocument): import("./parser").LabelEntry[] {
+    const manuscriptUri = this.getReviewerManuscriptUri(document);
+    return manuscriptUri ? this.documents.get(manuscriptUri.toString())?.parsed.labels || [] : [];
+  }
+
+  /**
+   * Loads the workspace manuscript used as an extra definition source by a reply.
+   *
+   * @param document Potential reviewer-reply document.
+   */
+  private async updateReviewerManuscriptDefinitions(document: vscode.TextDocument): Promise<ParsedCacheEntry | undefined> {
+    const manuscriptUri = this.getReviewerManuscriptUri(document);
+    if (!manuscriptUri) {
+      return undefined;
+    }
+
+    const openManuscript = vscode.workspace.textDocuments.find((candidate) => candidate.uri.toString() === manuscriptUri.toString());
+    if (openManuscript) {
+      return this.updateDocument(openManuscript);
+    }
+
+    return this.updateUri(manuscriptUri);
+  }
+
+  /**
+   * Resolves `<workspace>/manuscript.md` for the named reviewer-reply file.
+   *
+   * @param document Potential reviewer-reply document.
+   */
+  private getReviewerManuscriptUri(document: vscode.TextDocument): vscode.Uri | undefined {
+    if (!isReviewerReplyPath(document.uri.path)) {
+      return undefined;
+    }
+
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    return workspaceFolder ? vscode.Uri.joinPath(workspaceFolder.uri, "manuscript.md") : undefined;
   }
 }
 

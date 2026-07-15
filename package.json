@@ -31,8 +31,9 @@
     "publish:patch": "npm run check && vsce publish patch",
     "publish:minor": "npm run check && vsce publish minor",
     "profile:test-md": "tsx scripts/profile-test-md.ts test.md",
+    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run bundle && npm run check:bundle"
+    "check": "npm run typecheck && npm test && npm run bundle && npm run check:bundle"
   },
   "activationEvents": [
     "onLanguage:markdown",
@@ -160,7 +161,7 @@
         "pandocManuscriptTools.includeWorkspaceReferences": {
           "type": "boolean",
           "default": false,
-          "description": "Preload Markdown files in the current workspace for the index cache. Definitions, references, completions, and diagnostics remain scoped to the active document."
+          "description": "Preload Markdown files in the current workspace for the index cache. Lookups remain scoped to the active document except that reply_to_reviewers.md also uses definitions from the workspace-root manuscript.md."
         },
         "pandocManuscriptTools.includeLabelSymbols": {
           "type": "boolean",
