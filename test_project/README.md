@@ -14,7 +14,8 @@ Use these targets after pressing F5:
 6. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
 7. Type `@` in the completion sandbox below and confirm labels from this document appear.
 8. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
-9. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
+9. Confirm ``(Line `quoted text`)`` annotations and `Revision Char` span attributes fold to an ellipsis, then expand when the cursor enters the hidden range.
+10. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
 
 Completion sandbox:
 
@@ -150,9 +151,15 @@ Nested fenced div content references @fig:subfigure-a.
 
 ## Bracketed Spans {#sec:bracketed-spans}
 
-The parser tracks Pandoc bracketed spans for inline editor highlighting. This sentence contains [Get out]{custom-style="*"} as a compact custom-style fixture and [an emphatic phrase]{custom-style="Emphatically"} as a named-style fixture.
+The parser tracks Pandoc bracketed spans for inline editor highlighting. This sentence contains [Get out]{custom-style="*"} as a compact custom-style fixture, [an emphatic phrase]{custom-style="Revision Char"} as an attribute-folding fixture, and [a visible named style]{custom-style="Emphatically"} as a non-folding fixture. Only the `Revision Char` attribute block should collapse to an ellipsis, and it should expand when the cursor enters it.
 
 The ordinary Markdown link [Pandoc](https://pandoc.org){#not-a-span-highlight}, the image fixture ![Inline image span decoy.](../assets/icon.png){custom-style="NotASpan"}, and the code span `[Code text]{custom-style="NotASpan"}` should not receive the bracketed span highlight.
+
+## Inline Line Excerpt Folding {#sec:inline-line-excerpt-folding}
+
+This annotation should fold only the quoted content to an ellipsis: (Line `The experimental procedure consists of four main stages`). Moving the cursor into the code span should reveal the full sentence for editing.
+
+This ordinary code span must remain visible because it is not a line annotation: `The experimental procedure consists of four main stages`.
 
 ## Ignored Regions {#sec:ignored-regions}
 

@@ -3,6 +3,7 @@ import { EXTENSION_NAME, PANDOC_SELECTOR, IMAGE_PREVIEW_SELECTOR, MATH_HOVER_SEL
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
 import { FencedDivHighlighter } from "./fencedDivHighlighter";
+import { InlineFoldController } from "./inlineFoldController";
 import { MathJaxRenderer } from "./mathJaxRenderer";
 import { ParagraphTranslator } from "./paragraphTranslator";
 import { ImagePreviewRenderer } from "./imagePreview";
@@ -28,6 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
+  const inlineFoldController = new InlineFoldController(index, output);
 
   output.appendLine("Activated Pandoc Manuscript Tools.");
   if (getConfiguration().get("enableParagraphHoverTranslation", false)) {
@@ -55,6 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
+  context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
     await index.refreshWorkspace();
@@ -79,10 +82,16 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
     void buildRunner.refreshContext();
     fencedDivHighlighter.updateVisibleEditors();
+    inlineFoldController.updateVisibleEditors();
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
     fencedDivHighlighter.updateVisibleEditors();
+    inlineFoldController.updateVisibleEditors();
+  }));
+
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
+    inlineFoldController.updateEditor(event.textEditor);
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
@@ -95,6 +104,12 @@ export function activate(context: vscode.ExtensionContext) {
       || event.affectsConfiguration("pandocManuscriptTools.highlightBracketedSpans")
     ) {
       fencedDivHighlighter.updateVisibleEditors();
+    }
+    if (
+      event.affectsConfiguration("pandocManuscriptTools.foldLineExcerptCodeSpans")
+      || event.affectsConfiguration("pandocManuscriptTools.foldRevisionCharSpanAttributes")
+    ) {
+      inlineFoldController.updateVisibleEditors();
     }
   }));
 
@@ -115,6 +130,7 @@ export function activate(context: vscode.ExtensionContext) {
         updateDiagnostics(event.document, index, diagnostics);
       }
       fencedDivHighlighter.updateVisibleEditors(event.document);
+      inlineFoldController.updateVisibleEditors(event.document);
     }
   }));
 
@@ -130,6 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
   void buildRunner.refreshContext();
   fencedDivHighlighter.updateVisibleEditors();
+  inlineFoldController.updateVisibleEditors();
 }
 
 /**

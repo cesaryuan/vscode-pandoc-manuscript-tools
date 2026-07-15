@@ -7,11 +7,12 @@ export type ReferenceEntry = { label: string; prefix: string; kind: string; uriT
 export type HeadingEntry = { title: string; label?: string; level: number; uriText: string; line: number; character: number; range: PlainRange; selectionRange: PlainRange; preview: string };
 export type MathBlockEntry = { label?: string; display: true; uriText: string; line: number; endLine: number; range: PlainRange; selectionRange: PlainRange; tex: string };
 export type InlineMathEntry = { tex: string; display: false; uriText: string; line: number; character: number; range: PlainRange; fullRange: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
-export type SpanEntry = { uriText: string; attributes: string; line: number; text: string; range: PlainRange; contentRange: PlainRange; offset: number; endOffset: number; preview: string };
+export type SpanEntry = { uriText: string; attributes: string; line: number; text: string; range: PlainRange; contentRange: PlainRange; attributeRange: PlainRange; offset: number; endOffset: number; preview: string };
+export type LineExcerptFoldEntry = { uriText: string; line: number; text: string; range: PlainRange; fullRange: PlainRange; offset: number; endOffset: number; fullOffset: number; fullEndOffset: number; preview: string };
 export type CodeSpanRange = { start: number; end: number };
 export type FencedDivMarker = { type: "open" | "close"; fenceLength: number; attributeText?: string };
 export type FencedDivEntry = { uriText: string; depth: number; attributes: string; closed: boolean; openingFenceLength: number; closingFenceLength?: number; range: PlainRange };
-export type ParsedPandocDocument = { uriText: string; textLength: number; labels: LabelEntry[]; references: ReferenceEntry[]; headings: HeadingEntry[]; mathBlocks: MathBlockEntry[]; inlineMath: InlineMathEntry[]; fencedDivs: FencedDivEntry[]; spans: SpanEntry[]; labelMap: Map<string, LabelEntry[]>; referenceMap: Map<string, ReferenceEntry[]> };
+export type ParsedPandocDocument = { uriText: string; textLength: number; labels: LabelEntry[]; references: ReferenceEntry[]; headings: HeadingEntry[]; mathBlocks: MathBlockEntry[]; inlineMath: InlineMathEntry[]; fencedDivs: FencedDivEntry[]; spans: SpanEntry[]; lineExcerptFolds: LineExcerptFoldEntry[]; labelMap: Map<string, LabelEntry[]>; referenceMap: Map<string, ReferenceEntry[]> };
 export type PandocTokenAtPosition = { type: "label"; entry: LabelEntry } | { type: "reference"; entry: ReferenceEntry };
 
 type FencedDivStackEntry = { line: ParsedLine; marker: FencedDivMarker; depth: number };
@@ -27,6 +28,7 @@ const FENCE_PATTERN = /^\s*(```+|~~~+)/;
 const FENCED_DIV_LINE_PATTERN = /^\s*(:{3,})(.*)$/;
 const DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\$\$\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+\b[^}]*\})?\s*$/;
 const BRACKET_DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\\\]\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+\b[^}]*\})?\s*$/;
+const CUSTOM_STYLE_ATTRIBUTE_PATTERN = /(?:^|\s)custom-style\s*=\s*(["'])(.*?)\1(?=\s|$)/g;
 
 /**
  * Parses a Markdown document with Pandoc-crossref extensions.
@@ -47,6 +49,7 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
   const inlineMath: InlineMathEntry[] = [];
   const fencedDivs = scanFencedDivs(lines, uriText);
   const spans: SpanEntry[] = [];
+  const lineExcerptFolds: LineExcerptFoldEntry[] = [];
   const labelMap = new Map<string, LabelEntry[]>();
   const referenceMap = new Map<string, ReferenceEntry[]>();
 
@@ -109,6 +112,7 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
     addAllReferences(scanReferences(line, uriText), references, referenceMap);
     inlineMath.push(...scanInlineMath(line, uriText));
     spans.push(...scanPandocSpans(line, uriText));
+    lineExcerptFolds.push(...scanLineExcerptFolds(line, uriText));
 
     const heading = scanHeading(line, uriText);
     if (heading) {
@@ -139,6 +143,7 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
     inlineMath,
     fencedDivs,
     spans,
+    lineExcerptFolds,
     labelMap,
     referenceMap,
   };
@@ -403,6 +408,7 @@ function scanPandocSpans(line: ParsedLine, uriText: string): SpanEntry[] {
       text: line.text.slice(openingBracket + 1, index),
       range: createRange(line.number, openingBracket, line.number, closingBrace + 1),
       contentRange: createRange(line.number, openingBracket + 1, line.number, index),
+      attributeRange: createRange(line.number, index + 1, line.number, closingBrace + 1),
       offset: line.startOffset + openingBracket,
       endOffset: line.startOffset + closingBrace + 1,
       preview: line.text.trim(),
@@ -439,6 +445,19 @@ function findClosingAttributeBrace(text: string, start: number): number {
  */
 function isPandocSpanAttributeText(attributes: string): boolean {
   return attributes.length > 0;
+}
+
+/**
+ * Checks whether a Pandoc span has exactly one `Revision Char` custom style.
+ *
+ * Multiple `custom-style` attributes are treated as ambiguous and stay visible;
+ * this prevents an earlier `Revision Char` token from hiding a later override.
+ *
+ * @param attributes Raw attribute text without surrounding braces.
+ */
+export function isRevisionCharCustomStyle(attributes: string): boolean {
+  const customStyleMatches = Array.from(attributes.matchAll(CUSTOM_STYLE_ATTRIBUTE_PATTERN));
+  return customStyleMatches.length === 1 && customStyleMatches[0][2] === "Revision Char";
 }
 
 /**
@@ -682,6 +701,52 @@ function collectMarkdownCodeSpanRanges(text: string): CodeSpanRange[] {
   }
 
   return ranges;
+}
+
+/**
+ * Finds quoted manuscript excerpts in annotations shaped like `(Line `...`)`.
+ *
+ * Only the code-span content becomes foldable. Keeping both backtick delimiters
+ * visible makes the Markdown source recognizable and gives the user a stable
+ * cursor boundary for expanding the hidden excerpt.
+ *
+ * @param line Parsed line.
+ * @param uriText URI string for resulting entries.
+ */
+function scanLineExcerptFolds(line: ParsedLine, uriText: string): LineExcerptFoldEntry[] {
+  const entries: LineExcerptFoldEntry[] = [];
+  const codeSpanRanges = collectMarkdownCodeSpanRanges(line.text);
+
+  for (const codeSpanRange of codeSpanRanges) {
+    const prefix = line.text.slice(0, codeSpanRange.start);
+    const suffix = line.text.slice(codeSpanRange.end);
+    if (!/\(\s*Line\s*$/.test(prefix) || !/^\s*\)/.test(suffix)) {
+      continue;
+    }
+
+    const delimiterEnd = countBacktickRunEnd(line.text, codeSpanRange.start);
+    const delimiterLength = delimiterEnd - codeSpanRange.start;
+    const contentStart = delimiterEnd;
+    const contentEnd = codeSpanRange.end - delimiterLength;
+    if (contentStart >= contentEnd) {
+      continue;
+    }
+
+    entries.push({
+      uriText,
+      line: line.number,
+      text: line.text.slice(contentStart, contentEnd),
+      range: createRange(line.number, contentStart, line.number, contentEnd),
+      fullRange: createRange(line.number, codeSpanRange.start, line.number, codeSpanRange.end),
+      offset: line.startOffset + contentStart,
+      endOffset: line.startOffset + contentEnd,
+      fullOffset: line.startOffset + codeSpanRange.start,
+      fullEndOffset: line.startOffset + codeSpanRange.end,
+      preview: line.text.trim(),
+    });
+  }
+
+  return entries;
 }
 
 /**

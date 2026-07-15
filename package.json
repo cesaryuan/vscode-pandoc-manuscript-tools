@@ -31,7 +31,7 @@
     "publish:patch": "npm run check && vsce publish patch",
     "publish:minor": "npm run check && vsce publish minor",
     "profile:test-md": "tsx scripts/profile-test-md.ts test.md",
-    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts",
+    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts tests/inlineFoldParser.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run bundle && npm run check:bundle"
   },
@@ -177,6 +177,16 @@
           "type": "boolean",
           "default": true,
           "description": "Highlight Pandoc bracketed spans with subtle inline background colors."
+        },
+        "pandocManuscriptTools.foldLineExcerptCodeSpans": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fold the backtick-delimited excerpt in Markdown annotations such as (Line `quoted text`) until the cursor enters it."
+        },
+        "pandocManuscriptTools.foldRevisionCharSpanAttributes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fold the attribute block in Pandoc spans whose custom-style value is exactly Revision Char until the cursor enters it."
         },
         "pandocManuscriptTools.enableInlineMathParagraphHover": {
           "type": "boolean",
