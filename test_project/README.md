@@ -9,7 +9,7 @@ Use these targets after pressing F5:
 1. Ctrl-click or run Go to Definition on @sec:methods, @fig:single-panel, @fig:multi-panel, @tbl:metrics, and @eq:objective.
 2. Run Find All References on `{#eq:objective}` or any `@eq:objective` reference.
 3. Hover over @eq:objective, @tbl:metrics, image labels, table labels, and section labels.
-4. Hover inside the display equation in @eq:objective and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
+4. Hover inside the display equations in @eq:objective and @eq:bracket-objective, and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
 5. Hover over the SVG and EMF image fixtures in @fig:svg-preview-fixture, @fig:svg-relative-image-fixture, and @fig:emf-preview-fixture.
 6. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
 7. Type `@` in the completion sandbox below and confirm labels from this document appear.
@@ -58,6 +58,12 @@ The normal equation in @eq:normal-equation checks a second display math label an
 $$
 \hat{\theta} = \left(X^\top X + \lambda I\right)^{-1}X^\top y
 $$ {#eq:normal-equation}
+
+The following display equation uses LaTeX `\\[` and `\\]` delimiters.
+
+\[
+\mathcal{L}(\theta) = \sum_{i=1}^{n}\ell\left(y_i, f_\theta(x_i)\right)
+\] {#eq:bracket-objective}
 
 An unlabeled display equation should still render a hover preview, but it should not create a cross-reference target.
 

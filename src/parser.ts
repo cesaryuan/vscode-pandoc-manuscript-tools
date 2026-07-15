@@ -16,6 +16,7 @@ export type PandocTokenAtPosition = { type: "label"; entry: LabelEntry } | { typ
 
 type FencedDivStackEntry = { line: ParsedLine; marker: FencedDivMarker; depth: number };
 type BacktickRun = { start: number; end: number; length: number };
+type DisplayMathDelimiter = "$$" | "\\[";
 
 const LABEL_SOURCE = "(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+";
 const LABEL_PATTERN = new RegExp("\\{#(" + LABEL_SOURCE + ")\\b[^}]*\\}", "g");
@@ -25,6 +26,7 @@ const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_PATTERN = /^\s*(```+|~~~+)/;
 const FENCED_DIV_LINE_PATTERN = /^\s*(:{3,})(.*)$/;
 const DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\$\$\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+\b[^}]*\})?\s*$/;
+const BRACKET_DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\\\]\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+\b[^}]*\})?\s*$/;
 
 /**
  * Parses a Markdown document with Pandoc-crossref extensions.
@@ -52,6 +54,7 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
   let inFence = false;
   let fenceMarker = "";
   let inMath = false;
+  let mathDelimiter: DisplayMathDelimiter | undefined;
   let mathStart: ParsedLine | null = null;
   let mathBody: string[] = [];
   const divLabelStack: Array<LabelEntry | undefined> = [];
@@ -84,12 +87,13 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
     }
 
     if (inMath) {
-      const isClosing = DISPLAY_MATH_BOUNDARY_PATTERN.test(line.text);
+      const isClosing = mathDelimiter !== undefined && isDisplayMathEnd(line.text, mathDelimiter);
       if (isClosing) {
         const closingLabels = scanLabels(line, uriText, "math");
         addAllLabels(closingLabels, labels, labelMap);
         mathBlocks.push(createMathBlock(uriText, mathStart, line, mathBody, closingLabels));
         inMath = false;
+        mathDelimiter = undefined;
         mathStart = null;
         mathBody = [];
         continue;
@@ -111,8 +115,10 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
       headings.push(heading);
     }
 
-    if (isDisplayMathStart(line.text)) {
+    const openingDelimiter = getDisplayMathDelimiter(line.text);
+    if (openingDelimiter) {
       inMath = true;
+      mathDelimiter = openingDelimiter;
       mathStart = line;
       mathBody = [];
     }
@@ -194,6 +200,7 @@ function scanFencedDivs(lines: ParsedLine[], uriText: string): FencedDivEntry[] 
   let inFence = false;
   let fenceMarker = "";
   let inMath = false;
+  let mathDelimiter: DisplayMathDelimiter | undefined;
 
   for (const line of lines) {
     const trimmed = line.text.trim();
@@ -223,14 +230,17 @@ function scanFencedDivs(lines: ParsedLine[], uriText: string): FencedDivEntry[] 
     }
 
     if (inMath) {
-      if (DISPLAY_MATH_BOUNDARY_PATTERN.test(line.text)) {
+      if (mathDelimiter !== undefined && isDisplayMathEnd(line.text, mathDelimiter)) {
         inMath = false;
+        mathDelimiter = undefined;
       }
       continue;
     }
 
-    if (isDisplayMathStart(line.text)) {
+    const openingDelimiter = getDisplayMathDelimiter(line.text);
+    if (openingDelimiter) {
       inMath = true;
+      mathDelimiter = openingDelimiter;
       continue;
     }
 
@@ -824,12 +834,32 @@ function isEscaped(text: string, index: number): boolean {
 }
 
 /**
- * Checks whether a line starts a display math block.
+ * Gets the supported display-math opening delimiter on a standalone line.
  *
  * @param lineText Line text.
  */
-function isDisplayMathStart(lineText: string): boolean {
-  return /^\s*\$\$\s*$/.test(lineText);
+function getDisplayMathDelimiter(lineText: string): DisplayMathDelimiter | undefined {
+  if (/^\s*\$\$\s*$/.test(lineText)) {
+    return "$$";
+  }
+  if (/^\s*\\\[\s*$/.test(lineText)) {
+    return "\\[";
+  }
+  return undefined;
+}
+
+/**
+ * Checks whether a line closes a display-math block opened by its matching delimiter.
+ *
+ * This keeps `\\[ ... \\]` blocks from accidentally closing at a `$$` line.
+ *
+ * @param lineText Line text.
+ * @param openingDelimiter Delimiter that opened the current block.
+ */
+function isDisplayMathEnd(lineText: string, openingDelimiter: DisplayMathDelimiter): boolean {
+  return openingDelimiter === "$$"
+    ? DISPLAY_MATH_BOUNDARY_PATTERN.test(lineText)
+    : BRACKET_DISPLAY_MATH_BOUNDARY_PATTERN.test(lineText);
 }
 
 /**
