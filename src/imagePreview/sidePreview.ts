@@ -13,6 +13,7 @@ import * as vscode from "vscode";
 import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
 import { WEBVIEW_METAFILE_MAX_HEIGHT, WEBVIEW_METAFILE_MAX_WIDTH } from "./libemf2svgRuntime";
 import { resolveLocalPath, isDataUri, isRemoteUrl } from "./pathResolver";
+import { getPreviewCanvasAppearance, type PreviewCanvasAppearance } from "./previewAppearance";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
@@ -189,7 +190,8 @@ export class ImagePreviewSidePanel {
  */
 export function buildPreviewHtml(imagePath: string, previewSource: WebviewPreviewSource, options: PreviewHtmlOptions = {}): string {
   const label = path.basename(imagePath);
-  const previewMarkup = previewSourceToPreviewMarkup(previewSource, label);
+  const canvasAppearance = getPreviewCanvasAppearance(imagePath);
+  const previewMarkup = previewSourceToPreviewMarkup(previewSource, label, canvasAppearance);
   const toolbarActions = options.toolbarActions ? `${options.toolbarActions}${buildToolbarSeparator()}` : "";
   return buildPanelHtml(`
     <header>
@@ -500,10 +502,11 @@ export function createInlineSvgPreviewSource(svg: string): WebviewPreviewSource 
  * @param previewSource Rendered image source.
  * @param label Accessible preview label.
  */
-function previewSourceToPreviewMarkup(previewSource: WebviewPreviewSource, label: string) {
+function previewSourceToPreviewMarkup(previewSource: WebviewPreviewSource, label: string, canvasAppearance: PreviewCanvasAppearance) {
+  const previewFrameAttributes = `data-preview-image data-preview-frame="true" data-preview-canvas="${canvasAppearance}"`;
   if (previewSource.kind === "inlineSvg") {
     return [
-      `<div data-preview-image data-preview-frame="true" data-preview-kind="inline-svg" class="svgPreview" role="img" aria-label="${escapeAttribute(label)}"`,
+      `<div ${previewFrameAttributes} data-preview-kind="inline-svg" class="svgPreview" role="img" aria-label="${escapeAttribute(label)}"`,
       ` data-natural-width="${escapeAttribute(String(previewSource.width))}"`,
       ` data-natural-height="${escapeAttribute(String(previewSource.height))}">`,
       previewSource.svg,
@@ -512,7 +515,7 @@ function previewSourceToPreviewMarkup(previewSource: WebviewPreviewSource, label
   }
 
   const imageAttributes = previewSourceToImageAttributes(previewSource);
-  return `<img data-preview-image data-preview-frame="true" ${imageAttributes} alt="${escapeAttribute(label)}">`;
+  return `<img ${previewFrameAttributes} ${imageAttributes} alt="${escapeAttribute(label)}">`;
 }
 
 /**
@@ -791,7 +794,7 @@ export function buildPanelHtml(body: string, script = ""): string {
       height: 100%;
     }
     [data-preview-frame="true"] {
-      /* Checkerboard makes transparent SVG/EMF/WMF regions visible without changing the image data. */
+      /* Checkerboard makes transparent SVG regions visible without changing image data. */
       background-color: var(--vscode-editor-background);
       background-image:
         linear-gradient(45deg, rgba(127, 127, 127, 0.22) 25%, transparent 25%),
@@ -803,6 +806,15 @@ export function buildPanelHtml(body: string, script = ""): string {
       box-shadow:
         0 16px 42px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.26)),
         0 4px 14px rgba(0, 0, 0, 0.18);
+    }
+    body.vscode-dark [data-preview-frame="true"][data-preview-canvas="metafile"] {
+      /* Only dark themes need this soft gray contrast layer for transparent black EMF/WMF drawings. */
+      background-color: #e7e7e7;
+      background-image:
+        linear-gradient(45deg, rgba(0, 0, 0, 0.08) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(0, 0, 0, 0.08) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.08) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(0, 0, 0, 0.08) 75%);
     }
   </style>
 </head>
