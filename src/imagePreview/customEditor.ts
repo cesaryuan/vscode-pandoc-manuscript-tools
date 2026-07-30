@@ -154,11 +154,6 @@ async function renderCustomEditorPreviewSource(
     return svg ? createInlineSvgPreviewSource(svg) : undefined;
   }
 
-  if (extension === ".svg" && uri.scheme !== "file") {
-    const svg = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
-    return createInlineSvgPreviewSource(svg);
-  }
-
   return renderWebviewPreviewSource(webview, imagePreviewRenderer, uri, imagePath, extension);
 }
 

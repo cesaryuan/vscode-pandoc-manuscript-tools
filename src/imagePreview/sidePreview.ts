@@ -7,7 +7,6 @@
  * for SVG href rewriting and EMF/WMF conversion.
  */
 
-import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
@@ -349,17 +348,19 @@ export async function renderWebviewPreviewSource(webview: vscode.Webview, imageP
 }
 
 /**
- * Rewrites a local SVG file into inline SVG for Webview preview.
+ * Rewrites an SVG document into inline SVG for Webview preview.
  *
  * This is needed because SVG loaded as `<img src="blob:...">` cannot reliably
  * load nested local images, even after the hrefs are rewritten to Webview URIs.
+ * Reading with the VS Code filesystem keeps a Git diff's original SVG content
+ * separate from the working-tree file while nested images use local paths.
  *
  * @param webview Target webview.
  * @param documentUri SVG document URI.
  * @param imagePath Absolute SVG path.
  */
 async function renderSvgInlinePreviewSource(webview: vscode.Webview, documentUri: vscode.Uri, imagePath: string): Promise<WebviewPreviewSource> {
-  const svg = await fs.readFile(imagePath, "utf8");
+  const svg = Buffer.from(await vscode.workspace.fs.readFile(documentUri)).toString("utf8");
   const documentLike = { uri: documentUri };
   const rewritten = rewriteSvgImageReferencesToWebviewUris(webview, documentLike, svg, path.dirname(imagePath));
   return {

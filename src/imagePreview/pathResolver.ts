@@ -26,11 +26,12 @@ export function resolveLocalPath(document: { uri: import("vscode").Uri }, target
     return withoutSuffix;
   }
 
-  if (document.uri.scheme !== "file") {
+  // Git-backed diff resources are virtual, but SVG preview supplies the
+  // displayed file directory explicitly so nested images can use local paths.
+  const root = baseDirectory || (document.uri.scheme === "file" ? path.dirname(document.uri.fsPath) : undefined);
+  if (!root) {
     return undefined;
   }
-
-  const root = baseDirectory || path.dirname(document.uri.fsPath);
   return path.resolve(root, normalizeRelativeSeparators(withoutSuffix));
 }
 
@@ -86,4 +87,3 @@ function stripQueryAndHash(value: string) {
 function normalizeRelativeSeparators(value: string) {
   return value.replace(/[\\/]+/g, path.sep);
 }
-
