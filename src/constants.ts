@@ -9,3 +9,5 @@ export const OPEN_SVG_PREVIEW_COMMAND = "pandocManuscriptTools.openSvgPreview";
 export const OPEN_SVG_SOURCE_TEXT_COMMAND = "pandocManuscriptTools.openSvgSourceText";
 export const METAFILE_PREVIEW_EDITOR_VIEW_TYPE = "pandocManuscriptTools.metafilePreviewEditor";
 export const SVG_PREVIEW_EDITOR_VIEW_TYPE = "pandocManuscriptTools.svgPreviewEditor";
+/** VS Code's upstream guard for hiding its built-in SVG preview action. */
+export const HAS_CUSTOM_IMAGE_PREVIEW_CONTEXT = "hasCustomImagePreview";

@@ -12,6 +12,7 @@ import { MetafilePreviewCustomEditorProvider } from "./imagePreview/customEditor
 import { getConfiguration } from "./configuration";
 import { isPandocDocument } from "./vscodeUtils";
 import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
+import { CustomImagePreviewContext } from "./customImagePreviewContext";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -30,13 +31,20 @@ export function activate(context: vscode.ExtensionContext) {
   const buildRunner = new PandocBuildRunner(output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);
+  const customImagePreviewContext = new CustomImagePreviewContext((key, value) => {
+    // Releases containing upstream PR #327736 use this key to suppress the duplicate SVG action.
+    void vscode.commands.executeCommand("setContext", key, value).then(undefined, (error) => {
+      output.appendLine(`Could not update the custom image preview context: ${String(error)}`);
+    });
+  });
 
   output.appendLine("Activated Pandoc Manuscript Tools.");
+  customImagePreviewContext.enable();
   if (getConfiguration().get("enableParagraphHoverTranslation", false)) {
     void paragraphTranslator.initialize();
   }
 
-  context.subscriptions.push(output, diagnostics);
+  context.subscriptions.push(output, diagnostics, customImagePreviewContext);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(IMAGE_PREVIEW_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
