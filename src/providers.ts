@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { EXTENSION_NAME } from "./constants";
 import { getConfiguration } from "./configuration";
 import { parsePandocDocument, findMathBlockAtPosition, findInlineMathAtPosition, findTokenAtPosition, containsPosition } from "./parser";
+import { buildHeadingFoldingRanges, getHeadingSectionEndLine } from "./headingStructure";
 import { toRange, toLocation, toLocationLink, toPlainPosition, toSymbolKind, isPandocDocument, supportsPandocTextFeatures } from "./vscodeUtils";
 import type { PandocWorkspaceIndex } from "./workspaceIndex";
 import type { MathJaxRenderer } from "./mathJaxRenderer";
@@ -495,11 +496,43 @@ export class PandocDocumentSymbolProvider {
    */
   provideDocumentSymbols(document: vscode.TextDocument) {
     const parsed = this.index.getParsedDocument(document);
-    const headingSymbols = buildHeadingTree(parsed.headings);
+    const headingSymbols = buildHeadingTree(parsed.headings, document);
     if (getConfiguration().get("includeLabelSymbols", true)) {
       addLabelSymbols(parsed.labels, headingSymbols);
     }
     return headingSymbols;
+  }
+}
+
+export class PandocFoldingRangeProvider {
+  declare index: PandocWorkspaceIndex;
+  /**
+   * @param index Workspace index used to reuse the Pandoc parser cache.
+   */
+  constructor(index: PandocWorkspaceIndex) {
+    this.index = index;
+  }
+
+  /**
+   * Provides heading folds independently of VS Code's built-in Markdown parser.
+   *
+   * Pandoc labels on display-math delimiters can make that parser stay in math
+   * mode and hide all later heading folds. This provider uses the same parser as
+   * the repaired Outline so those headings remain foldable and Sticky Scroll can
+   * use the resulting section boundaries.
+   *
+   * @param document Markdown document.
+   * @param _context Folding context reserved by VS Code.
+   * @param token Cancellation token.
+   */
+  provideFoldingRanges(document: vscode.TextDocument, _context: vscode.FoldingContext, token: vscode.CancellationToken) {
+    if (token.isCancellationRequested) {
+      return undefined;
+    }
+
+    const parsed = this.index.getParsedDocument(document);
+    return buildHeadingFoldingRanges(parsed.headings, document.lineCount)
+      .map((range) => new vscode.FoldingRange(range.start, range.end));
   }
 }
 
@@ -1282,16 +1315,21 @@ function appendMathJaxUnavailableMessage(markdown: vscode.MarkdownString) {
 }
 
 
-function buildHeadingTree(headings: HeadingEntry[]): vscode.DocumentSymbol[] {
+function buildHeadingTree(headings: HeadingEntry[], document: vscode.TextDocument): vscode.DocumentSymbol[] {
   const roots: vscode.DocumentSymbol[] = [];
   const stack: Array<{ level: number; symbol: vscode.DocumentSymbol }> = [];
 
   for (const heading of headings) {
+    const sectionEndLine = getHeadingSectionEndLine(heading, headings, document.lineCount);
+    const sectionRange = new vscode.Range(
+      new vscode.Position(heading.line, 0),
+      new vscode.Position(sectionEndLine, document.lineAt(sectionEndLine).text.length),
+    );
     const symbol = new vscode.DocumentSymbol(
       formatHeadingSymbolName(heading),
       heading.label || "",
       vscode.SymbolKind.String,
-      toRange(heading.range),
+      sectionRange,
       toRange(heading.selectionRange),
     );
 

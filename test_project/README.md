@@ -12,10 +12,11 @@ Use these targets after pressing F5:
 4. Hover inside the display equations in @eq:objective and @eq:bracket-objective, and the inline math spans $a^2 + b^2 = c^2$ and \( \nabla_\theta J(\theta) \).
 5. Hover over the SVG and EMF image fixtures in @fig:svg-preview-fixture, @fig:svg-relative-image-fixture, and @fig:emf-preview-fixture.
 6. Open Outline and confirm heading labels, figure labels, table labels, equation labels, and nested subfigure labels are visible.
-7. Type `@` in the completion sandbox below and confirm labels from this document appear.
-8. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
-9. Confirm ``(Line `quoted text`)`` annotations and `Revision Char` span attributes fold to an ellipsis, then expand when the cursor enters the hidden range.
-10. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
+7. Fold `## Methods`, `### Display Math`, and the headings after labeled display math; enable Sticky Scroll and confirm the active heading hierarchy remains visible while scrolling.
+8. Type `@` in the completion sandbox below and confirm labels from this document appear.
+9. Confirm Pandoc fenced divs and bracketed spans have subtle editor background highlights.
+10. Confirm ``(Line `quoted text`)`` annotations and `Revision Char` span attributes fold to an ellipsis, then expand when the cursor enters the hidden range.
+11. Open Problems and confirm the deliberate undefined reference and duplicate label diagnostics near the end.
 
 Completion sandbox:
 

@@ -12,6 +12,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Optional paragraph translation hovers that show whether Google Translate or Microsoft Translator handled the current translation.
 - Optional paragraph-level hover previews for Markdown paragraphs that contain inline math.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
+- Pandoc-aware heading folding and full section ranges so heading folds and Sticky Scroll remain usable after labeled display math.
 - Whole-line highlighting for Pandoc `fenced_divs` blocks, with subtle background colors that alternate by nesting depth.
 - Inline highlighting for Pandoc bracketed spans such as `[Get out]{custom-style="Emphatically"}`.
 - Inline folding for quoted line annotations such as ``(Line `quoted text`)``; moving the cursor into the code span temporarily reveals the excerpt for editing.

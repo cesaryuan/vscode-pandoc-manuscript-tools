@@ -11,7 +11,7 @@ import { ImagePreviewSidePanel } from "./imagePreview/sidePreview";
 import { MetafilePreviewCustomEditorProvider } from "./imagePreview/customEditor";
 import { getConfiguration } from "./configuration";
 import { isPandocDocument } from "./vscodeUtils";
-import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
+import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocFoldingRangeProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
 
 /**
@@ -60,6 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
   }));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
+  context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(PANDOC_SELECTOR, new PandocFoldingRangeProvider(index)));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
