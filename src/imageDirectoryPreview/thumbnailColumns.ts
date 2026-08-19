@@ -38,11 +38,11 @@ export function getThumbnailSizeForColumns(viewportWidth: number, columns: numbe
   return Math.max(MIN_THUMBNAIL_SIZE_PX, Math.floor((availableWidth - DIRECTORY_PREVIEW_GAP_PX * (safeColumns - 1)) / safeColumns));
 }
 
-/** Applies one Ctrl-wheel step, where wheel-up adds a column and wheel-down removes one. */
+/** Applies one Ctrl-wheel step, where wheel-up removes a column and wheel-down adds one. */
 export function getWheelAdjustedColumnCount(currentColumns: number, deltaY: number, bounds: ColumnCountBounds): number {
   if (!Number.isFinite(deltaY) || deltaY === 0) {
     return clampColumnCount(currentColumns, bounds);
   }
-  const direction = deltaY < 0 ? 1 : -1;
+  const direction = deltaY < 0 ? -1 : 1;
   return clampColumnCount(currentColumns + direction, bounds);
 }

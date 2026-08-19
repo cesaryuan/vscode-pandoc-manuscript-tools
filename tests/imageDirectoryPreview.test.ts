@@ -105,10 +105,10 @@ function constrainsColumnCountToViewportAndWheelDirection(): void {
   assert.deepEqual(bounds, { min: 1, max: 7 });
   assert.equal(clampColumnCount(12, bounds), 7);
   assert.equal(clampColumnCount(0, bounds), 1);
-  assert.equal(getWheelAdjustedColumnCount(4, -100, bounds), 5);
-  assert.equal(getWheelAdjustedColumnCount(4, 100, bounds), 3);
-  assert.equal(getWheelAdjustedColumnCount(7, -100, bounds), 7);
-  assert.equal(getWheelAdjustedColumnCount(1, 100, bounds), 1);
+  assert.equal(getWheelAdjustedColumnCount(4, -100, bounds), 3);
+  assert.equal(getWheelAdjustedColumnCount(4, 100, bounds), 5);
+  assert.equal(getWheelAdjustedColumnCount(1, -100, bounds), 1);
+  assert.equal(getWheelAdjustedColumnCount(7, 100, bounds), 7);
   assert.equal(getThumbnailSizeForColumns(800, 4, 32), 183);
 }
 
