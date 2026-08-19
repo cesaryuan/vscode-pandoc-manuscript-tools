@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { EXTENSION_NAME, PANDOC_SELECTOR, IMAGE_PREVIEW_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_SVG_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
+import { EXTENSION_NAME, PANDOC_SELECTOR, IMAGE_PREVIEW_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_IMAGE_DIRECTORY_PREVIEW_COMMAND, OPEN_SVG_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
 import { FencedDivHighlighter } from "./fencedDivHighlighter";
@@ -8,6 +8,7 @@ import { MathJaxRenderer } from "./mathJaxRenderer";
 import { ParagraphTranslator } from "./paragraphTranslator";
 import { ImagePreviewRenderer } from "./imagePreview";
 import { ImagePreviewSidePanel } from "./imagePreview/sidePreview";
+import { ImageDirectoryPreview } from "./imageDirectoryPreview";
 import { MetafilePreviewCustomEditorProvider } from "./imagePreview/customEditor";
 import { getConfiguration } from "./configuration";
 import { isPandocDocument } from "./vscodeUtils";
@@ -27,6 +28,7 @@ export function activate(context: vscode.ExtensionContext) {
   const paragraphTranslator = new ParagraphTranslator(output);
   const imagePreviewRenderer = new ImagePreviewRenderer(output);
   const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
+  const imageDirectoryPreview = new ImageDirectoryPreview(context.extensionUri, output);
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
@@ -65,6 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
+  context.subscriptions.push({ dispose: () => imageDirectoryPreview.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
   context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
 
@@ -80,6 +83,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
     await imagePreviewSidePanel.open(uri);
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_DIRECTORY_PREVIEW_COMMAND, async (uri) => {
+    await imageDirectoryPreview.open(uri);
   }));
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_PREVIEW_COMMAND, async (uri) => {
     await reopenResourceWithSvgPreview(uri);
