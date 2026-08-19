@@ -112,7 +112,7 @@ function constrainsColumnCountToViewportAndWheelDirection(): void {
   assert.equal(getWheelAdjustedColumnCount(4, 100, bounds), 5);
   assert.equal(getWheelAdjustedColumnCount(1, -100, bounds), 1);
   assert.equal(getWheelAdjustedColumnCount(7, 100, bounds), 7);
-  assert.equal(getThumbnailSizeForColumns(800, 4, 32), 183);
+  assert.equal(getThumbnailSizeForColumns(800, 4, 32), 181);
 }
 
 /** Verifies Grid and Folder cards can derive their height from each image's natural ratio. */
@@ -150,6 +150,16 @@ function includesUsefulImageHoverMetadata(): void {
   ]);
 }
 
+/** Verifies image cards retain visible spacing, an outer boundary, and a caption separator. */
+function givesImageCardsDistinctVisualBoundaries(): void {
+  const previewSource = readFileSync("src/imageDirectoryPreview/index.ts", "utf8");
+
+  assert.match(previewSource, /--card-gap: 14px/);
+  assert.match(previewSource, /\.image-card \{[^}]*border: 1px solid var\(--vscode-editorWidget-border/);
+  assert.match(previewSource, /\.caption \{[^}]*border-top: 1px solid/);
+  assert.match(previewSource, /\.image-card:hover \{[^}]*box-shadow:/);
+}
+
 test("recognizes images supported by the directory preview", verifiesSupportedDirectoryPreviewImages);
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
@@ -162,3 +172,4 @@ test("constrains column count to the viewport and maps Ctrl-wheel direction", co
 test("derives Grid and Folder image height from the natural aspect ratio", derivesNaturalImageHeightFromAspectRatio);
 test("gives stretched Grid and Folder card height to the thumbnail", givesStretchedGridCardHeightToTheThumbnail);
 test("includes useful image hover metadata", includesUsefulImageHoverMetadata);
+test("gives image cards distinct visual boundaries", givesImageCardsDistinctVisualBoundaries);

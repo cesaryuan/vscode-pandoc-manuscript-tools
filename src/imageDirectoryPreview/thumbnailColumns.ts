@@ -6,7 +6,7 @@
  */
 
 export const MIN_THUMBNAIL_SIZE_PX = 96;
-export const DIRECTORY_PREVIEW_GAP_PX = 12;
+export const DIRECTORY_PREVIEW_GAP_PX = 14;
 
 export type ColumnCountBounds = {
   min: number;

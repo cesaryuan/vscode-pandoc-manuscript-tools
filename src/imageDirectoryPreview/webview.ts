@@ -10,7 +10,7 @@
  */
 
 import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "./virtualScroll";
-import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "./thumbnailColumns";
+import { clampColumnCount, DIRECTORY_PREVIEW_GAP_PX, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "./thumbnailColumns";
 import { getImageAspectRatio } from "./imageSizing";
 import { getImageHoverDetails } from "./imageHoverDetails";
 
@@ -204,7 +204,7 @@ function startDirectoryPreview(): void {
 
   /** Estimates a masonry card height without forcing browser layout. */
   function getMasonryCardHeight(aspectRatio: number): number {
-    return getMasonryThumbnailHeight(aspectRatio) + 43 + 12;
+    return getMasonryThumbnailHeight(aspectRatio) + 43 + DIRECTORY_PREVIEW_GAP_PX;
   }
 
   /** Creates the independent columns that prevent masonry rebalancing. */
