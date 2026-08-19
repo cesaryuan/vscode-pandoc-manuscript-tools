@@ -2,7 +2,7 @@
   "name": "pandoc-manuscript-tools",
   "displayName": "Pandoc Manuscript Tools",
   "description": "Local VS Code helpers for Pandoc Markdown labels, cross references, math hovers, and outline symbols.",
-  "version": "0.4.4",
+  "version": "0.4.7",
   "publisher": "cesaryuan",
   "license": "GPL-3.0-or-later",
   "repository": {
@@ -227,6 +227,24 @@
           "type": "string",
           "default": "zh",
           "description": "Target language code for paragraph hover translations, for example zh or zh-TW."
+        },
+        "pandocManuscriptTools.imageDirectoryPreviewIncludedFolderKeywords": {
+          "type": "array",
+          "scope": "resource",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Only include images whose root-relative folder path contains one of these case-insensitive keywords. Leave empty to include all folders not excluded."
+        },
+        "pandocManuscriptTools.imageDirectoryPreviewExcludedFolderKeywords": {
+          "type": "array",
+          "scope": "resource",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Skip folders whose root-relative path contains one of these case-insensitive keywords. Exclusion takes precedence over inclusion."
         }
       }
     }

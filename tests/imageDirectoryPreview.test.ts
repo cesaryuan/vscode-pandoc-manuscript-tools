@@ -4,6 +4,9 @@ import { isDirectoryPreviewImageFile } from "../src/imageDirectoryPreview/imageT
 import { initializeDirectoryPreviewWebview, type DirectoryPreviewWebview } from "../src/imageDirectoryPreview/webviewInitialization";
 import { buildDirectoryPreviewWebviewSecurityMarkup } from "../src/imageDirectoryPreview/webviewSecurity";
 import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "../src/imageDirectoryPreview/virtualScroll";
+import { normalizeFolderKeywords, shouldIncludeDirectoryImages, shouldTraverseDirectory, type DirectoryPreviewFolderFilters } from "../src/imageDirectoryPreview/folderFilters";
+import { normalizePreviewRelativePath } from "../src/imageDirectoryPreview/relativePath";
+import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "../src/imageDirectoryPreview/thumbnailColumns";
 
 /** Verifies the directory scanner accepts browser-previewable image extensions case-insensitively. */
 function verifiesSupportedDirectoryPreviewImages(): void {
@@ -71,9 +74,50 @@ function choosesTheCurrentShortestMasonryColumn(): void {
   assert.equal(getShortestMasonryColumnIndex([]), 0);
 }
 
+/** Verifies folder include keywords are case-insensitive and exclusion always wins. */
+function filtersDirectoryImagesWithPredictableKeywordPrecedence(): void {
+  const filters: DirectoryPreviewFolderFilters = {
+    includedFolderKeywords: normalizeFolderKeywords([" Figures ", "supplement", "FIGURES"]),
+    excludedFolderKeywords: normalizeFolderKeywords(["draft", "archive"]),
+  };
+
+  assert.deepEqual(filters.includedFolderKeywords, ["figures", "supplement"]);
+  assert.equal(shouldTraverseDirectory("chapter/figures", filters), true);
+  assert.equal(shouldTraverseDirectory("chapter/draft/figures", filters), false);
+  assert.equal(shouldIncludeDirectoryImages("chapter/figures", filters), true);
+  assert.equal(shouldIncludeDirectoryImages("chapter/supplement/data", filters), true);
+  assert.equal(shouldIncludeDirectoryImages("chapter/images", filters), false);
+  assert.equal(shouldIncludeDirectoryImages("chapter/archive/figures", filters), false);
+}
+
+/** Verifies copied preview paths stay root-relative and cannot escape through parent segments. */
+function normalizesSafePreviewRelativePaths(): void {
+  assert.equal(normalizePreviewRelativePath("figures\\result.png"), "figures/result.png");
+  assert.equal(normalizePreviewRelativePath("figures/result.png"), "figures/result.png");
+  assert.equal(normalizePreviewRelativePath("../outside.png"), undefined);
+  assert.equal(normalizePreviewRelativePath("C:/outside.png"), undefined);
+  assert.equal(normalizePreviewRelativePath("."), undefined);
+}
+
+/** Verifies column counts stay within the current viewport and Ctrl-wheel changes direction predictably. */
+function constrainsColumnCountToViewportAndWheelDirection(): void {
+  const bounds = getColumnCountBounds(800, 32);
+  assert.deepEqual(bounds, { min: 1, max: 7 });
+  assert.equal(clampColumnCount(12, bounds), 7);
+  assert.equal(clampColumnCount(0, bounds), 1);
+  assert.equal(getWheelAdjustedColumnCount(4, -100, bounds), 5);
+  assert.equal(getWheelAdjustedColumnCount(4, 100, bounds), 3);
+  assert.equal(getWheelAdjustedColumnCount(7, -100, bounds), 7);
+  assert.equal(getWheelAdjustedColumnCount(1, 100, bounds), 1);
+  assert.equal(getThumbnailSizeForColumns(800, 4, 32), 183);
+}
+
 test("recognizes images supported by the directory preview", verifiesSupportedDirectoryPreviewImages);
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
 test("loads its bootstrap code from an external CSP-approved script", usesExternalCspApprovedDirectoryPreviewScript);
 test("appends only newly discovered cards to the stable gallery", appendsOnlyNewlyDiscoveredGalleryCards);
 test("appends masonry cards to the current shortest stable column", choosesTheCurrentShortestMasonryColumn);
+test("filters image folders with include and exclude keyword precedence", filtersDirectoryImagesWithPredictableKeywordPrecedence);
+test("normalizes only safe root-relative image paths", normalizesSafePreviewRelativePaths);
+test("constrains column count to the viewport and maps Ctrl-wheel direction", constrainsColumnCountToViewportAndWheelDirection);

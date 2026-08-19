@@ -10,6 +10,7 @@
  */
 
 import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "./virtualScroll";
+import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "./thumbnailColumns";
 
 type DirectoryImage = {
   name: string;
@@ -25,12 +26,21 @@ type ScanBatchMessage = {
   skippedDirectories?: number;
 };
 
-type WebviewMessage = ScanBatchMessage | { type: "reset" };
+type WebviewMessage = ScanBatchMessage
+  | { type: "reset" }
+  | { type: "folderFilters"; includedFolderKeywords?: string[]; excludedFolderKeywords?: string[] }
+  | { type: "notice"; text?: string }
+  | { type: "imageDeleted"; resourceUri?: string };
 
 type VsCodeApi = {
-  postMessage(message: { type: string; resourceUri?: string }): void;
-  getState(): { layout?: string; thumbnailSize?: number } | undefined;
-  setState(state: { layout: string; thumbnailSize: number }): void;
+  postMessage(message: {
+    type: string;
+    resourceUri?: string;
+    includedFolderKeywords?: string[];
+    excludedFolderKeywords?: string[];
+  }): void;
+  getState(): { layout?: string; columns?: number; thumbnailSize?: number } | undefined;
+  setState(state: { layout: string; columns: number }): void;
 };
 
 declare function acquireVsCodeApi(): VsCodeApi;
@@ -38,6 +48,7 @@ declare function acquireVsCodeApi(): VsCodeApi;
 const IMAGE_LOAD_MARGIN_PX = 1_600;
 const SCAN_PREFETCH_MARGIN_PX = 1_200;
 const SCROLL_IDLE_DELAY_MS = 140;
+const GALLERY_HORIZONTAL_INSET_PX = 32;
 
 /** Runs the directory-preview browser controller once the external script loads. */
 function startDirectoryPreview(): void {
@@ -48,10 +59,22 @@ function startDirectoryPreview(): void {
   const topSpacer = getRequiredElement<HTMLElement>("top-spacer");
   const bottomSpacer = getRequiredElement<HTMLElement>("bottom-spacer");
   const layoutControl = getRequiredElement<HTMLSelectElement>("layout");
-  const sizeControl = getRequiredElement<HTMLInputElement>("thumbnail-size");
-  const sizeValue = getRequiredElement<HTMLOutputElement>("thumbnail-value");
+  const columnControl = getRequiredElement<HTMLInputElement>("column-count");
+  const columnValue = getRequiredElement<HTMLOutputElement>("column-value");
   const continueScan = getRequiredElement<HTMLButtonElement>("continue-scan");
   const rescan = getRequiredElement<HTMLButtonElement>("rescan");
+  const collapseFolders = getRequiredElement<HTMLButtonElement>("collapse-folders");
+  const expandFolders = getRequiredElement<HTMLButtonElement>("expand-folders");
+  const settingsButton = getRequiredElement<HTMLButtonElement>("settings");
+  const settingsDialog = getRequiredElement<HTMLDialogElement>("directory-settings");
+  const includedFoldersInput = getRequiredElement<HTMLTextAreaElement>("included-folder-keywords");
+  const excludedFoldersInput = getRequiredElement<HTMLTextAreaElement>("excluded-folder-keywords");
+  const applySettings = getRequiredElement<HTMLButtonElement>("apply-settings");
+  const closeSettings = getRequiredElement<HTMLButtonElement>("close-settings");
+  const contextMenu = getRequiredElement<HTMLElement>("image-context-menu");
+  const copyRelativePath = getRequiredElement<HTMLButtonElement>("copy-relative-path");
+  const deleteImage = getRequiredElement<HTMLButtonElement>("delete-image");
+  const notice = getRequiredElement<HTMLElement>("notice");
   const saved = vscode.getState() || {};
   const state = {
     items: [] as DirectoryImage[],
@@ -61,15 +84,21 @@ function startDirectoryPreview(): void {
     automaticScanRequests: 0,
     userHasScrolled: false,
     layout: saved.layout || "grid",
+    columns: Number(saved.columns) || 4,
     thumbnailSize: Number(saved.thumbnailSize) || 180,
     renderedItemCount: 0,
     renderFrame: 0,
     scrolling: false,
     scrollIdleTimer: 0,
     masonryUpdateFrame: 0,
+    collapseNewFolders: false,
+    contextResourceUri: "",
+    noticeTimer: 0,
   };
   const cardsByResourceUri = new Map<string, HTMLButtonElement>();
   const folderGrids = new Map<string, HTMLElement>();
+  const folderGroups = new Map<string, HTMLElement>();
+  const collapsedFolders = new Set<string>();
   const knownAspectRatios = new Map<string, number>();
   const pendingMasonryRatios = new Map<HTMLButtonElement, number>();
   let masonryColumns: HTMLElement[] = [];
@@ -95,23 +124,58 @@ function startDirectoryPreview(): void {
 
   /** Persists only UI preferences; image metadata stays in the extension-host scan session. */
   function persistPreferences(): void {
-    vscode.setState({ layout: state.layout, thumbnailSize: state.thumbnailSize });
+    vscode.setState({ layout: state.layout, columns: state.columns });
   }
 
-  /** Applies a layout and thumbnail-size change without requesting or loading every image. */
+  /** Returns the current column-count interval based on the full scroll viewport width. */
+  function getCurrentColumnCountBounds(): ReturnType<typeof getColumnCountBounds> {
+    const viewportWidth = scroll.clientWidth || window.innerWidth;
+    return getColumnCountBounds(viewportWidth, GALLERY_HORIZONTAL_INSET_PX);
+  }
+
+  /** Applies a layout and column-count change without requesting or loading every image. */
   function applyPreferences(): void {
+    const bounds = getCurrentColumnCountBounds();
+    state.columns = clampColumnCount(state.columns, bounds);
+    const viewportWidth = scroll.clientWidth || window.innerWidth;
+    state.thumbnailSize = getThumbnailSizeForColumns(viewportWidth, state.columns, GALLERY_HORIZONTAL_INSET_PX);
     document.documentElement.style.setProperty("--thumbnail-size", `${state.thumbnailSize}px`);
     layoutControl.value = state.layout;
-    sizeControl.value = String(state.thumbnailSize);
-    sizeValue.textContent = `${state.thumbnailSize} px`;
+    columnControl.min = String(bounds.min);
+    columnControl.max = String(bounds.max);
+    columnControl.value = String(state.columns);
+    columnValue.textContent = `${state.columns}`;
+    updateFolderControls();
     persistPreferences();
   }
 
-  /** Returns the stable masonry column count for the current viewport and size. */
+  /** Applies a column-count request while preserving the current visual anchor and masonry stability. */
+  function updateColumnCount(requestedColumns: number): void {
+    const anchor = captureVisualAnchor();
+    state.columns = requestedColumns;
+    applyPreferences();
+    if (state.layout === "masonry") {
+      if (masonryColumns.length !== getMasonryColumnCount()) {
+        renderStableGallery(true);
+      } else {
+        recalculateMasonryColumnHeights();
+      }
+    }
+    if (anchor) {
+      requestAnimationFrame(() => restoreVisualAnchor(anchor));
+    }
+  }
+
+  /** Shows global folder actions only when the folder-group layout is active. */
+  function updateFolderControls(): void {
+    const usesFolderLayout = state.layout === "folders";
+    collapseFolders.hidden = !usesFolderLayout;
+    expandFolders.hidden = !usesFolderLayout;
+  }
+
+  /** Returns the user-selected stable masonry column count for the current viewport. */
   function getMasonryColumnCount(): number {
-    const availableWidth = Math.max(1, scroll.clientWidth - 32);
-    const gap = 12;
-    return Math.max(1, Math.floor((availableWidth + gap) / (state.thumbnailSize + gap)));
+    return state.columns;
   }
 
   /** Returns the clamped thumbnail height used by a masonry card. */
@@ -192,6 +256,7 @@ function startDirectoryPreview(): void {
       gallery.replaceChildren();
       cardsByResourceUri.clear();
       folderGrids.clear();
+      folderGroups.clear();
       masonryColumns = [];
       masonryColumnHeights = [];
       state.renderedItemCount = 0;
@@ -264,16 +329,52 @@ function startDirectoryPreview(): void {
       if (!grid) {
         const group = document.createElement("section");
         group.className = "folder-group";
+        group.dataset.folder = folder;
         const heading = document.createElement("h2");
         heading.className = "folder-heading";
-        heading.textContent = folder;
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "folder-toggle";
+        toggle.dataset.folder = folder;
+        toggle.textContent = folder;
+        toggle.title = `Collapse ${folder}`;
         grid = document.createElement("div");
         grid.className = "folder-grid";
+        heading.append(toggle);
         group.append(heading, grid);
         gallery.append(group);
         folderGrids.set(folder, grid);
+        folderGroups.set(folder, group);
+        if (state.collapseNewFolders || collapsedFolders.has(folder)) {
+          setFolderCollapsed(folder, true);
+        }
       }
       grid.append(createCard(item));
+    }
+  }
+
+  /** Changes one folder group's disclosure state and keeps its accessible label current. */
+  function setFolderCollapsed(folder: string, collapsed: boolean): void {
+    const group = folderGroups.get(folder);
+    const toggle = group?.querySelector<HTMLButtonElement>(".folder-toggle");
+    if (!group || !toggle) {
+      return;
+    }
+    group.classList.toggle("is-collapsed", collapsed);
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.title = `${collapsed ? "Expand" : "Collapse"} ${folder}`;
+    if (collapsed) {
+      collapsedFolders.add(folder);
+    } else {
+      collapsedFolders.delete(folder);
+    }
+  }
+
+  /** Collapses or expands all rendered folder groups without reconstructing image cards. */
+  function setAllFoldersCollapsed(collapsed: boolean): void {
+    state.collapseNewFolders = collapsed;
+    for (const folder of folderGroups.keys()) {
+      setFolderCollapsed(folder, collapsed);
     }
   }
 
@@ -344,6 +445,37 @@ function startDirectoryPreview(): void {
     }
   }
 
+  /** Displays a short local confirmation without interrupting scrolling. */
+  function showNotice(text: string): void {
+    notice.textContent = text;
+    notice.hidden = false;
+    window.clearTimeout(state.noticeTimer);
+    state.noticeTimer = window.setTimeout(() => {
+      notice.hidden = true;
+    }, 2_800);
+  }
+
+  /** Splits a comma or newline separated settings field into trimmed keywords. */
+  function splitFolderKeywords(value: string): string[] {
+    return value.split(/[\n,;]/).map((keyword) => keyword.trim()).filter(Boolean);
+  }
+
+  /** Opens a compact card context menu within the current Webview viewport. */
+  function showImageContextMenu(resourceUri: string, clientX: number, clientY: number): void {
+    state.contextResourceUri = resourceUri;
+    contextMenu.hidden = false;
+    const margin = 8;
+    const rect = contextMenu.getBoundingClientRect();
+    contextMenu.style.left = `${Math.max(margin, Math.min(clientX, window.innerWidth - rect.width - margin))}px`;
+    contextMenu.style.top = `${Math.max(margin, Math.min(clientY, window.innerHeight - rect.height - margin))}px`;
+  }
+
+  /** Clears the active card context menu selection. */
+  function hideImageContextMenu(): void {
+    contextMenu.hidden = true;
+    state.contextResourceUri = "";
+  }
+
   /** Requests the next filesystem batch only when the viewport nears the stable gallery end. */
   function requestMoreIfNeeded(): void {
     const remainingDistance = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
@@ -408,7 +540,10 @@ function startDirectoryPreview(): void {
     state.renderedItemCount = 0;
     cardsByResourceUri.clear();
     folderGrids.clear();
+    folderGroups.clear();
     pendingMasonryRatios.clear();
+    masonryColumns = [];
+    masonryColumnHeights = [];
     scroll.scrollTop = 0;
     gallery.replaceChildren();
     topSpacer.style.height = "0px";
@@ -425,23 +560,36 @@ function startDirectoryPreview(): void {
       requestAnimationFrame(() => restoreVisualAnchor(anchor));
     }
   });
-  sizeControl.addEventListener("input", () => {
-    const anchor = captureVisualAnchor();
-    state.thumbnailSize = Number(sizeControl.value);
-    applyPreferences();
-    if (state.layout === "masonry") {
-      if (masonryColumns.length !== getMasonryColumnCount()) {
-        renderStableGallery(true);
-      } else {
-        recalculateMasonryColumnHeights();
-      }
-    }
-    if (anchor) {
-      requestAnimationFrame(() => restoreVisualAnchor(anchor));
-    }
+  columnControl.addEventListener("input", () => {
+    updateColumnCount(Number(columnControl.value));
+  });
+  collapseFolders.addEventListener("click", () => setAllFoldersCollapsed(true));
+  expandFolders.addEventListener("click", () => setAllFoldersCollapsed(false));
+  settingsButton.addEventListener("click", () => settingsDialog.showModal());
+  closeSettings.addEventListener("click", () => settingsDialog.close());
+  applySettings.addEventListener("click", () => {
+    vscode.postMessage({
+      type: "updateFolderFilters",
+      includedFolderKeywords: splitFolderKeywords(includedFoldersInput.value),
+      excludedFolderKeywords: splitFolderKeywords(excludedFoldersInput.value),
+    });
+    settingsDialog.close();
   });
   continueScan.addEventListener("click", () => requestNextPage(false));
   rescan.addEventListener("click", () => vscode.postMessage({ type: "rescan" }));
+  scroll.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey) {
+      return;
+    }
+    // Ctrl-wheel is reserved for thumbnail resizing; prevent Webview zoom while
+    // keeping ordinary wheel scrolling unchanged.
+    event.preventDefault();
+    const bounds = getCurrentColumnCountBounds();
+    const nextColumns = getWheelAdjustedColumnCount(state.columns, event.deltaY, bounds);
+    if (nextColumns !== state.columns) {
+      updateColumnCount(nextColumns);
+    }
+  }, { passive: false });
   scroll.addEventListener("scroll", () => {
     state.userHasScrolled = true;
     state.scrolling = true;
@@ -455,23 +603,77 @@ function startDirectoryPreview(): void {
   gallery.addEventListener("click", (event) => {
     const target = event.target;
     const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
+    const folderToggle = target instanceof Element ? target.closest<HTMLButtonElement>(".folder-toggle") : undefined;
+    if (folderToggle?.dataset.folder) {
+      const folder = folderToggle.dataset.folder;
+      const group = folderGroups.get(folder);
+      state.collapseNewFolders = false;
+      setFolderCollapsed(folder, !group?.classList.contains("is-collapsed"));
+      return;
+    }
     if (card?.dataset.resourceUri) {
       vscode.postMessage({ type: "openImage", resourceUri: card.dataset.resourceUri });
     }
   });
+  gallery.addEventListener("contextmenu", (event) => {
+    const target = event.target;
+    const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
+    if (!card?.dataset.resourceUri) {
+      return;
+    }
+    event.preventDefault();
+    showImageContextMenu(card.dataset.resourceUri, event.clientX, event.clientY);
+  });
+  copyRelativePath.addEventListener("click", () => {
+    if (state.contextResourceUri) {
+      vscode.postMessage({ type: "copyRelativePath", resourceUri: state.contextResourceUri });
+    }
+    hideImageContextMenu();
+  });
+  deleteImage.addEventListener("click", () => {
+    if (state.contextResourceUri) {
+      vscode.postMessage({ type: "deleteImage", resourceUri: state.contextResourceUri });
+    }
+    hideImageContextMenu();
+  });
+  window.addEventListener("pointerdown", (event) => {
+    if (!contextMenu.hidden && event.target instanceof Node && !contextMenu.contains(event.target)) {
+      hideImageContextMenu();
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideImageContextMenu();
+    }
+  });
   window.addEventListener("resize", () => {
-    const anchor = captureVisualAnchor();
-    if (state.layout === "masonry" && masonryColumns.length !== getMasonryColumnCount()) {
-      renderStableGallery(true);
-    }
-    if (anchor) {
-      requestAnimationFrame(() => restoreVisualAnchor(anchor));
-    }
+    updateColumnCount(state.columns);
   });
   window.addEventListener("message", (event: MessageEvent<WebviewMessage>) => {
     const message = event.data;
     if (message?.type === "reset") {
       resetScan();
+      return;
+    }
+    if (message?.type === "folderFilters") {
+      includedFoldersInput.value = (message.includedFolderKeywords || []).join("\n");
+      excludedFoldersInput.value = (message.excludedFolderKeywords || []).join("\n");
+      return;
+    }
+    if (message?.type === "notice" && message.text) {
+      showNotice(message.text);
+      return;
+    }
+    if (message?.type === "imageDeleted" && message.resourceUri) {
+      const anchor = captureVisualAnchor();
+      state.items = state.items.filter((item) => item.resourceUri !== message.resourceUri);
+      knownAspectRatios.delete(message.resourceUri);
+      renderStableGallery(true);
+      updateStatus();
+      showNotice("Image moved to the Recycle Bin");
+      if (anchor && anchor.resourceUri !== message.resourceUri) {
+        requestAnimationFrame(() => restoreVisualAnchor(anchor));
+      }
       return;
     }
     if (message?.type !== "scanBatch") {
