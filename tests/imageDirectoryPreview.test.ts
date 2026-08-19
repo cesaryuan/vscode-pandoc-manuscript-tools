@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { isDirectoryPreviewImageFile } from "../src/imageDirectoryPreview/imageTypes";
 import { initializeDirectoryPreviewWebview, type DirectoryPreviewWebview } from "../src/imageDirectoryPreview/webviewInitialization";
@@ -7,6 +8,7 @@ import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "../s
 import { normalizeFolderKeywords, shouldIncludeDirectoryImages, shouldTraverseDirectory, type DirectoryPreviewFolderFilters } from "../src/imageDirectoryPreview/folderFilters";
 import { normalizePreviewRelativePath } from "../src/imageDirectoryPreview/relativePath";
 import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "../src/imageDirectoryPreview/thumbnailColumns";
+import { getImageAspectRatio, getNaturalImageHeight } from "../src/imageDirectoryPreview/imageSizing";
 
 /** Verifies the directory scanner accepts browser-previewable image extensions case-insensitively. */
 function verifiesSupportedDirectoryPreviewImages(): void {
@@ -112,6 +114,22 @@ function constrainsColumnCountToViewportAndWheelDirection(): void {
   assert.equal(getThumbnailSizeForColumns(800, 4, 32), 183);
 }
 
+/** Verifies Grid and Folder cards can derive their height from each image's natural ratio. */
+function derivesNaturalImageHeightFromAspectRatio(): void {
+  assert.equal(getImageAspectRatio(1200, 600), 2);
+  assert.equal(getNaturalImageHeight(240, 2), 120);
+  assert.equal(getImageAspectRatio(0, 0), 4 / 3);
+}
+
+/** Verifies shorter Grid and Folder cards give row-stretch height to their thumbnail rather than captions. */
+function givesStretchedGridCardHeightToTheThumbnail(): void {
+  const previewSource = readFileSync("src/imageDirectoryPreview/index.ts", "utf8");
+
+  assert.match(previewSource, /\.image-card \{[^}]*display: flex;[^}]*flex-direction: column;/);
+  assert.match(previewSource, /\.thumbnail \{[^}]*flex: 1 1 auto;/);
+  assert.match(previewSource, /\.caption \{[^}]*flex: 0 0 auto;/);
+}
+
 test("recognizes images supported by the directory preview", verifiesSupportedDirectoryPreviewImages);
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
@@ -121,3 +139,5 @@ test("appends masonry cards to the current shortest stable column", choosesTheCu
 test("filters image folders with include and exclude keyword precedence", filtersDirectoryImagesWithPredictableKeywordPrecedence);
 test("normalizes only safe root-relative image paths", normalizesSafePreviewRelativePaths);
 test("constrains column count to the viewport and maps Ctrl-wheel direction", constrainsColumnCountToViewportAndWheelDirection);
+test("derives Grid and Folder image height from the natural aspect ratio", derivesNaturalImageHeightFromAspectRatio);
+test("gives stretched Grid and Folder card height to the thumbnail", givesStretchedGridCardHeightToTheThumbnail);

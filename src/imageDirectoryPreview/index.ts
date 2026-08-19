@@ -78,7 +78,7 @@ export class ImageDirectoryPreview {
       await vscode.window.showWarningMessage("Select a folder in the Explorer or open a workspace before viewing images.");
       return;
     }
-    this.output.appendLine(`Opening Image Directory Preview build 0.4.7 for ${directoryUri.toString()}`);
+    this.output.appendLine(`Opening Image Directory Preview build 0.4.9 for ${directoryUri.toString()}`);
 
     try {
       const stat = await vscode.workspace.fs.stat(directoryUri);
@@ -162,7 +162,7 @@ class DirectoryPreviewSession {
 
   /** Initializes the Webview and begins listening for demand-driven requests. */
   start(): void {
-    this.output.appendLine(`Starting Image Directory Preview build 0.4.7 Webview for ${this.rootUri.toString()}`);
+    this.output.appendLine(`Starting Image Directory Preview build 0.4.9 Webview for ${this.rootUri.toString()}`);
     this.disposables.push(initializeDirectoryPreviewWebview(this.panel.webview, buildDirectoryPreviewHtml(this.panel.webview, this.rootUri, this.scriptUri), (message: WebviewMessage) => {
       this.output.appendLine(`Image directory preview received ${message.type || "an unknown"} message for ${this.rootUri.toString()}`);
       // Messages are serialized so refresh cannot interleave two scanner batches.
@@ -519,18 +519,19 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .folder-toggle:hover { color: var(--vscode-foreground); background: transparent; }
     .folder-group.is-collapsed .folder-toggle::before { content: "▸"; }
     .folder-group.is-collapsed .folder-grid { display: none; }
-    .image-card { position: relative; min-width: 0; flex-direction: column; overflow: hidden; color: inherit; border: 1px solid var(--vscode-widget-border, transparent); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(127,127,127,.05)); box-shadow: 0 1px 2px rgba(0,0,0,.09); cursor: pointer; text-align: left; padding: 0; }
+    .image-card { position: relative; display: flex; min-width: 0; flex-direction: column; overflow: hidden; color: inherit; border: 1px solid var(--vscode-widget-border, transparent); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(127,127,127,.05)); box-shadow: 0 1px 2px rgba(0,0,0,.09); cursor: pointer; text-align: left; padding: 0; }
     .image-card:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
     .image-card:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
-    .thumbnail { display: grid; width: 100%; height: var(--thumbnail-size); place-items: center; overflow: hidden; background-color: var(--vscode-editor-background); background-image: linear-gradient(45deg, rgba(127,127,127,.16) 25%, transparent 25%), linear-gradient(-45deg, rgba(127,127,127,.16) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(127,127,127,.16) 75%), linear-gradient(-45deg, transparent 75%, rgba(127,127,127,.16) 75%); background-position: 0 0,0 8px,8px -8px,-8px 0; background-size: 16px 16px; }
+    /* In stretched Grid and Folder rows, keep captions fixed and give surplus height to this centered bitmap container. */
+    .thumbnail { display: grid; width: 100%; min-height: 0; flex: 1 1 auto; aspect-ratio: var(--image-aspect-ratio, 1); place-items: center; overflow: hidden; background-color: var(--vscode-editor-background); background-image: linear-gradient(45deg, rgba(127,127,127,.16) 25%, transparent 25%), linear-gradient(-45deg, rgba(127,127,127,.16) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(127,127,127,.16) 75%), linear-gradient(-45deg, transparent 75%, rgba(127,127,127,.16) 75%); background-position: 0 0,0 8px,8px -8px,-8px 0; background-size: 16px 16px; }
     .thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; }
     .thumbnail img:not([src]) { visibility: hidden; }
-    /* A measured ratio changes this fixed skeleton only after scrolling is idle. */
-    #gallery.layout-masonry .thumbnail { height: var(--masonry-thumbnail-height, calc(var(--thumbnail-size) * .75)); min-height: 0; max-height: none; }
+    /* Masonry keeps a bounded measured height, unlike Grid and Folder natural-ratio cards. */
+    #gallery.layout-masonry .thumbnail { height: var(--masonry-thumbnail-height, calc(var(--thumbnail-size) * .75)); min-height: 0; max-height: none; flex: 0 0 auto; aspect-ratio: auto; }
     #gallery.layout-masonry .thumbnail img { height: 100%; max-height: none; object-fit: contain; }
     .image-card.is-failed .thumbnail::after { content: "Preview unavailable"; padding: 12px; color: var(--vscode-descriptionForeground); text-align: center; }
     .image-card.is-failed img { display: none; }
-    .caption { overflow: hidden; padding: 7px 9px; color: var(--vscode-foreground); font-size: .9em; text-overflow: ellipsis; white-space: nowrap; }
+    .caption { flex: 0 0 auto; overflow: hidden; padding: 7px 9px; color: var(--vscode-foreground); font-size: .9em; text-overflow: ellipsis; white-space: nowrap; }
     .empty { padding: 48px 24px; color: var(--vscode-descriptionForeground); text-align: center; }
     dialog { width: min(560px, calc(100vw - 32px)); border: 1px solid var(--vscode-widget-border); border-radius: 6px; color: var(--vscode-foreground); background: var(--vscode-editorWidget-background); box-shadow: 0 12px 40px var(--vscode-widget-shadow); padding: 0; }
     dialog::backdrop { background: rgba(0, 0, 0, .35); }
@@ -560,7 +561,7 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
       <button id="continue-scan" type="button" hidden>Continue scan</button>
       <button id="rescan" type="button" title="Start a new incremental scan">Refresh</button>
       <button id="settings" class="icon-button" type="button" title="Directory preview settings" aria-label="Directory preview settings">⚙</button>
-      <span id="status" role="status">Starting directory preview (build 0.4.7)…</span>
+      <span id="status" role="status">Starting directory preview (build 0.4.9)…</span>
     </header>
     <main id="scroll" aria-label="Directory images">
       <div id="top-spacer"></div>

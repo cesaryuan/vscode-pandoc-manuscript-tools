@@ -11,6 +11,7 @@
 
 import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "./virtualScroll";
 import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "./thumbnailColumns";
+import { getImageAspectRatio } from "./imageSizing";
 
 type DirectoryImage = {
   name: string;
@@ -216,7 +217,7 @@ function startDirectoryPreview(): void {
     card.dataset.resourceUri = item.resourceUri;
     const knownAspectRatio = knownAspectRatios.get(item.resourceUri);
     if (knownAspectRatio) {
-      card.style.setProperty("--masonry-thumbnail-height", `${getMasonryThumbnailHeight(knownAspectRatio)}px`);
+      applyCardAspectRatio(card, knownAspectRatio);
     }
     const thumbnail = document.createElement("span");
     thumbnail.className = "thumbnail";
@@ -228,8 +229,9 @@ function startDirectoryPreview(): void {
     image.addEventListener("load", () => {
       card.classList.remove("is-failed");
       if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-        const aspectRatio = image.naturalWidth / image.naturalHeight;
+        const aspectRatio = getImageAspectRatio(image.naturalWidth, image.naturalHeight);
         knownAspectRatios.set(item.resourceUri, aspectRatio);
+        applyCardAspectRatio(card, aspectRatio);
         if (state.layout === "masonry") {
           queueMasonryRatioUpdate(card, aspectRatio);
         }
@@ -247,6 +249,12 @@ function startDirectoryPreview(): void {
     cardsByResourceUri.set(item.resourceUri, card);
     imageObserver.observe(image);
     return card;
+  }
+
+  /** Applies a decoded image ratio to Grid and Folder cards without affecting the Masonry height policy. */
+  function applyCardAspectRatio(card: HTMLButtonElement, aspectRatio: number): void {
+    card.style.setProperty("--image-aspect-ratio", String(aspectRatio));
+    card.style.setProperty("--masonry-thumbnail-height", `${getMasonryThumbnailHeight(aspectRatio)}px`);
   }
 
   /** Appends newly discovered cards without touching cards already in the layout. */
