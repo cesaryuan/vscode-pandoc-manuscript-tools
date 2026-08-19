@@ -1,0 +1,3 @@
+[submodule "vscode-image-viewer"]
+	path = vscode-image-viewer
+	url = https://github.com/ZhangJian1713/vscode-image-viewer
