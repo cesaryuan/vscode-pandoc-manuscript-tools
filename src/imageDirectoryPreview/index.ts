@@ -78,7 +78,7 @@ export class ImageDirectoryPreview {
       await vscode.window.showWarningMessage("Select a folder in the Explorer or open a workspace before viewing images.");
       return;
     }
-    this.output.appendLine(`Opening Image Directory Preview build 0.4.12 for ${directoryUri.toString()}`);
+    this.output.appendLine(`Opening Image Directory Preview build 0.5.0 for ${directoryUri.toString()}`);
 
     try {
       const stat = await vscode.workspace.fs.stat(directoryUri);
@@ -95,14 +95,14 @@ export class ImageDirectoryPreview {
     const key = directoryUri.toString();
     const existing = this.panels.get(key);
     if (existing) {
-      existing.panel.reveal(vscode.ViewColumn.Beside);
+      existing.panel.reveal();
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       IMAGE_DIRECTORY_PREVIEW_VIEW_TYPE,
       `Images: ${getUriBaseName(directoryUri)}`,
-      vscode.ViewColumn.Beside,
+      vscode.ViewColumn.Active,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -162,7 +162,7 @@ class DirectoryPreviewSession {
 
   /** Initializes the Webview and begins listening for demand-driven requests. */
   start(): void {
-    this.output.appendLine(`Starting Image Directory Preview build 0.4.12 Webview for ${this.rootUri.toString()}`);
+    this.output.appendLine(`Starting Image Directory Preview build 0.5.0 Webview for ${this.rootUri.toString()}`);
     this.disposables.push(initializeDirectoryPreviewWebview(this.panel.webview, buildDirectoryPreviewHtml(this.panel.webview, this.rootUri, this.scriptUri), (message: WebviewMessage) => {
       this.output.appendLine(`Image directory preview received ${message.type || "an unknown"} message for ${this.rootUri.toString()}`);
       // Messages are serialized so refresh cannot interleave two scanner batches.
@@ -596,7 +596,7 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
       <button id="continue-scan" type="button" hidden>Continue scan</button>
       <button id="rescan" type="button" title="Start a new incremental scan">Refresh</button>
       <button id="settings" class="icon-button" type="button" title="Directory preview settings" aria-label="Directory preview settings">⚙</button>
-      <span id="status" role="status">Starting directory preview (build 0.4.12)…</span>
+      <span id="status" role="status">Starting directory preview (build 0.5.0)…</span>
     </header>
     <main id="scroll" aria-label="Directory images">
       <div id="top-spacer"></div>

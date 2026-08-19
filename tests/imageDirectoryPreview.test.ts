@@ -160,6 +160,15 @@ function givesImageCardsDistinctVisualBoundaries(): void {
   assert.match(previewSource, /\.image-card:hover \{[^}]*box-shadow:/);
 }
 
+/** Verifies opening or reusing a preview does not force a right-side editor split. */
+function opensDirectoryPreviewInTheCurrentEditorGroup(): void {
+  const previewSource = readFileSync("src/imageDirectoryPreview/index.ts", "utf8");
+
+  assert.match(previewSource, /IMAGE_DIRECTORY_PREVIEW_VIEW_TYPE,[\s\S]*?vscode\.ViewColumn\.Active,/);
+  assert.match(previewSource, /existing\.panel\.reveal\(\);/);
+  assert.doesNotMatch(previewSource, /ViewColumn\.Beside/);
+}
+
 test("recognizes images supported by the directory preview", verifiesSupportedDirectoryPreviewImages);
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
@@ -173,3 +182,4 @@ test("derives Grid and Folder image height from the natural aspect ratio", deriv
 test("gives stretched Grid and Folder card height to the thumbnail", givesStretchedGridCardHeightToTheThumbnail);
 test("includes useful image hover metadata", includesUsefulImageHoverMetadata);
 test("gives image cards distinct visual boundaries", givesImageCardsDistinctVisualBoundaries);
+test("opens the directory preview in the current editor group", opensDirectoryPreviewInTheCurrentEditorGroup);
