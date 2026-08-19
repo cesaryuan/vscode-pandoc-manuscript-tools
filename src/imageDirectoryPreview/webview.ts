@@ -12,6 +12,7 @@
 import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "./virtualScroll";
 import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "./thumbnailColumns";
 import { getImageAspectRatio } from "./imageSizing";
+import { getImageHoverDetails } from "./imageHoverDetails";
 
 type DirectoryImage = {
   name: string;
@@ -27,11 +28,23 @@ type ScanBatchMessage = {
   skippedDirectories?: number;
 };
 
+type ImageDimensions = {
+  width: number;
+  height: number;
+};
+
+type ImageFileMetadata = {
+  createdAt?: number;
+  modifiedAt?: number;
+  size?: number;
+};
+
 type WebviewMessage = ScanBatchMessage
   | { type: "reset" }
   | { type: "folderFilters"; includedFolderKeywords?: string[]; excludedFolderKeywords?: string[] }
   | { type: "notice"; text?: string }
-  | { type: "imageDeleted"; resourceUri?: string };
+  | { type: "imageDeleted"; resourceUri?: string }
+  | { type: "imageMetadata"; resourceUri?: string; createdAt?: number; modifiedAt?: number; size?: number };
 
 type VsCodeApi = {
   postMessage(message: {
@@ -101,6 +114,10 @@ function startDirectoryPreview(): void {
   const folderGroups = new Map<string, HTMLElement>();
   const collapsedFolders = new Set<string>();
   const knownAspectRatios = new Map<string, number>();
+  const knownImageDimensions = new Map<string, ImageDimensions>();
+  const imageFileMetadata = new Map<string, ImageFileMetadata>();
+  const requestedImageMetadata = new Set<string>();
+  const resolvedImageMetadata = new Set<string>();
   const pendingMasonryRatios = new Map<HTMLButtonElement, number>();
   let masonryColumns: HTMLElement[] = [];
   let masonryColumnHeights: number[] = [];
@@ -213,8 +230,8 @@ function startDirectoryPreview(): void {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "image-card";
-    card.title = item.folder ? `${item.folder}/${item.name}` : item.name;
     card.dataset.resourceUri = item.resourceUri;
+    card.dataset.relativePath = item.folder ? `${item.folder}/${item.name}` : item.name;
     const knownAspectRatio = knownAspectRatios.get(item.resourceUri);
     if (knownAspectRatio) {
       applyCardAspectRatio(card, knownAspectRatio);
@@ -231,7 +248,9 @@ function startDirectoryPreview(): void {
       if (image.naturalWidth > 0 && image.naturalHeight > 0) {
         const aspectRatio = getImageAspectRatio(image.naturalWidth, image.naturalHeight);
         knownAspectRatios.set(item.resourceUri, aspectRatio);
+        knownImageDimensions.set(item.resourceUri, { width: image.naturalWidth, height: image.naturalHeight });
         applyCardAspectRatio(card, aspectRatio);
+        updateImageHoverDetails(card);
         if (state.layout === "masonry") {
           queueMasonryRatioUpdate(card, aspectRatio);
         }
@@ -245,8 +264,12 @@ function startDirectoryPreview(): void {
     const caption = document.createElement("span");
     caption.className = "caption";
     caption.textContent = item.name;
-    card.append(thumbnail, caption);
+    const hoverDetails = document.createElement("span");
+    hoverDetails.className = "hover-details";
+    hoverDetails.setAttribute("aria-hidden", "true");
+    card.append(thumbnail, caption, hoverDetails);
     cardsByResourceUri.set(item.resourceUri, card);
+    updateImageHoverDetails(card);
     imageObserver.observe(image);
     return card;
   }
@@ -255,6 +278,49 @@ function startDirectoryPreview(): void {
   function applyCardAspectRatio(card: HTMLButtonElement, aspectRatio: number): void {
     card.style.setProperty("--image-aspect-ratio", String(aspectRatio));
     card.style.setProperty("--masonry-thumbnail-height", `${getMasonryThumbnailHeight(aspectRatio)}px`);
+  }
+
+  /** Renders cached decoded and filesystem data into a card's compact hover-only detail surface. */
+  function updateImageHoverDetails(card: HTMLButtonElement): void {
+    const resourceUri = card.dataset.resourceUri;
+    const relativePath = card.dataset.relativePath;
+    const details = card.querySelector<HTMLElement>(".hover-details");
+    if (!resourceUri || !relativePath || !details) {
+      return;
+    }
+    const dimensions = knownImageDimensions.get(resourceUri);
+    const filesystemMetadata = imageFileMetadata.get(resourceUri);
+    const fragment = document.createDocumentFragment();
+    for (const detail of getImageHoverDetails({
+      relativePath,
+      width: dimensions?.width,
+      height: dimensions?.height,
+      createdAt: filesystemMetadata?.createdAt,
+      modifiedAt: filesystemMetadata?.modifiedAt,
+      size: filesystemMetadata?.size,
+      filesystemMetadataLoaded: resolvedImageMetadata.has(resourceUri),
+    })) {
+      const line = document.createElement("span");
+      line.className = "hover-detail";
+      const label = document.createElement("span");
+      label.className = "hover-detail-label";
+      label.textContent = detail.label;
+      const value = document.createElement("span");
+      value.className = "hover-detail-value";
+      value.textContent = detail.value;
+      line.append(label, value);
+      fragment.append(line);
+    }
+    details.replaceChildren(fragment);
+  }
+
+  /** Requests filesystem metadata once per card, keeping large directory scans free of per-image stat calls. */
+  function requestImageMetadata(resourceUri: string): void {
+    if (requestedImageMetadata.has(resourceUri)) {
+      return;
+    }
+    requestedImageMetadata.add(resourceUri);
+    vscode.postMessage({ type: "requestImageMetadata", resourceUri });
   }
 
   /** Appends newly discovered cards without touching cards already in the layout. */
@@ -608,6 +674,13 @@ function startDirectoryPreview(): void {
     }, SCROLL_IDLE_DELAY_MS);
     scheduleScrollWork();
   }, { passive: true });
+  gallery.addEventListener("pointerover", (event) => {
+    const target = event.target;
+    const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
+    if (card?.dataset.resourceUri) {
+      requestImageMetadata(card.dataset.resourceUri);
+    }
+  });
   gallery.addEventListener("click", (event) => {
     const target = event.target;
     const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
@@ -672,10 +745,27 @@ function startDirectoryPreview(): void {
       showNotice(message.text);
       return;
     }
+    if (message?.type === "imageMetadata" && message.resourceUri) {
+      imageFileMetadata.set(message.resourceUri, {
+        createdAt: message.createdAt,
+        modifiedAt: message.modifiedAt,
+        size: message.size,
+      });
+      resolvedImageMetadata.add(message.resourceUri);
+      const card = cardsByResourceUri.get(message.resourceUri);
+      if (card) {
+        updateImageHoverDetails(card);
+      }
+      return;
+    }
     if (message?.type === "imageDeleted" && message.resourceUri) {
       const anchor = captureVisualAnchor();
       state.items = state.items.filter((item) => item.resourceUri !== message.resourceUri);
       knownAspectRatios.delete(message.resourceUri);
+      knownImageDimensions.delete(message.resourceUri);
+      imageFileMetadata.delete(message.resourceUri);
+      requestedImageMetadata.delete(message.resourceUri);
+      resolvedImageMetadata.delete(message.resourceUri);
       renderStableGallery(true);
       updateStatus();
       showNotice("Image moved to the Recycle Bin");

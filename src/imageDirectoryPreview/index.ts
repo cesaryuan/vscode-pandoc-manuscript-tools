@@ -78,7 +78,7 @@ export class ImageDirectoryPreview {
       await vscode.window.showWarningMessage("Select a folder in the Explorer or open a workspace before viewing images.");
       return;
     }
-    this.output.appendLine(`Opening Image Directory Preview build 0.4.9 for ${directoryUri.toString()}`);
+    this.output.appendLine(`Opening Image Directory Preview build 0.4.10 for ${directoryUri.toString()}`);
 
     try {
       const stat = await vscode.workspace.fs.stat(directoryUri);
@@ -162,7 +162,7 @@ class DirectoryPreviewSession {
 
   /** Initializes the Webview and begins listening for demand-driven requests. */
   start(): void {
-    this.output.appendLine(`Starting Image Directory Preview build 0.4.9 Webview for ${this.rootUri.toString()}`);
+    this.output.appendLine(`Starting Image Directory Preview build 0.4.10 Webview for ${this.rootUri.toString()}`);
     this.disposables.push(initializeDirectoryPreviewWebview(this.panel.webview, buildDirectoryPreviewHtml(this.panel.webview, this.rootUri, this.scriptUri), (message: WebviewMessage) => {
       this.output.appendLine(`Image directory preview received ${message.type || "an unknown"} message for ${this.rootUri.toString()}`);
       // Messages are serialized so refresh cannot interleave two scanner batches.
@@ -213,6 +213,10 @@ class DirectoryPreviewSession {
     }
     if (message.type === "openImage" && message.resourceUri) {
       await this.openImage(message.resourceUri);
+      return;
+    }
+    if (message.type === "requestImageMetadata" && message.resourceUri) {
+      await this.sendImageMetadata(message.resourceUri);
       return;
     }
     if (message.type === "updateFolderFilters") {
@@ -284,6 +288,31 @@ class DirectoryPreviewSession {
       return;
     }
     await vscode.commands.executeCommand("vscode.open", imageUri, { preview: true });
+  }
+
+  /** Reads one hovered image's filesystem metadata without adding per-file work to directory scanning. */
+  private async sendImageMetadata(resourceUri: string): Promise<void> {
+    const imageUri = this.getAllowedImageUri(resourceUri);
+    if (!imageUri) {
+      return;
+    }
+    try {
+      const stat = await vscode.workspace.fs.stat(imageUri);
+      if (!isFile(stat.type) || isSymbolicLink(stat.type)) {
+        return;
+      }
+      await this.panel.webview.postMessage({
+        type: "imageMetadata",
+        resourceUri,
+        createdAt: stat.ctime,
+        modifiedAt: stat.mtime,
+        size: stat.size,
+      });
+    } catch (error) {
+      // Return an empty result so the hover UI stops waiting when an image disappears or a provider omits metadata.
+      this.output.appendLine(`Image directory preview could not read hover metadata for ${imageUri.toString()}: ${formatError(error)}`);
+      await this.panel.webview.postMessage({ type: "imageMetadata", resourceUri });
+    }
   }
 
   /** Copies a selected image's root-relative path through VS Code's desktop clipboard API. */
@@ -532,6 +561,11 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .image-card.is-failed .thumbnail::after { content: "Preview unavailable"; padding: 12px; color: var(--vscode-descriptionForeground); text-align: center; }
     .image-card.is-failed img { display: none; }
     .caption { flex: 0 0 auto; overflow: hidden; padding: 7px 9px; color: var(--vscode-foreground); font-size: .9em; text-overflow: ellipsis; white-space: nowrap; }
+    .hover-details { position: absolute; z-index: 2; right: 6px; bottom: 6px; left: 6px; display: none; gap: 3px; max-width: calc(100% - 12px); padding: 7px 8px; color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border)); border-radius: 4px; background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background)); box-shadow: 0 2px 8px rgba(0,0,0,.28); font-size: .82em; line-height: 1.25; }
+    .image-card:hover .hover-details, .image-card:focus-visible .hover-details { display: grid; }
+    .hover-detail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px; text-align: left; }
+    .hover-detail-label { color: var(--vscode-descriptionForeground); }
+    .hover-detail-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .empty { padding: 48px 24px; color: var(--vscode-descriptionForeground); text-align: center; }
     dialog { width: min(560px, calc(100vw - 32px)); border: 1px solid var(--vscode-widget-border); border-radius: 6px; color: var(--vscode-foreground); background: var(--vscode-editorWidget-background); box-shadow: 0 12px 40px var(--vscode-widget-shadow); padding: 0; }
     dialog::backdrop { background: rgba(0, 0, 0, .35); }
@@ -561,7 +595,7 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
       <button id="continue-scan" type="button" hidden>Continue scan</button>
       <button id="rescan" type="button" title="Start a new incremental scan">Refresh</button>
       <button id="settings" class="icon-button" type="button" title="Directory preview settings" aria-label="Directory preview settings">⚙</button>
-      <span id="status" role="status">Starting directory preview (build 0.4.9)…</span>
+      <span id="status" role="status">Starting directory preview (build 0.4.10)…</span>
     </header>
     <main id="scroll" aria-label="Directory images">
       <div id="top-spacer"></div>

@@ -9,6 +9,7 @@ import { normalizeFolderKeywords, shouldIncludeDirectoryImages, shouldTraverseDi
 import { normalizePreviewRelativePath } from "../src/imageDirectoryPreview/relativePath";
 import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "../src/imageDirectoryPreview/thumbnailColumns";
 import { getImageAspectRatio, getNaturalImageHeight } from "../src/imageDirectoryPreview/imageSizing";
+import { getImageHoverDetails } from "../src/imageDirectoryPreview/imageHoverDetails";
 
 /** Verifies the directory scanner accepts browser-previewable image extensions case-insensitively. */
 function verifiesSupportedDirectoryPreviewImages(): void {
@@ -130,6 +131,25 @@ function givesStretchedGridCardHeightToTheThumbnail(): void {
   assert.match(previewSource, /\.caption \{[^}]*flex: 0 0 auto;/);
 }
 
+/** Verifies an image hover surface includes the path, decoded resolution, filesystem times, and file size. */
+function includesUsefulImageHoverMetadata(): void {
+  assert.deepEqual(getImageHoverDetails({
+    relativePath: "figures/result.png",
+    width: 1600,
+    height: 900,
+    createdAt: 0,
+    modifiedAt: 0,
+    size: 1_536,
+    filesystemMetadataLoaded: true,
+  }), [
+    { label: "Path", value: "figures/result.png" },
+    { label: "Resolution", value: "1600 × 900 px" },
+    { label: "Created", value: "Unavailable" },
+    { label: "Modified", value: "Unavailable" },
+    { label: "Size", value: "1.5 KB" },
+  ]);
+}
+
 test("recognizes images supported by the directory preview", verifiesSupportedDirectoryPreviewImages);
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
@@ -141,3 +161,4 @@ test("normalizes only safe root-relative image paths", normalizesSafePreviewRela
 test("constrains column count to the viewport and maps Ctrl-wheel direction", constrainsColumnCountToViewportAndWheelDirection);
 test("derives Grid and Folder image height from the natural aspect ratio", derivesNaturalImageHeightFromAspectRatio);
 test("gives stretched Grid and Folder card height to the thumbnail", givesStretchedGridCardHeightToTheThumbnail);
+test("includes useful image hover metadata", includesUsefulImageHoverMetadata);
