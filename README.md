@@ -20,6 +20,9 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
+- An Image Directory Preview opened from a folder's Explorer context menu (`View Images`). It recursively discovers supported images from the selected folder and its subfolders through incremental batches, loads only images near the viewport, and provides Grid, Masonry, and Folder layouts. The `Cols` control changes the number of columns, and `Ctrl` + mouse wheel adjusts it without forcing a right-side editor split.
+- Folder layout controls for collapsing or expanding all folder groups, plus Settings for including or excluding folders by case-insensitive path keywords.
+- Image-card hover metadata for relative path, natural resolution, creation time, modification time, and file size. Right-click an image to copy its root-relative path, or move it to the Recycle Bin after confirmation.
 
 ## Try It Locally
 
@@ -38,6 +41,9 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
    - Add `[revised text]{custom-style="Revision Char"}` and confirm only the `{custom-style="Revision Char"}` block folds to an ellipsis.
    - Click the editor-title build button in `manuscript.md` to run the DOCX build and open `output/docx/manuscript.docx`.
    - Check the Outline after `## Mathematical Formulation`.
+   - In Explorer, right-click a folder and choose `View Images` to open the recursive image directory preview in the current editor group.
+   - In the preview, choose `Grid`, `Masonry`, or `Folder`; use `Cols` or `Ctrl` + mouse wheel to adjust the column count. In `Folder`, use the collapse/expand buttons and the settings button to control folder filters.
+   - Hover an image card to inspect its path, resolution, timestamps, and file size. Right-click a card to copy its path or delete the file after confirmation.
 
 For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
@@ -45,6 +51,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 - `Pandoc Manuscript Tools: Rebuild Index`
 - `Pandoc Manuscript Tools: Build DOCX and Open in Word`
+- `View Images` (Explorer folder context menu)
 
 ## Settings
 
@@ -60,6 +67,8 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback.
 - `pandocManuscriptTools.paragraphHoverTranslationMaxCharacters`: maximum English paragraph length, in characters, that can request a paragraph hover translation.
 - `pandocManuscriptTools.paragraphHoverTranslationTargetLanguage`: target language code for paragraph hover translations, for example `zh` or `zh-TW`.
+- `pandocManuscriptTools.imageDirectoryPreviewIncludedFolderKeywords`: optional case-insensitive keywords; when set, only image folders whose root-relative path contains one of these keywords are included.
+- `pandocManuscriptTools.imageDirectoryPreviewExcludedFolderKeywords`: optional case-insensitive keywords; matching folders are skipped, and exclusion takes precedence over inclusion.
 
 ## Notes
 
