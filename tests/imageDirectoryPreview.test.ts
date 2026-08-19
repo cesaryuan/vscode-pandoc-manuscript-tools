@@ -3,6 +3,7 @@ import test from "node:test";
 import { isDirectoryPreviewImageFile } from "../src/imageDirectoryPreview/imageTypes";
 import { initializeDirectoryPreviewWebview, type DirectoryPreviewWebview } from "../src/imageDirectoryPreview/webviewInitialization";
 import { buildDirectoryPreviewWebviewSecurityMarkup } from "../src/imageDirectoryPreview/webviewSecurity";
+import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "../src/imageDirectoryPreview/virtualScroll";
 
 /** Verifies the directory scanner accepts browser-previewable image extensions case-insensitively. */
 function verifiesSupportedDirectoryPreviewImages(): void {
@@ -56,7 +57,23 @@ function usesExternalCspApprovedDirectoryPreviewScript(): void {
   assert.doesNotMatch(markup, /<script>\s*\(\(\) =>/);
 }
 
+/** Verifies ordinary scrolling never causes existing gallery cards to be rebuilt. */
+function appendsOnlyNewlyDiscoveredGalleryCards(): void {
+  assert.deepEqual(getStableGalleryAppendRange(144, 144), { start: 144, end: 144 });
+  assert.deepEqual(getStableGalleryAppendRange(72, 144), { start: 72, end: 144 });
+  assert.deepEqual(getStableGalleryAppendRange(200, 144), { start: 0, end: 144 });
+}
+
+/** Verifies masonry appends to one stable column instead of rebalancing existing cards. */
+function choosesTheCurrentShortestMasonryColumn(): void {
+  assert.equal(getShortestMasonryColumnIndex([420, 280, 350]), 1);
+  assert.equal(getShortestMasonryColumnIndex([280, 280, 350]), 0);
+  assert.equal(getShortestMasonryColumnIndex([]), 0);
+}
+
 test("recognizes images supported by the directory preview", verifiesSupportedDirectoryPreviewImages);
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
 test("loads its bootstrap code from an external CSP-approved script", usesExternalCspApprovedDirectoryPreviewScript);
+test("appends only newly discovered cards to the stable gallery", appendsOnlyNewlyDiscoveredGalleryCards);
+test("appends masonry cards to the current shortest stable column", choosesTheCurrentShortestMasonryColumn);

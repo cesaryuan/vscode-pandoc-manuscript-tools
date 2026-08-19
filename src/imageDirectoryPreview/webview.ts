@@ -4,9 +4,12 @@
  * This is bundled as dist/image-directory-preview.js and loaded through a
  * Webview resource URI. Keeping it outside the HTML document avoids depending
  * on inline-script execution and lets the page use a restrictive CSP. It keeps
- * discovered image metadata in memory but mounts only a viewport-sized subset
- * of cards, which bounds image DOM nodes and decoded bitmap pressure.
+ * discovered image metadata in stable card skeletons, while only images near
+ * the viewport receive a src. Stable cards keep scrolling continuous and the
+ * bounded source window limits decoded bitmap pressure.
  */
+
+import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "./virtualScroll";
 
 type DirectoryImage = {
   name: string;
@@ -32,9 +35,9 @@ type VsCodeApi = {
 
 declare function acquireVsCodeApi(): VsCodeApi;
 
-const WINDOW_BEFORE = 72;
-const WINDOW_AFTER = 96;
-const PREFETCH_DISTANCE = 44;
+const IMAGE_LOAD_MARGIN_PX = 1_600;
+const SCAN_PREFETCH_MARGIN_PX = 1_200;
+const SCROLL_IDLE_DELAY_MS = 140;
 
 /** Runs the directory-preview browser controller once the external script loads. */
 function startDirectoryPreview(): void {
@@ -59,10 +62,36 @@ function startDirectoryPreview(): void {
     userHasScrolled: false,
     layout: saved.layout || "grid",
     thumbnailSize: Number(saved.thumbnailSize) || 180,
-    renderedStart: -1,
-    renderedEnd: -1,
+    renderedItemCount: 0,
     renderFrame: 0,
+    scrolling: false,
+    scrollIdleTimer: 0,
+    masonryUpdateFrame: 0,
   };
+  const cardsByResourceUri = new Map<string, HTMLButtonElement>();
+  const folderGrids = new Map<string, HTMLElement>();
+  const knownAspectRatios = new Map<string, number>();
+  const pendingMasonryRatios = new Map<HTMLButtonElement, number>();
+  let masonryColumns: HTMLElement[] = [];
+  let masonryColumnHeights: number[] = [];
+  const imageObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const image = entry.target;
+      if (!(image instanceof HTMLImageElement)) {
+        continue;
+      }
+      if (entry.isIntersecting) {
+        const source = image.dataset.src;
+        if (source && !image.hasAttribute("src") && image.dataset.failed !== "true") {
+          image.src = source;
+        }
+      } else if (image.hasAttribute("src")) {
+        // Removing far-away sources releases decoded bitmaps while the stable
+        // card skeleton retains its exact place in the layout.
+        image.removeAttribute("src");
+      }
+    }
+  }, { root: scroll, rootMargin: `${IMAGE_LOAD_MARGIN_PX}px 0px` });
 
   /** Persists only UI preferences; image metadata stays in the extension-host scan session. */
   function persistPreferences(): void {
@@ -78,113 +107,247 @@ function startDirectoryPreview(): void {
     persistPreferences();
   }
 
-  /** Returns a conservative visible column count for the scroll-height estimate. */
-  function getColumnCount(): number {
-    const available = Math.max(1, scroll.clientWidth - 32);
+  /** Returns the stable masonry column count for the current viewport and size. */
+  function getMasonryColumnCount(): number {
+    const availableWidth = Math.max(1, scroll.clientWidth - 32);
     const gap = 12;
-    return Math.max(1, Math.floor((available + gap) / (state.thumbnailSize + gap)));
+    return Math.max(1, Math.floor((availableWidth + gap) / (state.thumbnailSize + gap)));
   }
 
-  /** Estimates the height occupied by an image prefix so prior cards can be unmounted. */
-  function estimateHeightForItems(count: number): number {
-    const columns = getColumnCount();
-    const cardHeight = state.thumbnailSize + 43;
-    if (state.layout === "masonry") {
-      return Math.ceil(count / columns) * (state.thumbnailSize * 1.34 + 43);
+  /** Returns the clamped thumbnail height used by a masonry card. */
+  function getMasonryThumbnailHeight(aspectRatio: number): number {
+    const ratio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 4 / 3;
+    return Math.max(state.thumbnailSize * 0.6, Math.min(state.thumbnailSize / ratio, state.thumbnailSize * 2.2));
+  }
+
+  /** Estimates a masonry card height without forcing browser layout. */
+  function getMasonryCardHeight(aspectRatio: number): number {
+    return getMasonryThumbnailHeight(aspectRatio) + 43 + 12;
+  }
+
+  /** Creates the independent columns that prevent masonry rebalancing. */
+  function ensureMasonryColumns(): void {
+    if (masonryColumns.length) {
+      return;
     }
-    if (state.layout === "folders") {
-      return Math.ceil(count / columns) * cardHeight + Math.ceil(count / 36) * 29;
+    const columnCount = getMasonryColumnCount();
+    masonryColumns = [];
+    masonryColumnHeights = Array.from({ length: columnCount }, () => 0);
+    const fragment = document.createDocumentFragment();
+    for (let index = 0; index < columnCount; index += 1) {
+      const column = document.createElement("div");
+      column.className = "masonry-column";
+      masonryColumns.push(column);
+      fragment.append(column);
     }
-    return Math.ceil(count / columns) * cardHeight;
+    gallery.append(fragment);
   }
 
-  /** Maps a scroll position to an approximate item index for the bounded render window. */
-  function getApproximateIndex(): number {
-    const totalEstimate = Math.max(1, estimateHeightForItems(state.items.length));
-    return Math.max(0, Math.min(state.items.length - 1, Math.floor((scroll.scrollTop / totalEstimate) * state.items.length)));
-  }
-
-  /** Creates one thumbnail card; this is the only point that assigns an image src. */
+  /** Creates one stable card whose bitmap is loaded only near the viewport. */
   function createCard(item: DirectoryImage): HTMLButtonElement {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "image-card";
     card.title = item.folder ? `${item.folder}/${item.name}` : item.name;
     card.dataset.resourceUri = item.resourceUri;
+    const knownAspectRatio = knownAspectRatios.get(item.resourceUri);
+    if (knownAspectRatio) {
+      card.style.setProperty("--masonry-thumbnail-height", `${getMasonryThumbnailHeight(knownAspectRatio)}px`);
+    }
     const thumbnail = document.createElement("span");
     thumbnail.className = "thumbnail";
     const image = document.createElement("img");
-    image.src = item.src;
+    image.dataset.src = item.src;
     image.alt = item.name;
     image.loading = "lazy";
     image.decoding = "async";
-    image.addEventListener("error", () => card.classList.add("is-failed"), { once: true });
+    image.addEventListener("load", () => {
+      card.classList.remove("is-failed");
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        const aspectRatio = image.naturalWidth / image.naturalHeight;
+        knownAspectRatios.set(item.resourceUri, aspectRatio);
+        if (state.layout === "masonry") {
+          queueMasonryRatioUpdate(card, aspectRatio);
+        }
+      }
+    });
+    image.addEventListener("error", () => {
+      image.dataset.failed = "true";
+      card.classList.add("is-failed");
+    }, { once: true });
     thumbnail.append(image);
     const caption = document.createElement("span");
     caption.className = "caption";
     caption.textContent = item.name;
     card.append(thumbnail, caption);
+    cardsByResourceUri.set(item.resourceUri, card);
+    imageObserver.observe(image);
     return card;
   }
 
-  /** Renders a contiguous metadata slice with grouped headings when the folder layout is selected. */
-  function appendFolderCards(fragment: DocumentFragment, items: DirectoryImage[]): void {
-    let currentFolder: string | undefined;
-    let group: HTMLElement | undefined;
+  /** Appends newly discovered cards without touching cards already in the layout. */
+  function renderStableGallery(rebuild = false): void {
+    if (rebuild) {
+      imageObserver.disconnect();
+      gallery.replaceChildren();
+      cardsByResourceUri.clear();
+      folderGrids.clear();
+      masonryColumns = [];
+      masonryColumnHeights = [];
+      state.renderedItemCount = 0;
+    }
+    gallery.className = `layout-${state.layout}`;
+    topSpacer.style.height = "0px";
+    bottomSpacer.style.height = "0px";
+    const range = getStableGalleryAppendRange(state.renderedItemCount, state.items.length);
+    if (range.start === 0 && state.renderedItemCount > state.items.length) {
+      renderStableGallery(true);
+      return;
+    }
+    if (range.start === range.end) {
+      return;
+    }
+
+    if (state.layout === "folders") {
+      appendFolderCards(state.items.slice(range.start, range.end));
+    } else if (state.layout === "masonry") {
+      appendMasonryCards(state.items.slice(range.start, range.end));
+    } else {
+      const fragment = document.createDocumentFragment();
+      for (const item of state.items.slice(range.start, range.end)) {
+        fragment.append(createCard(item));
+      }
+      gallery.append(fragment);
+    }
+    state.renderedItemCount = range.end;
+  }
+
+  /** Appends each masonry card to the shortest column without moving older cards. */
+  function appendMasonryCards(items: DirectoryImage[]): void {
+    ensureMasonryColumns();
+    for (const item of items) {
+      const aspectRatio = knownAspectRatios.get(item.resourceUri) || 4 / 3;
+      const columnIndex = getShortestMasonryColumnIndex(masonryColumnHeights);
+      const card = createCard(item);
+      card.dataset.masonryColumn = String(columnIndex);
+      card.dataset.masonryHeight = String(getMasonryCardHeight(aspectRatio));
+      masonryColumns[columnIndex].append(card);
+      masonryColumnHeights[columnIndex] += Number(card.dataset.masonryHeight);
+    }
+  }
+
+  /** Recomputes column estimates after thumbnail-size changes. */
+  function recalculateMasonryColumnHeights(): void {
+    if (!masonryColumns.length) {
+      return;
+    }
+    masonryColumnHeights = Array.from({ length: masonryColumns.length }, () => 0);
+    for (const card of cardsByResourceUri.values()) {
+      const columnIndex = Number(card.dataset.masonryColumn);
+      const resourceUri = card.dataset.resourceUri;
+      if (!Number.isInteger(columnIndex) || masonryColumnHeights[columnIndex] === undefined || !resourceUri) {
+        continue;
+      }
+      const aspectRatio = knownAspectRatios.get(resourceUri) || 4 / 3;
+      const height = getMasonryCardHeight(aspectRatio);
+      card.style.setProperty("--masonry-thumbnail-height", `${getMasonryThumbnailHeight(aspectRatio)}px`);
+      card.dataset.masonryHeight = String(height);
+      masonryColumnHeights[columnIndex] += height;
+    }
+  }
+
+  /** Appends cards to persistent folder groups, including groups split across scan batches. */
+  function appendFolderCards(items: DirectoryImage[]): void {
     for (const item of items) {
       const folder = item.folder || "Top level";
-      if (folder !== currentFolder) {
-        currentFolder = folder;
-        const folderGroup = document.createElement("section");
-        folderGroup.className = "folder-group";
+      let grid = folderGrids.get(folder);
+      if (!grid) {
+        const group = document.createElement("section");
+        group.className = "folder-group";
         const heading = document.createElement("h2");
         heading.className = "folder-heading";
         heading.textContent = folder;
-        group = document.createElement("div");
-        group.className = "folder-grid";
-        folderGroup.append(heading, group);
-        fragment.append(folderGroup);
+        grid = document.createElement("div");
+        grid.className = "folder-grid";
+        group.append(heading, grid);
+        gallery.append(group);
+        folderGrids.set(folder, grid);
       }
-      group?.append(createCard(item));
+      grid.append(createCard(item));
     }
   }
 
-  /** Mounts a small viewport-centered image window and drops offscreen image elements. */
-  function renderWindow(force: boolean): void {
-    if (!state.items.length) {
-      gallery.replaceChildren();
-      topSpacer.style.height = "0px";
-      bottomSpacer.style.height = "0px";
+  /** Queues natural image ratios and applies them only after active scrolling stops. */
+  function queueMasonryRatioUpdate(card: HTMLButtonElement, aspectRatio: number): void {
+    if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
       return;
     }
-    const centeredIndex = getApproximateIndex();
-    const start = Math.max(0, centeredIndex - WINDOW_BEFORE);
-    const end = Math.min(state.items.length, centeredIndex + WINDOW_AFTER);
-    if (!force && start === state.renderedStart && end === state.renderedEnd) {
-      requestMoreIfNeeded(end);
-      return;
+    pendingMasonryRatios.set(card, aspectRatio);
+    if (!state.scrolling) {
+      scheduleMasonryRatioUpdates();
     }
-    state.renderedStart = start;
-    state.renderedEnd = end;
-    gallery.className = `layout-${state.layout}`;
-    topSpacer.style.height = `${estimateHeightForItems(start)}px`;
-    bottomSpacer.style.height = `${Math.max(0, estimateHeightForItems(state.items.length) - estimateHeightForItems(end))}px`;
-    const fragment = document.createDocumentFragment();
-    const visibleItems = state.items.slice(start, end);
-    if (state.layout === "folders") {
-      appendFolderCards(fragment, visibleItems);
-    } else {
-      for (const item of visibleItems) {
-        fragment.append(createCard(item));
-      }
-    }
-    gallery.replaceChildren(fragment);
-    requestMoreIfNeeded(end);
   }
 
-  /** Requests the next filesystem batch only when the mounted window nears discovered content. */
-  function requestMoreIfNeeded(renderedEnd: number): void {
-    if (state.hasMore && !state.loading && renderedEnd >= state.items.length - PREFETCH_DISTANCE) {
+  /** Applies a batch of masonry heights while preserving the first visible card. */
+  function scheduleMasonryRatioUpdates(): void {
+    if (state.masonryUpdateFrame || !pendingMasonryRatios.size) {
+      return;
+    }
+    state.masonryUpdateFrame = requestAnimationFrame(() => {
+      state.masonryUpdateFrame = 0;
+      const anchor = captureVisualAnchor();
+      for (const [card, aspectRatio] of pendingMasonryRatios) {
+        if (card.isConnected) {
+          card.style.setProperty("--masonry-thumbnail-height", `${getMasonryThumbnailHeight(aspectRatio)}px`);
+          const columnIndex = Number(card.dataset.masonryColumn);
+          const previousHeight = Number(card.dataset.masonryHeight);
+          if (Number.isInteger(columnIndex) && masonryColumnHeights[columnIndex] !== undefined && Number.isFinite(previousHeight)) {
+            const nextHeight = getMasonryCardHeight(aspectRatio);
+            masonryColumnHeights[columnIndex] += nextHeight - previousHeight;
+            card.dataset.masonryHeight = String(nextHeight);
+          }
+        }
+      }
+      pendingMasonryRatios.clear();
+      if (anchor) {
+        requestAnimationFrame(() => restoreVisualAnchor(anchor));
+      }
+    });
+  }
+
+  /** Captures the first card intersecting the visible scroll viewport. */
+  function captureVisualAnchor(): { resourceUri: string; offsetTop: number } | undefined {
+    const scrollRect = scroll.getBoundingClientRect();
+    for (const card of gallery.querySelectorAll<HTMLButtonElement>(".image-card")) {
+      const rect = card.getBoundingClientRect();
+      if (rect.bottom > scrollRect.top && rect.top < scrollRect.bottom && card.dataset.resourceUri) {
+        return { resourceUri: card.dataset.resourceUri, offsetTop: rect.top - scrollRect.top };
+      }
+    }
+    return undefined;
+  }
+
+  /** Restores a captured visual card after masonry heights settle. */
+  function restoreVisualAnchor(anchor: { resourceUri: string; offsetTop: number }): void {
+    if (state.scrolling) {
+      return;
+    }
+    const card = cardsByResourceUri.get(anchor.resourceUri);
+    if (!card?.isConnected) {
+      return;
+    }
+    const scrollRect = scroll.getBoundingClientRect();
+    const nextOffsetTop = card.getBoundingClientRect().top - scrollRect.top;
+    const correction = nextOffsetTop - anchor.offsetTop;
+    if (Math.abs(correction) > 0.5) {
+      scroll.scrollTop += correction;
+    }
+  }
+
+  /** Requests the next filesystem batch only when the viewport nears the stable gallery end. */
+  function requestMoreIfNeeded(): void {
+    const remainingDistance = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
+    if (state.hasMore && !state.loading && remainingDistance <= SCAN_PREFETCH_MARGIN_PX) {
       requestNextPage(!state.userHasScrolled);
     }
   }
@@ -207,14 +370,14 @@ function startDirectoryPreview(): void {
     vscode.postMessage({ type: "nextPage" });
   }
 
-  /** Schedules rendering after scrolling without running one DOM rebuild per scroll event. */
-  function scheduleRender(): void {
+  /** Schedules lightweight scan-prefetch work without rebuilding gallery cards. */
+  function scheduleScrollWork(): void {
     if (state.renderFrame) {
       return;
     }
     state.renderFrame = requestAnimationFrame(() => {
       state.renderFrame = 0;
-      renderWindow(false);
+      requestMoreIfNeeded();
     });
   }
 
@@ -235,38 +398,59 @@ function startDirectoryPreview(): void {
 
   /** Clears client metadata after a user-requested scan restart. */
   function resetScan(): void {
+    imageObserver.disconnect();
     state.items = [];
     state.hasMore = true;
     state.loading = false;
     state.skippedDirectories = 0;
     state.automaticScanRequests = 0;
     state.userHasScrolled = false;
-    state.renderedStart = -1;
-    state.renderedEnd = -1;
+    state.renderedItemCount = 0;
+    cardsByResourceUri.clear();
+    folderGrids.clear();
+    pendingMasonryRatios.clear();
     scroll.scrollTop = 0;
-    renderWindow(true);
+    gallery.replaceChildren();
+    topSpacer.style.height = "0px";
+    bottomSpacer.style.height = "0px";
     updateStatus();
   }
 
   layoutControl.addEventListener("change", () => {
+    const anchor = captureVisualAnchor();
     state.layout = layoutControl.value;
-    state.renderedStart = -1;
-    state.renderedEnd = -1;
     applyPreferences();
-    renderWindow(true);
+    renderStableGallery(true);
+    if (anchor) {
+      requestAnimationFrame(() => restoreVisualAnchor(anchor));
+    }
   });
   sizeControl.addEventListener("input", () => {
+    const anchor = captureVisualAnchor();
     state.thumbnailSize = Number(sizeControl.value);
-    state.renderedStart = -1;
-    state.renderedEnd = -1;
     applyPreferences();
-    renderWindow(true);
+    if (state.layout === "masonry") {
+      if (masonryColumns.length !== getMasonryColumnCount()) {
+        renderStableGallery(true);
+      } else {
+        recalculateMasonryColumnHeights();
+      }
+    }
+    if (anchor) {
+      requestAnimationFrame(() => restoreVisualAnchor(anchor));
+    }
   });
   continueScan.addEventListener("click", () => requestNextPage(false));
   rescan.addEventListener("click", () => vscode.postMessage({ type: "rescan" }));
   scroll.addEventListener("scroll", () => {
     state.userHasScrolled = true;
-    scheduleRender();
+    state.scrolling = true;
+    window.clearTimeout(state.scrollIdleTimer);
+    state.scrollIdleTimer = window.setTimeout(() => {
+      state.scrolling = false;
+      scheduleMasonryRatioUpdates();
+    }, SCROLL_IDLE_DELAY_MS);
+    scheduleScrollWork();
   }, { passive: true });
   gallery.addEventListener("click", (event) => {
     const target = event.target;
@@ -276,9 +460,13 @@ function startDirectoryPreview(): void {
     }
   });
   window.addEventListener("resize", () => {
-    state.renderedStart = -1;
-    state.renderedEnd = -1;
-    renderWindow(true);
+    const anchor = captureVisualAnchor();
+    if (state.layout === "masonry" && masonryColumns.length !== getMasonryColumnCount()) {
+      renderStableGallery(true);
+    }
+    if (anchor) {
+      requestAnimationFrame(() => restoreVisualAnchor(anchor));
+    }
   });
   window.addEventListener("message", (event: MessageEvent<WebviewMessage>) => {
     const message = event.data;
@@ -293,9 +481,7 @@ function startDirectoryPreview(): void {
     state.items.push(...(message.items || []));
     state.hasMore = Boolean(message.hasMore);
     state.skippedDirectories = Number(message.skippedDirectories) || 0;
-    state.renderedStart = -1;
-    state.renderedEnd = -1;
-    renderWindow(true);
+    renderStableGallery();
     updateStatus();
     // Two small opening batches cover common root-plus-child trees without recursively exhausting a large tree.
     if (state.hasMore && state.automaticScanRequests < 2 && !state.userHasScrolled) {
@@ -307,6 +493,7 @@ function startDirectoryPreview(): void {
   });
 
   applyPreferences();
+  renderStableGallery();
   status.textContent = "Connecting to directory scanner…";
   vscode.postMessage({ type: "ready" });
 }
