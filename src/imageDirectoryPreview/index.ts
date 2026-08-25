@@ -541,13 +541,16 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     #gallery.layout-masonry { display: flex; align-items: flex-start; gap: var(--card-gap); }
     #gallery.layout-masonry .masonry-column { display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; gap: var(--card-gap); }
     #gallery.layout-masonry .image-card { display: flex; width: 100%; margin: 0; }
-    .folder-group + .folder-group { margin-top: 28px; }
+    #gallery.layout-folders > .folder-group + .folder-group { margin-top: 28px; }
+    .folder-children { display: flex; flex-direction: column; gap: 18px; margin: 18px 0 0 18px; padding-left: 12px; border-left: 1px solid var(--vscode-tree-indentGuidesStroke, var(--vscode-editorWidget-border)); }
+    .folder-children:empty { display: none; }
     .folder-heading { margin: 0 0 10px; color: var(--vscode-descriptionForeground); font-size: 1.1em; font-weight: 600; overflow-wrap: anywhere; }
     .folder-toggle { width: 100%; color: inherit; background: transparent; text-align: left; padding: 2px 0; }
     .folder-toggle::before { content: "▾"; display: inline-block; width: 1.1em; }
     .folder-toggle:hover { color: var(--vscode-foreground); background: transparent; }
     .folder-group.is-collapsed .folder-toggle::before { content: "▸"; }
-    .folder-group.is-collapsed .folder-grid { display: none; }
+    /* A parent folder hides its own images and all descendants, while each child keeps its collapse state for restoration. */
+    .folder-group.is-collapsed > .folder-content { display: none; }
     /* Strong card separation keeps dense previews scannable in both light and dark VS Code themes. */
     .image-card { position: relative; display: flex; min-width: 0; flex-direction: column; overflow: hidden; color: inherit; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, rgba(127,127,127,.6))); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(127,127,127,.05)); box-shadow: 0 1px 3px rgba(0,0,0,.22), inset 0 0 0 1px rgba(127,127,127,.08); cursor: pointer; text-align: left; padding: 0; }
     .image-card:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); box-shadow: 0 0 0 1px var(--vscode-focusBorder), 0 3px 8px rgba(0,0,0,.26); }

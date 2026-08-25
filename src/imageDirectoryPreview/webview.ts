@@ -13,6 +13,7 @@ import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "./vi
 import { clampColumnCount, DIRECTORY_PREVIEW_GAP_PX, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "./thumbnailColumns";
 import { getImageAspectRatio } from "./imageSizing";
 import { getImageHoverDetails } from "./imageHoverDetails";
+import { getFolderHierarchy, type FolderHierarchyNode } from "./folderHierarchy";
 
 type DirectoryImage = {
   name: string;
@@ -112,6 +113,7 @@ function startDirectoryPreview(): void {
   const cardsByResourceUri = new Map<string, HTMLButtonElement>();
   const folderGrids = new Map<string, HTMLElement>();
   const folderGroups = new Map<string, HTMLElement>();
+  const folderChildren = new Map<string, HTMLElement>();
   const collapsedFolders = new Set<string>();
   const knownAspectRatios = new Map<string, number>();
   const knownImageDimensions = new Map<string, ImageDimensions>();
@@ -331,6 +333,7 @@ function startDirectoryPreview(): void {
       cardsByResourceUri.clear();
       folderGrids.clear();
       folderGroups.clear();
+      folderChildren.clear();
       masonryColumns = [];
       masonryColumnHeights = [];
       state.renderedItemCount = 0;
@@ -395,36 +398,60 @@ function startDirectoryPreview(): void {
     }
   }
 
-  /** Appends cards to persistent folder groups, including groups split across scan batches. */
+  /** Appends cards to persistent nested folder groups, including groups split across scan batches. */
   function appendFolderCards(items: DirectoryImage[]): void {
     for (const item of items) {
-      const folder = item.folder || "Top level";
-      let grid = folderGrids.get(folder);
-      if (!grid) {
-        const group = document.createElement("section");
-        group.className = "folder-group";
-        group.dataset.folder = folder;
-        const heading = document.createElement("h2");
-        heading.className = "folder-heading";
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "folder-toggle";
-        toggle.dataset.folder = folder;
-        toggle.textContent = folder;
-        toggle.title = `Collapse ${folder}`;
-        grid = document.createElement("div");
-        grid.className = "folder-grid";
-        heading.append(toggle);
-        group.append(heading, grid);
-        gallery.append(group);
-        folderGrids.set(folder, grid);
-        folderGroups.set(folder, group);
-        if (state.collapseNewFolders || collapsedFolders.has(folder)) {
-          setFolderCollapsed(folder, true);
-        }
+      const hierarchy = getFolderHierarchy(item.folder);
+      const folder = hierarchy.at(-1);
+      if (!folder) {
+        continue;
       }
+      const grid = ensureFolderGrid(folder, hierarchy);
       grid.append(createCard(item));
     }
+  }
+
+  /** Ensures a folder and every parent ancestor have a stable nested group, then returns its image grid. */
+  function ensureFolderGrid(folder: FolderHierarchyNode, hierarchy: readonly FolderHierarchyNode[]): HTMLElement {
+    for (const node of hierarchy) {
+      if (folderGrids.has(node.path)) {
+        continue;
+      }
+      const group = document.createElement("section");
+      group.className = "folder-group";
+      group.dataset.folder = node.path;
+      const heading = document.createElement("h2");
+      heading.className = "folder-heading";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "folder-toggle";
+      toggle.dataset.folder = node.path;
+      toggle.textContent = node.name;
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.setAttribute("aria-label", node.path ? `Folder ${node.path}` : "Top-level images");
+      toggle.title = `Collapse ${node.path || node.name}`;
+      const content = document.createElement("div");
+      content.className = "folder-content";
+      const grid = document.createElement("div");
+      grid.className = "folder-grid";
+      const children = document.createElement("div");
+      children.className = "folder-children";
+      content.append(grid, children);
+      heading.append(toggle);
+      group.append(heading, content);
+      const parentChildren = node.parentPath === undefined ? gallery : folderChildren.get(node.parentPath);
+      if (!parentChildren) {
+        throw new Error(`Missing folder parent for ${node.path}`);
+      }
+      parentChildren.append(group);
+      folderGrids.set(node.path, grid);
+      folderGroups.set(node.path, group);
+      folderChildren.set(node.path, children);
+      if (state.collapseNewFolders || collapsedFolders.has(node.path)) {
+        setFolderCollapsed(node.path, true);
+      }
+    }
+    return folderGrids.get(folder.path)!;
   }
 
   /** Changes one folder group's disclosure state and keeps its accessible label current. */
@@ -615,6 +642,7 @@ function startDirectoryPreview(): void {
     cardsByResourceUri.clear();
     folderGrids.clear();
     folderGroups.clear();
+    folderChildren.clear();
     pendingMasonryRatios.clear();
     masonryColumns = [];
     masonryColumnHeights = [];
@@ -685,8 +713,8 @@ function startDirectoryPreview(): void {
     const target = event.target;
     const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
     const folderToggle = target instanceof Element ? target.closest<HTMLButtonElement>(".folder-toggle") : undefined;
-    if (folderToggle?.dataset.folder) {
-      const folder = folderToggle.dataset.folder;
+    const folder = folderToggle?.dataset.folder;
+    if (folder !== undefined) {
       const group = folderGroups.get(folder);
       state.collapseNewFolders = false;
       setFolderCollapsed(folder, !group?.classList.contains("is-collapsed"));

@@ -6,6 +6,7 @@ import { initializeDirectoryPreviewWebview, type DirectoryPreviewWebview } from 
 import { buildDirectoryPreviewWebviewSecurityMarkup } from "../src/imageDirectoryPreview/webviewSecurity";
 import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "../src/imageDirectoryPreview/virtualScroll";
 import { normalizeFolderKeywords, shouldIncludeDirectoryImages, shouldTraverseDirectory, type DirectoryPreviewFolderFilters } from "../src/imageDirectoryPreview/folderFilters";
+import { getFolderHierarchy } from "../src/imageDirectoryPreview/folderHierarchy";
 import { normalizePreviewRelativePath } from "../src/imageDirectoryPreview/relativePath";
 import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "../src/imageDirectoryPreview/thumbnailColumns";
 import { getImageAspectRatio, getNaturalImageHeight } from "../src/imageDirectoryPreview/imageSizing";
@@ -93,6 +94,34 @@ function filtersDirectoryImagesWithPredictableKeywordPrecedence(): void {
   assert.equal(shouldIncludeDirectoryImages("chapter/archive/figures", filters), false);
 }
 
+/** Verifies nested image folders expose every ancestor as an independently collapsible tree node. */
+function buildsCollapsibleFolderAncestors(): void {
+  assert.deepEqual(getFolderHierarchy("a/bb/ccc"), [
+    { path: "a", parentPath: undefined, name: "a", depth: 0 },
+    { path: "a/bb", parentPath: "a", name: "bb", depth: 1 },
+    { path: "a/bb/ccc", parentPath: "a/bb", name: "ccc", depth: 2 },
+  ]);
+  assert.deepEqual(getFolderHierarchy("a\\bb\\ddd"), [
+    { path: "a", parentPath: undefined, name: "a", depth: 0 },
+    { path: "a/bb", parentPath: "a", name: "bb", depth: 1 },
+    { path: "a/bb/ddd", parentPath: "a/bb", name: "ddd", depth: 2 },
+  ]);
+  assert.deepEqual(getFolderHierarchy(""), [
+    { path: "", parentPath: undefined, name: "Top level", depth: 0 },
+  ]);
+}
+
+/** Verifies folder-layout rendering nests descendant groups inside each parent's collapsible content. */
+function rendersCollapsibleFolderSubtrees(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+  const previewSource = readFileSync("src/imageDirectoryPreview/index.ts", "utf8");
+
+  assert.match(controllerSource, /getFolderHierarchy\(item\.folder\)/);
+  assert.match(controllerSource, /folderChildren\.set\(node\.path, children\)/);
+  assert.match(controllerSource, /parentChildren\.append\(group\)/);
+  assert.match(previewSource, /\.folder-group\.is-collapsed > \.folder-content \{ display: none; \}/);
+}
+
 /** Verifies copied preview paths stay root-relative and cannot escape through parent segments. */
 function normalizesSafePreviewRelativePaths(): void {
   assert.equal(normalizePreviewRelativePath("figures\\result.png"), "figures/result.png");
@@ -176,6 +205,8 @@ test("loads its bootstrap code from an external CSP-approved script", usesExtern
 test("appends only newly discovered cards to the stable gallery", appendsOnlyNewlyDiscoveredGalleryCards);
 test("appends masonry cards to the current shortest stable column", choosesTheCurrentShortestMasonryColumn);
 test("filters image folders with include and exclude keyword precedence", filtersDirectoryImagesWithPredictableKeywordPrecedence);
+test("builds a collapsible hierarchy for nested image folders", buildsCollapsibleFolderAncestors);
+test("renders nested folder subtrees behind their parent toggle", rendersCollapsibleFolderSubtrees);
 test("normalizes only safe root-relative image paths", normalizesSafePreviewRelativePaths);
 test("constrains column count to the viewport and maps Ctrl-wheel direction", constrainsColumnCountToViewportAndWheelDirection);
 test("derives Grid and Folder image height from the natural aspect ratio", derivesNaturalImageHeightFromAspectRatio);
