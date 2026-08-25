@@ -544,11 +544,19 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     #gallery.layout-folders > .folder-group + .folder-group { margin-top: 28px; }
     .folder-children { display: flex; flex-direction: column; gap: 18px; margin: 18px 0 0 18px; padding-left: 12px; border-left: 1px solid var(--vscode-tree-indentGuidesStroke, var(--vscode-editorWidget-border)); }
     .folder-children:empty { display: none; }
-    .folder-heading { margin: 0 0 10px; color: var(--vscode-descriptionForeground); font-size: 1.1em; font-weight: 600; overflow-wrap: anywhere; }
-    .folder-toggle { width: 100%; color: inherit; background: transparent; text-align: left; padding: 2px 0; }
-    .folder-toggle::before { content: "▾"; display: inline-block; width: 1.1em; }
-    .folder-toggle:hover { color: var(--vscode-foreground); background: transparent; }
-    .folder-group.is-collapsed .folder-toggle::before { content: "▸"; }
+    /* Folder headers look like compact VS Code tree rows rather than plain text links. */
+    .folder-heading { margin: 0 0 10px; color: var(--vscode-foreground); font-size: 1em; font-weight: 600; overflow-wrap: anywhere; }
+    .folder-toggle { box-sizing: border-box; display: flex; width: 100%; min-height: 34px; align-items: center; gap: 8px; padding: 6px 10px; color: var(--vscode-foreground); border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, transparent)); border-left: 3px solid var(--vscode-focusBorder); border-radius: 6px; background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background)); box-shadow: inset 0 1px rgba(255,255,255,.035); text-align: left; transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
+    .folder-disclosure { width: 7px; height: 7px; flex: 0 0 7px; margin: -3px 1px 0 1px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform 120ms ease; }
+    /* Keep the folder marker secondary to its name: it is a muted outline, not a filled color block. */
+    .folder-icon { position: relative; box-sizing: border-box; width: 15px; height: 11px; flex: 0 0 15px; margin-top: 3px; color: var(--vscode-descriptionForeground); border: 1.5px solid currentColor; border-radius: 2px; opacity: .72; }
+    .folder-icon::before { position: absolute; top: -4px; left: 1px; width: 7px; height: 4px; border: 1.5px solid currentColor; border-bottom: 0; border-radius: 2px 2px 0 0; content: ""; }
+    .folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .folder-toggle:hover { color: var(--vscode-list-hoverForeground, var(--vscode-foreground)); border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 28%, transparent), inset 0 1px rgba(255,255,255,.045); }
+    .folder-toggle:hover .folder-icon { color: currentColor; opacity: .9; }
+    .folder-toggle:active { background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground)); }
+    .folder-toggle:focus-visible { outline-offset: 2px; }
+    .folder-group.is-collapsed .folder-disclosure { margin-top: 1px; transform: rotate(-45deg); }
     /* A parent folder hides its own images and all descendants, while each child keeps its collapse state for restoration. */
     .folder-group.is-collapsed > .folder-content { display: none; }
     /* Strong card separation keeps dense previews scannable in both light and dark VS Code themes. */
