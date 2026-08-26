@@ -53,6 +53,8 @@ type VsCodeApi = {
     resourceUri?: string;
     includedFolderKeywords?: string[];
     excludedFolderKeywords?: string[];
+    collapsedFolders?: string[];
+    resumedFolders?: string[];
   }): void;
   getState(): { layout?: string; columns?: number; thumbnailSize?: number } | undefined;
   setState(state: { layout: string; columns: number }): void;
@@ -63,6 +65,7 @@ declare function acquireVsCodeApi(): VsCodeApi;
 const IMAGE_LOAD_MARGIN_PX = 1_600;
 const SCAN_PREFETCH_MARGIN_PX = 1_200;
 const SCROLL_IDLE_DELAY_MS = 140;
+const FOLDER_SCAN_SYNC_DELAY_MS = 40;
 const GALLERY_HORIZONTAL_INSET_PX = 32;
 
 /** Runs the directory-preview browser controller once the external script loads. */
@@ -96,8 +99,6 @@ function startDirectoryPreview(): void {
     hasMore: true,
     loading: false,
     skippedDirectories: 0,
-    automaticScanRequests: 0,
-    userHasScrolled: false,
     layout: saved.layout || "grid",
     columns: Number(saved.columns) || 4,
     thumbnailSize: Number(saved.thumbnailSize) || 180,
@@ -105,6 +106,7 @@ function startDirectoryPreview(): void {
     renderFrame: 0,
     scrolling: false,
     scrollIdleTimer: 0,
+    folderScanSyncTimer: 0,
     masonryUpdateFrame: 0,
     collapseNewFolders: false,
     contextResourceUri: "",
@@ -115,6 +117,7 @@ function startDirectoryPreview(): void {
   const folderGroups = new Map<string, HTMLElement>();
   const folderChildren = new Map<string, HTMLElement>();
   const collapsedFolders = new Set<string>();
+  const resumedFolders = new Set<string>();
   const knownAspectRatios = new Map<string, number>();
   const knownImageDimensions = new Map<string, ImageDimensions>();
   const imageFileMetadata = new Map<string, ImageFileMetadata>();
@@ -463,20 +466,46 @@ function startDirectoryPreview(): void {
     return folderGrids.get(folder.path)!;
   }
 
-  /** Changes one folder group's disclosure state and keeps its accessible label current. */
+  /** Coalesces folder disclosure changes before telling the scanner which branches to pause. */
+  function scheduleFolderScanSync(): void {
+    if (state.folderScanSyncTimer) {
+      return;
+    }
+    state.folderScanSyncTimer = window.setTimeout(() => {
+      state.folderScanSyncTimer = 0;
+      // The selected root itself is visual-only: pause only actual descendant folder branches.
+      const nextResumedFolders = [...resumedFolders].filter((folder) => folder.length > 0 && !collapsedFolders.has(folder));
+      resumedFolders.clear();
+      vscode.postMessage({
+        type: "setCollapsedFolders",
+        collapsedFolders: [...collapsedFolders].filter(Boolean),
+        resumedFolders: nextResumedFolders,
+      });
+    }, FOLDER_SCAN_SYNC_DELAY_MS);
+  }
+
+  /** Changes one folder group's disclosure state and pauses or resumes its pending scan branch. */
   function setFolderCollapsed(folder: string, collapsed: boolean): void {
     const group = folderGroups.get(folder);
     const toggle = group?.querySelector<HTMLButtonElement>(".folder-toggle");
     if (!group || !toggle) {
       return;
     }
+    const wasCollapsed = group.classList.contains("is-collapsed");
     group.classList.toggle("is-collapsed", collapsed);
     toggle.setAttribute("aria-expanded", String(!collapsed));
     toggle.title = `${collapsed ? "Expand" : "Collapse"} ${folder}`;
     if (collapsed) {
       collapsedFolders.add(folder);
+      resumedFolders.delete(folder);
     } else {
       collapsedFolders.delete(folder);
+      if (folder) {
+        resumedFolders.add(folder);
+      }
+    }
+    if (wasCollapsed !== collapsed) {
+      scheduleFolderScanSync();
     }
   }
 
@@ -590,24 +619,16 @@ function startDirectoryPreview(): void {
   function requestMoreIfNeeded(): void {
     const remainingDistance = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
     if (state.hasMore && !state.loading && remainingDistance <= SCAN_PREFETCH_MARGIN_PX) {
-      requestNextPage(!state.userHasScrolled);
+      requestNextPage();
     }
   }
 
   /** Requests one bounded extension-host scan batch. */
-  function requestNextPage(isAutomatic: boolean): void {
+  function requestNextPage(): void {
     if (state.loading || !state.hasMore) {
       return;
     }
-    // Cap opening-time discovery so a deeply nested non-image tree does not delay the tab.
-    if (isAutomatic && state.automaticScanRequests >= 2) {
-      updateStatus();
-      return;
-    }
     state.loading = true;
-    if (isAutomatic) {
-      state.automaticScanRequests += 1;
-    }
     updateStatus();
     vscode.postMessage({ type: "nextPage" });
   }
@@ -625,16 +646,16 @@ function startDirectoryPreview(): void {
 
   /** Shows discovery progress without claiming an incomplete scan is a final count. */
   function updateStatus(): void {
-    if (state.loading) {
-      status.textContent = `Scanning… ${state.items.length} found`;
-    } else if (state.hasMore) {
-      status.textContent = `${state.items.length} found · continue scanning on demand`;
+    // Keep one status label while scan work remains so a user-triggered batch does not flicker the toolbar.
+    if (state.hasMore) {
+      status.textContent = `${state.items.length} found · scroll to discover more`;
     } else if (state.skippedDirectories) {
       status.textContent = `${state.items.length} images · ${state.skippedDirectories} folders unavailable`;
     } else {
       status.textContent = `${state.items.length} images`;
     }
-    continueScan.hidden = state.loading || !state.hasMore;
+    // Scrolling, not an always-running background loop, unlocks the next bounded batch.
+    continueScan.hidden = true;
     continueScan.disabled = state.loading || !state.hasMore;
   }
 
@@ -645,14 +666,15 @@ function startDirectoryPreview(): void {
     state.hasMore = true;
     state.loading = false;
     state.skippedDirectories = 0;
-    state.automaticScanRequests = 0;
-    state.userHasScrolled = false;
     state.renderedItemCount = 0;
     cardsByResourceUri.clear();
     folderGrids.clear();
     folderGroups.clear();
     folderChildren.clear();
+    resumedFolders.clear();
     pendingMasonryRatios.clear();
+    window.clearTimeout(state.folderScanSyncTimer);
+    state.folderScanSyncTimer = 0;
     masonryColumns = [];
     masonryColumnHeights = [];
     scroll.scrollTop = 0;
@@ -686,10 +708,12 @@ function startDirectoryPreview(): void {
     });
     settingsDialog.close();
   });
-  continueScan.addEventListener("click", () => requestNextPage(false));
+  continueScan.addEventListener("click", () => requestNextPage());
   rescan.addEventListener("click", () => vscode.postMessage({ type: "rescan" }));
   scroll.addEventListener("wheel", (event) => {
     if (!event.ctrlKey) {
+      // A wheel gesture can be the only scroll signal when the initial short gallery does not overflow yet.
+      scheduleScrollWork();
       return;
     }
     // Ctrl-wheel is reserved for thumbnail resizing; prevent Webview zoom while
@@ -702,7 +726,6 @@ function startDirectoryPreview(): void {
     }
   }, { passive: false });
   scroll.addEventListener("scroll", () => {
-    state.userHasScrolled = true;
     state.scrolling = true;
     window.clearTimeout(state.scrollIdleTimer);
     state.scrollIdleTimer = window.setTimeout(() => {
@@ -820,10 +843,6 @@ function startDirectoryPreview(): void {
     state.skippedDirectories = Number(message.skippedDirectories) || 0;
     renderStableGallery();
     updateStatus();
-    // Two small opening batches cover common root-plus-child trees without recursively exhausting a large tree.
-    if (state.hasMore && state.automaticScanRequests < 2 && !state.userHasScrolled) {
-      requestNextPage(true);
-    }
     if (!state.hasMore && !state.items.length) {
       gallery.innerHTML = '<p class="empty">No supported image files were found in this directory.</p>';
     }

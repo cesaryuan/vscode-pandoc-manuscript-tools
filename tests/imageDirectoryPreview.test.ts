@@ -11,6 +11,7 @@ import { normalizePreviewRelativePath } from "../src/imageDirectoryPreview/relat
 import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, getWheelAdjustedColumnCount } from "../src/imageDirectoryPreview/thumbnailColumns";
 import { getImageAspectRatio, getNaturalImageHeight } from "../src/imageDirectoryPreview/imageSizing";
 import { getImageHoverDetails } from "../src/imageDirectoryPreview/imageHoverDetails";
+import { getNextScannableDirectoryWorkIndex, isDirectoryPaused } from "../src/imageDirectoryPreview/scanScheduling";
 
 /** Verifies the directory scanner accepts browser-previewable image extensions case-insensitively. */
 function verifiesSupportedDirectoryPreviewImages(): void {
@@ -122,6 +123,55 @@ function rendersCollapsibleFolderSubtrees(): void {
   assert.match(previewSource, /\.folder-group\.is-collapsed > \.folder-content \{ display: none; \}/);
 }
 
+/** Reproduces a collapsed large branch: only that branch and its descendants stop scanning. */
+function skipsCollapsedFolderBranchesUntilTheyReopen(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+  const hostSource = readFileSync("src/imageDirectoryPreview/index.ts", "utf8");
+  const pausedFolders = new Set(["a"]);
+
+  assert.equal(isDirectoryPaused("a", pausedFolders), true);
+  assert.equal(isDirectoryPaused("a/0001", pausedFolders), true);
+  assert.equal(isDirectoryPaused("a/0001/nested", pausedFolders), true);
+  assert.equal(isDirectoryPaused("b/0001", pausedFolders), false);
+  assert.equal(isDirectoryPaused("", pausedFolders), false);
+  assert.match(controllerSource, /type: "setCollapsedFolders",[\s\S]*?collapsedFolders:/);
+  assert.match(hostSource, /message\.type === "setCollapsedFolders"/);
+  assert.match(hostSource, /this\.scanner\.setPausedFolders\(collapsedFolders, resumedFolders\)/);
+}
+
+/** Reproduces reopening A after B is collapsed: the resumed A work must beat unrelated queued work. */
+function prioritizesAnExplicitlyReopenedFolder(): void {
+  const pendingDirectories = [
+    { relativePath: "" },
+    { relativePath: "a/0100" },
+    { relativePath: "a/0101" },
+    { relativePath: "b/0100" },
+  ];
+
+  assert.equal(getNextScannableDirectoryWorkIndex(pendingDirectories, new Set(["b"]), new Set(["a"])), 1);
+  assert.equal(getNextScannableDirectoryWorkIndex(pendingDirectories, new Set(["a", "b"]), new Set(["a"])), 0);
+}
+
+/** Verifies discovery advances only from a user scroll/wheel action after the initial bounded batch. */
+function scansMoreImagesOnlyWhenTheUserScrolls(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+
+  assert.match(controllerSource, /function requestMoreIfNeeded\(\): void/);
+  assert.match(controllerSource, /scroll\.addEventListener\("scroll", \(\) => \{[\s\S]*?scheduleScrollWork\(\);/);
+  assert.match(controllerSource, /if \(!event\.ctrlKey\) \{[\s\S]*?scheduleScrollWork\(\);\s*return;/);
+  assert.doesNotMatch(controllerSource, /scheduleBackgroundScan/);
+  assert.doesNotMatch(controllerSource, /backgroundScanTimer/);
+}
+
+/** Verifies scan progress does not alternate its label while one user-triggered batch is in flight. */
+function keepsScrollTriggeredScanStatusTextStable(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+  const updateStatusSource = controllerSource.match(/function updateStatus\(\): void \{([\s\S]*?)\n  \}/)?.[1] || "";
+
+  assert.doesNotMatch(updateStatusSource, /if \(state\.loading\)/);
+  assert.match(updateStatusSource, /if \(state\.hasMore\) \{\s*status\.textContent = `\$\{state\.items\.length\} found · scroll to discover more`;/);
+}
+
 /** Verifies copied preview paths stay root-relative and cannot escape through parent segments. */
 function normalizesSafePreviewRelativePaths(): void {
   assert.equal(normalizePreviewRelativePath("figures\\result.png"), "figures/result.png");
@@ -207,6 +257,10 @@ test("appends masonry cards to the current shortest stable column", choosesTheCu
 test("filters image folders with include and exclude keyword precedence", filtersDirectoryImagesWithPredictableKeywordPrecedence);
 test("builds a collapsible hierarchy for nested image folders", buildsCollapsibleFolderAncestors);
 test("renders nested folder subtrees behind their parent toggle", rendersCollapsibleFolderSubtrees);
+test("skips a collapsed folder branch until it is reopened", skipsCollapsedFolderBranchesUntilTheyReopen);
+test("prioritizes a folder explicitly reopened by the user", prioritizesAnExplicitlyReopenedFolder);
+test("scans more directory images only while the user scrolls", scansMoreImagesOnlyWhenTheUserScrolls);
+test("keeps scroll-triggered scan status text stable", keepsScrollTriggeredScanStatusTextStable);
 test("normalizes only safe root-relative image paths", normalizesSafePreviewRelativePaths);
 test("constrains column count to the viewport and maps Ctrl-wheel direction", constrainsColumnCountToViewportAndWheelDirection);
 test("derives Grid and Folder image height from the natural aspect ratio", derivesNaturalImageHeightFromAspectRatio);

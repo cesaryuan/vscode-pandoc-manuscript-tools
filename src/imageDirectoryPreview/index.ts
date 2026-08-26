@@ -16,6 +16,7 @@ import { isDirectoryPreviewImageFile } from "./imageTypes";
 import { initializeDirectoryPreviewWebview } from "./webviewInitialization";
 import { buildDirectoryPreviewWebviewSecurityMarkup } from "./webviewSecurity";
 import { normalizePreviewRelativePath } from "./relativePath";
+import { getNextScannableDirectoryWorkIndex } from "./scanScheduling";
 const MAX_IMAGES_PER_BATCH = 72;
 const MAX_ENTRIES_PER_BATCH = 1_000;
 const MAX_DIRECTORY_READS_PER_BATCH = 6;
@@ -47,6 +48,8 @@ type WebviewMessage = {
   resourceUri?: string;
   includedFolderKeywords?: unknown;
   excludedFolderKeywords?: unknown;
+  collapsedFolders?: unknown;
+  resumedFolders?: unknown;
 };
 
 /** Manages one reusable directory-preview panel for each selected directory. */
@@ -223,6 +226,10 @@ class DirectoryPreviewSession {
       await this.updateFolderFilters(message.includedFolderKeywords, message.excludedFolderKeywords);
       return;
     }
+    if (message.type === "setCollapsedFolders") {
+      await this.updateCollapsedFolders(message.collapsedFolders, message.resumedFolders);
+      return;
+    }
     if (message.type === "copyRelativePath" && message.resourceUri) {
       await this.copyRelativePath(message.resourceUri);
       return;
@@ -279,6 +286,13 @@ class DirectoryPreviewSession {
       await this.panel.webview.postMessage({ type: "notice", text: "Filters apply to this preview, but could not be saved." });
     }
     await this.resetScanner();
+  }
+
+  /** Updates paused branches and gives an explicitly reopened folder one bounded priority scan turn. */
+  private async updateCollapsedFolders(collapsedFolders: unknown, resumedFolders: unknown): Promise<void> {
+    this.scanner.setPausedFolders(collapsedFolders, resumedFolders);
+    // A disclosure action intentionally requests one bounded batch; scrolling remains responsible for later batches.
+    await this.sendNextBatch();
   }
 
   /** Opens a clicked image only when it is a supported descendant of the selected root. */
@@ -388,6 +402,8 @@ class IncrementalImageScanner {
   private readonly output: vscode.OutputChannel;
   private readonly filters: DirectoryPreviewFolderFilters;
   private readonly pendingDirectories: DirectoryWork[];
+  private pausedFolders = new Set<string>();
+  private resumedFolders = new Set<string>();
   private skippedDirectories = 0;
   private disposed = false;
 
@@ -412,6 +428,25 @@ class IncrementalImageScanner {
     this.disposed = true;
   }
 
+  /** Replaces paused branches and records folders that need priority in their next bounded scan turn. */
+  setPausedFolders(values: unknown, resumedValues: unknown): void {
+    const nextPausedFolders = new Set<string>();
+    if (Array.isArray(values)) {
+      for (const value of values) {
+        if (typeof value !== "string") {
+          continue;
+        }
+        const normalized = normalizePreviewRelativePath(value);
+        if (normalized) {
+          nextPausedFolders.add(normalized);
+        }
+      }
+    }
+    this.pausedFolders = nextPausedFolders;
+    this.resumedFolders = normalizeDirectoryBranchPaths(resumedValues, nextPausedFolders);
+    this.output.appendLine(`Image directory preview updated ${nextPausedFolders.size} collapsed and ${this.resumedFolders.size} resumed folder scan branch(es)`);
+  }
+
   /**
    * Reads a bounded number of entries and returns only a small image batch.
    *
@@ -431,7 +466,12 @@ class IncrementalImageScanner {
       && inspectedEntries < MAX_ENTRIES_PER_BATCH
       && directoryReads < MAX_DIRECTORY_READS_PER_BATCH
     ) {
-      const work = this.pendingDirectories[0];
+      // Retain collapsed work for a later reopen, then give the reopened branch this user-triggered batch first.
+      const workIndex = getNextScannableDirectoryWorkIndex(this.pendingDirectories, this.pausedFolders, this.resumedFolders);
+      if (workIndex < 0) {
+        break;
+      }
+      const work = this.pendingDirectories[workIndex];
       if (!work.entries) {
         const entries = await this.readDirectory(work.uri);
         if (this.disposed) {
@@ -439,7 +479,7 @@ class IncrementalImageScanner {
         }
         directoryReads += 1;
         if (!entries) {
-          this.pendingDirectories.shift();
+          this.pendingDirectories.splice(workIndex, 1);
           continue;
         }
         work.entries = entries;
@@ -481,13 +521,14 @@ class IncrementalImageScanner {
       }
 
       if (work.entries && work.nextEntryIndex >= work.entries.length) {
-        this.pendingDirectories.shift();
+        this.pendingDirectories.splice(workIndex, 1);
       }
     }
 
+    this.resumedFolders.clear();
     return {
       images,
-      hasMore: !this.disposed && this.pendingDirectories.length > 0,
+      hasMore: !this.disposed && getNextScannableDirectoryWorkIndex(this.pendingDirectories, this.pausedFolders, new Set()) >= 0,
       skippedDirectories: this.skippedDirectories,
     };
   }
@@ -503,6 +544,24 @@ class IncrementalImageScanner {
       return undefined;
     }
   }
+}
+
+/** Normalizes Webview folder paths and ignores resumed branches that remain collapsed. */
+function normalizeDirectoryBranchPaths(values: unknown, excludedPaths: ReadonlySet<string> = new Set()): Set<string> {
+  const paths = new Set<string>();
+  if (!Array.isArray(values)) {
+    return paths;
+  }
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const normalized = normalizePreviewRelativePath(value);
+    if (normalized && !excludedPaths.has(normalized)) {
+      paths.add(normalized);
+    }
+  }
+  return paths;
 }
 
 /** Builds the complete HTML document for the directory-preview Webview. */
