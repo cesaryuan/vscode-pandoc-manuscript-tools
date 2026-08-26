@@ -172,6 +172,15 @@ function keepsScrollTriggeredScanStatusTextStable(): void {
   assert.match(updateStatusSource, /if \(state\.hasMore\) \{\s*status\.textContent = `\$\{state\.items\.length\} found · scroll to discover more`;/);
 }
 
+/** Reproduces an opening tree whose first bounded directory batches contain no images. */
+function prefetchesOnlyEnoughEmptyOpeningBatchesToRenderTheFirstImages(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+
+  assert.match(controllerSource, /const MAX_INITIAL_EMPTY_SCAN_REQUESTS = 3;/);
+  assert.match(controllerSource, /!state\.items\.length[\s\S]*?state\.initialEmptyScanRequests < MAX_INITIAL_EMPTY_SCAN_REQUESTS[\s\S]*?requestNextPage\(\);/);
+  assert.doesNotMatch(controllerSource, /setInterval\(/);
+}
+
 /** Verifies copied preview paths stay root-relative and cannot escape through parent segments. */
 function normalizesSafePreviewRelativePaths(): void {
   assert.equal(normalizePreviewRelativePath("figures\\result.png"), "figures/result.png");
@@ -261,6 +270,7 @@ test("skips a collapsed folder branch until it is reopened", skipsCollapsedFolde
 test("prioritizes a folder explicitly reopened by the user", prioritizesAnExplicitlyReopenedFolder);
 test("scans more directory images only while the user scrolls", scansMoreImagesOnlyWhenTheUserScrolls);
 test("keeps scroll-triggered scan status text stable", keepsScrollTriggeredScanStatusTextStable);
+test("prefetches only enough empty opening batches to render the first images", prefetchesOnlyEnoughEmptyOpeningBatchesToRenderTheFirstImages);
 test("normalizes only safe root-relative image paths", normalizesSafePreviewRelativePaths);
 test("constrains column count to the viewport and maps Ctrl-wheel direction", constrainsColumnCountToViewportAndWheelDirection);
 test("derives Grid and Folder image height from the natural aspect ratio", derivesNaturalImageHeightFromAspectRatio);

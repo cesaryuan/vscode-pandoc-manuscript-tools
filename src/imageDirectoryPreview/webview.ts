@@ -66,6 +66,7 @@ const IMAGE_LOAD_MARGIN_PX = 1_600;
 const SCAN_PREFETCH_MARGIN_PX = 1_200;
 const SCROLL_IDLE_DELAY_MS = 140;
 const FOLDER_SCAN_SYNC_DELAY_MS = 40;
+const MAX_INITIAL_EMPTY_SCAN_REQUESTS = 3;
 const GALLERY_HORIZONTAL_INSET_PX = 32;
 
 /** Runs the directory-preview browser controller once the external script loads. */
@@ -98,6 +99,7 @@ function startDirectoryPreview(): void {
     items: [] as DirectoryImage[],
     hasMore: true,
     loading: false,
+    initialEmptyScanRequests: 0,
     skippedDirectories: 0,
     layout: saved.layout || "grid",
     columns: Number(saved.columns) || 4,
@@ -665,6 +667,7 @@ function startDirectoryPreview(): void {
     state.items = [];
     state.hasMore = true;
     state.loading = false;
+    state.initialEmptyScanRequests = 0;
     state.skippedDirectories = 0;
     state.renderedItemCount = 0;
     cardsByResourceUri.clear();
@@ -843,6 +846,12 @@ function startDirectoryPreview(): void {
     state.skippedDirectories = Number(message.skippedDirectories) || 0;
     renderStableGallery();
     updateStatus();
+    // Some roots need several directory-only batches before the first image. Prefetch only that
+    // opening gap, then return to strictly user-driven scroll scanning to keep discovery bounded.
+    if (!state.items.length && state.hasMore && state.initialEmptyScanRequests < MAX_INITIAL_EMPTY_SCAN_REQUESTS) {
+      state.initialEmptyScanRequests += 1;
+      requestNextPage();
+    }
     if (!state.hasMore && !state.items.length) {
       gallery.innerHTML = '<p class="empty">No supported image files were found in this directory.</p>';
     }
