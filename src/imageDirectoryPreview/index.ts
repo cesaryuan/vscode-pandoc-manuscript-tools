@@ -593,16 +593,18 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .icon-button { display: inline-grid; width: 28px; height: 28px; place-items: center; padding: 0; font-size: 1.1em; line-height: 1; }
     #status { flex: 0 0 auto; color: var(--vscode-descriptionForeground); font-size: .9em; white-space: nowrap; }
     /* Lazy image measurements can change masonry heights; explicit anchoring handles that change predictably. */
-    #scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overflow-anchor: none; }
-    #top-spacer, #bottom-spacer { display: none; }
-    #gallery { padding: 16px; }
-    #gallery.layout-grid, .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--thumbnail-size), 100%), 1fr)); gap: var(--card-gap); }
-    #gallery.layout-masonry { display: flex; align-items: flex-start; gap: var(--card-gap); }
+    #scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overflow-anchor: none; padding: 16px; }
+    /* These spacers represent unmounted rows so the scrollbar remains continuous while DOM nodes are recycled. */
+    #top-spacer, #bottom-spacer { display: block; width: 1px; height: 0; pointer-events: none; }
+    #gallery { min-width: 0; }
+    #gallery.layout-grid .virtual-card-row, .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--thumbnail-size), 100%), 1fr)); gap: var(--card-gap); }
+    .virtual-row { min-width: 0; padding-bottom: var(--card-gap); }
+    #gallery.layout-masonry .virtual-masonry-row { display: flex; align-items: flex-start; gap: var(--card-gap); }
     #gallery.layout-masonry .masonry-column { display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; gap: var(--card-gap); }
     #gallery.layout-masonry .image-card { display: flex; width: 100%; margin: 0; }
-    #gallery.layout-folders > .folder-group + .folder-group { margin-top: 28px; }
-    .folder-children { display: flex; flex-direction: column; gap: 18px; margin: 18px 0 0 18px; padding-left: 12px; border-left: 1px solid var(--vscode-tree-indentGuidesStroke, var(--vscode-editorWidget-border)); }
-    .folder-children:empty { display: none; }
+    #gallery.layout-folders .folder-group { position: relative; }
+    #gallery.layout-folders .folder-group::before { position: absolute; top: 0; bottom: var(--card-gap); left: max(0px, calc(var(--folder-guide-offset, 0px) - 12px)); border-left: 1px solid var(--vscode-tree-indentGuidesStroke, transparent); content: ""; }
+    #gallery.layout-folders .folder-group[data-depth="0"]::before { display: none; }
     /* Folder headers look like compact VS Code tree rows rather than plain text links. */
     .folder-heading { margin: 0 0 10px; color: var(--vscode-foreground); font-size: 1em; font-weight: 600; overflow-wrap: anywhere; }
     .folder-toggle { box-sizing: border-box; display: flex; width: 100%; min-height: 34px; align-items: center; gap: 8px; padding: 6px 10px; color: var(--vscode-foreground); border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, transparent)); border-left: 3px solid var(--vscode-focusBorder); border-radius: 6px; background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background)); box-shadow: inset 0 1px rgba(255,255,255,.035); text-align: left; transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
@@ -616,8 +618,6 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .folder-toggle:active { background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground)); }
     .folder-toggle:focus-visible { outline-offset: 2px; }
     .folder-group.is-collapsed .folder-disclosure { margin-top: 1px; transform: rotate(-45deg); }
-    /* A parent folder hides its own images and all descendants, while each child keeps its collapse state for restoration. */
-    .folder-group.is-collapsed > .folder-content { display: none; }
     /* Strong card separation keeps dense previews scannable in both light and dark VS Code themes. */
     .image-card { position: relative; display: flex; min-width: 0; flex-direction: column; overflow: hidden; color: inherit; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, rgba(127,127,127,.6))); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(127,127,127,.05)); box-shadow: 0 1px 3px rgba(0,0,0,.22), inset 0 0 0 1px rgba(127,127,127,.08); cursor: pointer; text-align: left; padding: 0; }
     .image-card:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); box-shadow: 0 0 0 1px var(--vscode-focusBorder), 0 3px 8px rgba(0,0,0,.26); }

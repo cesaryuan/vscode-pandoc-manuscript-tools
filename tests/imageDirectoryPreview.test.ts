@@ -4,7 +4,7 @@ import test from "node:test";
 import { isDirectoryPreviewImageFile } from "../src/imageDirectoryPreview/imageTypes";
 import { initializeDirectoryPreviewWebview, type DirectoryPreviewWebview } from "../src/imageDirectoryPreview/webviewInitialization";
 import { buildDirectoryPreviewWebviewSecurityMarkup } from "../src/imageDirectoryPreview/webviewSecurity";
-import { getShortestMasonryColumnIndex, getStableGalleryAppendRange } from "../src/imageDirectoryPreview/virtualScroll";
+import { buildFolderVirtualRows, getShortestMasonryColumnIndex, getVirtualWindow } from "../src/imageDirectoryPreview/virtualScroll";
 import { normalizeFolderKeywords, shouldIncludeDirectoryImages, shouldTraverseDirectory, type DirectoryPreviewFolderFilters } from "../src/imageDirectoryPreview/folderFilters";
 import { getFolderHierarchy } from "../src/imageDirectoryPreview/folderHierarchy";
 import { normalizePreviewRelativePath } from "../src/imageDirectoryPreview/relativePath";
@@ -65,11 +65,65 @@ function usesExternalCspApprovedDirectoryPreviewScript(): void {
   assert.doesNotMatch(markup, /<script>\s*\(\(\) =>/);
 }
 
-/** Verifies ordinary scrolling never causes existing gallery cards to be rebuilt. */
-function appendsOnlyNewlyDiscoveredGalleryCards(): void {
-  assert.deepEqual(getStableGalleryAppendRange(144, 144), { start: 144, end: 144 });
-  assert.deepEqual(getStableGalleryAppendRange(72, 144), { start: 72, end: 144 });
-  assert.deepEqual(getStableGalleryAppendRange(200, 144), { start: 0, end: 144 });
+/** Reproduces a long gallery and verifies only a bounded viewport window stays mounted. */
+function boundsTheMountedGalleryWindow(): void {
+  const offsets = Array.from({ length: 10_001 }, (_, index) => index * 100);
+  const window = getVirtualWindow(offsets, 500_000, 800, 400, 40);
+
+  assert.ok(window.start > 0);
+  assert.ok(window.end < 10_000);
+  assert.ok(window.end - window.start <= 40);
+  assert.equal(window.top, offsets[window.start]);
+  assert.equal(window.bottom, offsets.at(-1)! - offsets[window.end]);
+}
+
+/** Verifies a virtual folder tree keeps parent-collapse semantics without mounting every descendant. */
+function buildsVirtualFolderRowsAroundCollapsedBranches(): void {
+  const items = [
+    { name: "c.png", folder: "a/bb/ccc", resourceUri: "c" },
+    { name: "a.png", folder: "a/bb/aaa", resourceUri: "a" },
+    { name: "d.png", folder: "a/bb/ddd", resourceUri: "d" },
+    { name: "z.png", folder: "z", resourceUri: "z" },
+  ];
+  const expanded = buildFolderVirtualRows(items, new Set(), 3);
+  const collapsedBb = buildFolderVirtualRows(items, new Set(["a/bb"]), 3);
+  const collapsedA = buildFolderVirtualRows(items, new Set(["a"]), 3);
+
+  assert.deepEqual(expanded.folders.map((folder) => folder.path), ["a", "a/bb", "a/bb/ccc", "a/bb/aaa", "a/bb/ddd", "z"]);
+  assert.deepEqual(collapsedBb.rows.filter((row) => row.kind === "folder").map((row) => row.folder.path), ["a", "a/bb", "z"]);
+  assert.deepEqual(collapsedA.rows.filter((row) => row.kind === "folder").map((row) => row.folder.path), ["a", "z"]);
+  assert.deepEqual(collapsedA.rows.filter((row) => row.kind === "cards").flatMap((row) => row.items.map((item) => item.resourceUri)), ["z"]);
+}
+
+/** Verifies the browser controller replaces its mounted window and drives it from scrolling. */
+function mountsOnlyTheCurrentVirtualWindow(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+
+  assert.match(controllerSource, /getVirtualWindow\(/);
+  assert.match(controllerSource, /topSpacer\.style\.height = `\$\{virtualWindow\.top\}px`/);
+  assert.match(controllerSource, /bottomSpacer\.style\.height = `\$\{virtualWindow\.bottom\}px`/);
+  assert.match(controllerSource, /gallery\.append\(fragment\)/);
+  assert.match(controllerSource, /scroll\.addEventListener\("scroll", \(\) => \{[\s\S]*?scheduleScrollWork\(\);/);
+}
+
+/** Verifies ordinary virtual-window scrolling does not clear the gallery before inserting rows. */
+function reusesMountedRowsDuringScroll(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+  const renderSource = controllerSource.match(/function renderVirtualGallery\(force = false\): void \{([\s\S]*?)\n  \}/)?.[1] || "";
+
+  assert.match(renderSource, /if \(force\) \{[\s\S]*?clearMountedGallery\(\);/);
+  assert.match(renderSource, /existingRows/);
+  assert.match(renderSource, /gallery\.append\(fragment\)/);
+  assert.doesNotMatch(renderSource, /clearMountedGallery\(\);[\s\S]*?const virtualWindow/);
+}
+
+/** Verifies an arriving scan batch updates rows incrementally instead of forcing a gallery teardown. */
+function appendsScanBatchesWithoutForcedGalleryRebuild(): void {
+  const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
+  const scanSource = controllerSource.match(/if \(message\?\.type !== "scanBatch"\)[\s\S]*?state\.skippedDirectories = Number\(message\.skippedDirectories\) \|\| 0;([\s\S]*?)updateStatus\(\);/)?.[1] || "";
+
+  assert.match(scanSource, /rebuildVirtualRows\(\);\s*renderVirtualGallery\(\);/);
+  assert.doesNotMatch(scanSource, /renderVirtualGallery\(true\)/);
 }
 
 /** Verifies masonry appends to one stable column instead of rebalancing existing cards. */
@@ -112,15 +166,15 @@ function buildsCollapsibleFolderAncestors(): void {
   ]);
 }
 
-/** Verifies folder-layout rendering nests descendant groups inside each parent's collapsible content. */
-function rendersCollapsibleFolderSubtrees(): void {
+/** Verifies virtual folder rendering keeps disclosure state outside short-lived DOM nodes. */
+function rendersCollapsibleVirtualFolderSubtrees(): void {
   const controllerSource = readFileSync("src/imageDirectoryPreview/webview.ts", "utf8");
   const previewSource = readFileSync("src/imageDirectoryPreview/index.ts", "utf8");
 
-  assert.match(controllerSource, /getFolderHierarchy\(item\.folder\)/);
-  assert.match(controllerSource, /folderChildren\.set\(node\.path, children\)/);
-  assert.match(controllerSource, /parentChildren\.append\(group\)/);
-  assert.match(previewSource, /\.folder-group\.is-collapsed > \.folder-content \{ display: none; \}/);
+  assert.match(controllerSource, /buildFolderVirtualRows\(state\.items, collapsedFolders, state\.columns\)/);
+  assert.match(controllerSource, /const collapsed = collapsedFolders\.has\(folder\.path\)/);
+  assert.match(controllerSource, /setFolderCollapsed\(folder, !collapsedFolders\.has\(folder\)\)/);
+  assert.match(previewSource, /#gallery\.layout-folders \.folder-group/);
 }
 
 /** Reproduces a collapsed large branch: only that branch and its descendants stop scanning. */
@@ -261,11 +315,15 @@ test("recognizes images supported by the directory preview", verifiesSupportedDi
 test("rejects unsupported directory-preview files", rejectsUnsupportedDirectoryPreviewFiles);
 test("receives the directory preview boot request", deliversBootMessageAfterInstallingDirectoryPreviewListener);
 test("loads its bootstrap code from an external CSP-approved script", usesExternalCspApprovedDirectoryPreviewScript);
-test("appends only newly discovered cards to the stable gallery", appendsOnlyNewlyDiscoveredGalleryCards);
+test("keeps only a bounded gallery window mounted", boundsTheMountedGalleryWindow);
+test("builds virtual folder rows while preserving parent collapse", buildsVirtualFolderRowsAroundCollapsedBranches);
+test("mounts only the current virtual gallery window", mountsOnlyTheCurrentVirtualWindow);
+test("reuses mounted rows during virtual scrolling", reusesMountedRowsDuringScroll);
+test("appends scan batches without forcing a gallery rebuild", appendsScanBatchesWithoutForcedGalleryRebuild);
 test("appends masonry cards to the current shortest stable column", choosesTheCurrentShortestMasonryColumn);
 test("filters image folders with include and exclude keyword precedence", filtersDirectoryImagesWithPredictableKeywordPrecedence);
 test("builds a collapsible hierarchy for nested image folders", buildsCollapsibleFolderAncestors);
-test("renders nested folder subtrees behind their parent toggle", rendersCollapsibleFolderSubtrees);
+test("renders virtual folder subtrees behind their parent toggle", rendersCollapsibleVirtualFolderSubtrees);
 test("skips a collapsed folder branch until it is reopened", skipsCollapsedFolderBranchesUntilTheyReopen);
 test("prioritizes a folder explicitly reopened by the user", prioritizesAnExplicitlyReopenedFolder);
 test("scans more directory images only while the user scrolls", scansMoreImagesOnlyWhenTheUserScrolls);
