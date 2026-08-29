@@ -78,6 +78,9 @@ const MAX_MOUNTED_VIRTUAL_ROWS = 120;
 const MASONRY_ITEMS_PER_COLUMN = 6;
 const FOLDER_INDENT_PX = 30;
 const CARD_CAPTION_HEIGHT_PX = 43;
+const HOVER_DETAILS_GAP_PX = 10;
+const HOVER_DETAILS_MAX_WIDTH_PX = 320;
+const HOVER_DETAILS_VIEWPORT_MARGIN_PX = 8;
 
 /** Runs the directory-preview browser controller once the external script loads. */
 function startDirectoryPreview(): void {
@@ -174,6 +177,9 @@ function startDirectoryPreview(): void {
     const viewportWidth = scroll.clientWidth || window.innerWidth;
     state.thumbnailSize = getThumbnailSizeForColumns(viewportWidth, state.columns, GALLERY_HORIZONTAL_INSET_PX);
     document.documentElement.style.setProperty("--thumbnail-size", `${state.thumbnailSize}px`);
+    // The virtual row builder groups exactly this many cards, so CSS must not
+    // independently choose a smaller auto-fill track count and split a row.
+    document.documentElement.style.setProperty("--gallery-columns", String(state.columns));
     layoutControl.value = state.layout;
     columnControl.min = String(bounds.min);
     columnControl.max = String(bounds.max);
@@ -299,6 +305,32 @@ function startDirectoryPreview(): void {
       fragment.append(line);
     }
     details.replaceChildren(fragment);
+  }
+
+  /** Positions metadata in the larger viewport-side space without covering its source card. */
+  function positionHoverDetails(card: HTMLButtonElement): void {
+    const details = card.querySelector<HTMLElement>(".hover-details");
+    if (!details) {
+      return;
+    }
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const cardBounds = card.getBoundingClientRect();
+    const leftSpace = Math.max(0, cardBounds.left - HOVER_DETAILS_VIEWPORT_MARGIN_PX);
+    const rightSpace = Math.max(0, viewportWidth - cardBounds.right - HOVER_DETAILS_VIEWPORT_MARGIN_PX);
+    const showOnRight = rightSpace >= leftSpace;
+    const availableWidth = Math.max(0, (showOnRight ? rightSpace : leftSpace) - HOVER_DETAILS_GAP_PX);
+    const detailWidth = Math.min(HOVER_DETAILS_MAX_WIDTH_PX, availableWidth);
+    const left = showOnRight
+      ? cardBounds.right + HOVER_DETAILS_GAP_PX
+      : cardBounds.left - HOVER_DETAILS_GAP_PX - detailWidth;
+    const top = Math.max(
+      HOVER_DETAILS_VIEWPORT_MARGIN_PX,
+      Math.min(cardBounds.top, viewportHeight - HOVER_DETAILS_VIEWPORT_MARGIN_PX),
+    );
+    details.style.setProperty("--hover-details-left", `${left}px`);
+    details.style.setProperty("--hover-details-top", `${top}px`);
+    details.style.setProperty("--hover-details-width", `${detailWidth}px`);
   }
 
   /** Requests filesystem metadata once per card, keeping large directory scans free of per-image stat calls. */
@@ -816,7 +848,15 @@ function startDirectoryPreview(): void {
     const target = event.target;
     const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
     if (card?.dataset.resourceUri) {
+      positionHoverDetails(card);
       requestImageMetadata(card.dataset.resourceUri);
+    }
+  });
+  gallery.addEventListener("focusin", (event) => {
+    const target = event.target;
+    const card = target instanceof Element ? target.closest<HTMLButtonElement>(".image-card") : undefined;
+    if (card) {
+      positionHoverDetails(card);
     }
   });
   gallery.addEventListener("click", (event) => {

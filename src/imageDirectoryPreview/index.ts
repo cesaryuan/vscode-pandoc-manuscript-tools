@@ -576,7 +576,7 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
   <title>Images: ${escapeHtml(getUriBaseName(rootUri))}</title>
   ${securityMarkup}
   <style>
-    :root { --thumbnail-size: 180px; --card-gap: 14px; }
+    :root { --thumbnail-size: 180px; --gallery-columns: 4; --card-gap: 14px; }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); overflow: hidden; }
@@ -597,7 +597,8 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     /* These spacers represent unmounted rows so the scrollbar remains continuous while DOM nodes are recycled. */
     #top-spacer, #bottom-spacer { display: block; width: 1px; height: 0; pointer-events: none; }
     #gallery { min-width: 0; }
-    #gallery.layout-grid .virtual-card-row, .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--thumbnail-size), 100%), 1fr)); gap: var(--card-gap); }
+    /* Rows are virtualized in fixed card-count groups, so their CSS tracks use the same explicit count. */
+    #gallery.layout-grid .virtual-card-row, .folder-grid { display: grid; grid-template-columns: repeat(var(--gallery-columns), minmax(0, 1fr)); gap: var(--card-gap); }
     .virtual-row { min-width: 0; padding-bottom: var(--card-gap); }
     #gallery.layout-masonry .virtual-masonry-row { display: flex; align-items: flex-start; gap: var(--card-gap); }
     #gallery.layout-masonry .masonry-column { display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; gap: var(--card-gap); }
@@ -619,8 +620,8 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .folder-toggle:focus-visible { outline-offset: 2px; }
     .folder-group.is-collapsed .folder-disclosure { margin-top: 1px; transform: rotate(-45deg); }
     /* Strong card separation keeps dense previews scannable in both light and dark VS Code themes. */
-    .image-card { position: relative; display: flex; min-width: 0; flex-direction: column; overflow: hidden; color: inherit; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, rgba(127,127,127,.6))); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(127,127,127,.05)); box-shadow: 0 1px 3px rgba(0,0,0,.22), inset 0 0 0 1px rgba(127,127,127,.08); cursor: pointer; text-align: left; padding: 0; }
-    .image-card:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); box-shadow: 0 0 0 1px var(--vscode-focusBorder), 0 3px 8px rgba(0,0,0,.26); }
+    .image-card { position: relative; z-index: 0; display: flex; min-width: 0; flex-direction: column; overflow: visible; color: inherit; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, rgba(127,127,127,.6))); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(127,127,127,.05)); box-shadow: 0 1px 3px rgba(0,0,0,.22), inset 0 0 0 1px rgba(127,127,127,.08); cursor: pointer; text-align: left; padding: 0; }
+    .image-card:hover { z-index: 3; border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); box-shadow: 0 0 0 1px var(--vscode-focusBorder), 0 3px 8px rgba(0,0,0,.26); }
     .image-card:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
     /* In stretched Grid and Folder rows, keep captions fixed and give surplus height to this centered bitmap container. */
     .thumbnail { display: grid; width: 100%; min-height: 0; flex: 1 1 auto; aspect-ratio: var(--image-aspect-ratio, 1); place-items: center; overflow: hidden; background-color: var(--vscode-editor-background); background-image: linear-gradient(45deg, rgba(127,127,127,.16) 25%, transparent 25%), linear-gradient(-45deg, rgba(127,127,127,.16) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(127,127,127,.16) 75%), linear-gradient(-45deg, transparent 75%, rgba(127,127,127,.16) 75%); background-position: 0 0,0 8px,8px -8px,-8px 0; background-size: 16px 16px; }
@@ -632,7 +633,8 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .image-card.is-failed .thumbnail::after { content: "Preview unavailable"; padding: 12px; color: var(--vscode-descriptionForeground); text-align: center; }
     .image-card.is-failed img { display: none; }
     .caption { flex: 0 0 auto; overflow: hidden; padding: 7px 9px; color: var(--vscode-foreground); border-top: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(127,127,127,.35))); font-size: .9em; text-overflow: ellipsis; white-space: nowrap; }
-    .hover-details { position: absolute; z-index: 2; right: 6px; bottom: 6px; left: 6px; display: none; gap: 3px; max-width: calc(100% - 12px); padding: 7px 8px; color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border)); border-radius: 4px; background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background)); box-shadow: 0 2px 8px rgba(0,0,0,.28); font-size: .82em; line-height: 1.25; }
+    /* Fixed positioning keeps this side popover out of the card and out of the scroller's clipping box. */
+    .hover-details { position: fixed; z-index: 4; top: var(--hover-details-top, 8px); left: var(--hover-details-left, 8px); display: none; gap: 3px; width: var(--hover-details-width, min(320px, calc(100vw - 16px))); max-width: calc(100vw - 16px); max-height: calc(100vh - var(--hover-details-top, 8px) - 8px); overflow: auto; padding: 7px 8px; pointer-events: none; color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border)); border-radius: 4px; background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background)); box-shadow: 0 2px 8px rgba(0,0,0,.28); font-size: .82em; line-height: 1.25; }
     .image-card:hover .hover-details, .image-card:focus-visible .hover-details { display: grid; }
     .hover-detail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px; text-align: left; }
     .hover-detail-label { color: var(--vscode-descriptionForeground); }
