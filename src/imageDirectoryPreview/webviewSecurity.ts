@@ -15,7 +15,7 @@
  * @param scriptUri Extension-owned bundled script URI.
  */
 export function buildDirectoryPreviewWebviewSecurityMarkup(cspSource: string, scriptUri: string): string {
-  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${escapeAttribute(cspSource)} data: blob:; style-src 'unsafe-inline'; script-src ${escapeAttribute(cspSource)};">
+  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${escapeAttribute(cspSource)}; img-src ${escapeAttribute(cspSource)} data: blob:; style-src 'unsafe-inline'; script-src ${escapeAttribute(cspSource)};">
   <script defer src="${escapeAttribute(scriptUri)}"></script>`;
 }
 

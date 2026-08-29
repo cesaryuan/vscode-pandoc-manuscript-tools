@@ -106,6 +106,7 @@ function startDirectoryPreview(): void {
   const applySettings = getRequiredElement<HTMLButtonElement>("apply-settings");
   const closeSettings = getRequiredElement<HTMLButtonElement>("close-settings");
   const contextMenu = getRequiredElement<HTMLElement>("image-context-menu");
+  const copyImage = getRequiredElement<HTMLButtonElement>("copy-image");
   const copyRelativePath = getRequiredElement<HTMLButtonElement>("copy-relative-path");
   const copyAbsolutePath = getRequiredElement<HTMLButtonElement>("copy-absolute-path");
   const deleteImage = getRequiredElement<HTMLButtonElement>("delete-image");
@@ -702,6 +703,75 @@ function startDirectoryPreview(): void {
     }, 2_800);
   }
 
+  /** Starts an image clipboard write immediately so it retains the menu-click user activation. */
+  function copyImageToClipboard(resourceUri: string): void {
+    const image = state.items.find((item) => item.resourceUri === resourceUri);
+    if (!image) {
+      showNotice("Could not find the image to copy.");
+      return;
+    }
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      showNotice("Image clipboard access is unavailable in this VS Code window.");
+      return;
+    }
+
+    // ClipboardItem accepts a promise, which lets the clipboard request start during the click gesture.
+    const clipboardItem = new ClipboardItem({ "image/png": createClipboardPngBlob(image) });
+    void navigator.clipboard.write([clipboardItem])
+      .then(() => showNotice(`Copied image ${image.name}`))
+      .catch((error) => {
+        console.warn("[Image Directory Preview] Could not copy image", error);
+        showNotice("Could not copy image. Allow clipboard access and try again.");
+      });
+  }
+
+  /** Fetches an image through the Webview resource origin and rasterizes it to universally pasteable PNG. */
+  async function createClipboardPngBlob(image: DirectoryImage): Promise<Blob> {
+    const response = await fetch(image.src);
+    if (!response.ok) {
+      throw new Error(`Could not read image resource (${response.status}).`);
+    }
+    const sourceBlob = await response.blob();
+    const sourceUrl = URL.createObjectURL(sourceBlob);
+    try {
+      const decodedImage = await loadClipboardImage(sourceUrl);
+      return canvasToPngBlob(decodedImage);
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  }
+
+  /** Loads a same-origin object URL into an image element before drawing it to a canvas. */
+  function loadClipboardImage(sourceUrl: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.addEventListener("load", () => resolve(image), { once: true });
+      image.addEventListener("error", () => reject(new Error("The image could not be decoded.")), { once: true });
+      image.src = sourceUrl;
+    });
+  }
+
+  /** Encodes a decoded image as PNG because the browser Clipboard API guarantees PNG image support. */
+  function canvasToPngBlob(image: HTMLImageElement): Promise<Blob> {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context || !canvas.width || !canvas.height) {
+      return Promise.reject(new Error("The image has no drawable dimensions."));
+    }
+    context.drawImage(image, 0, 0);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("The image could not be encoded as PNG."));
+        }
+      }, "image/png");
+    });
+  }
+
   /** Splits a comma or newline separated settings field into trimmed keywords. */
   function splitFolderKeywords(value: string): string[] {
     return value.split(/[\n,;]/).map((keyword) => keyword.trim()).filter(Boolean);
@@ -888,6 +958,12 @@ function startDirectoryPreview(): void {
     }
     event.preventDefault();
     showImageContextMenu(card.dataset.resourceUri, event.clientX, event.clientY);
+  });
+  copyImage.addEventListener("click", () => {
+    if (state.contextResourceUri) {
+      copyImageToClipboard(state.contextResourceUri);
+    }
+    hideImageContextMenu();
   });
   copyRelativePath.addEventListener("click", () => {
     if (state.contextResourceUri) {

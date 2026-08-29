@@ -61,6 +61,7 @@ function deliversBootMessageAfterInstallingDirectoryPreviewListener(): void {
 function usesExternalCspApprovedDirectoryPreviewScript(): void {
   const markup = buildDirectoryPreviewWebviewSecurityMarkup("vscode-webview://test-source", "vscode-webview://test-source/dist/image-directory-preview.js");
 
+  assert.match(markup, /connect-src vscode-webview:\/\/test-source/);
   assert.match(markup, /script-src vscode-webview:\/\/test-source/);
   assert.match(markup, /<script defer src="vscode-webview:\/\/test-source\/dist\/image-directory-preview\.js"><\/script>/);
   assert.doesNotMatch(markup, /<script>\s*\(\(\) =>/);

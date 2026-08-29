@@ -731,6 +731,7 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     </form>
   </dialog>
   <div id="image-context-menu" role="menu" hidden>
+    <button id="copy-image" type="button" role="menuitem">Copy image</button>
     <button id="copy-relative-path" type="button" role="menuitem">Copy workspace-relative path</button>
     <button id="copy-absolute-path" type="button" role="menuitem">Copy absolute path</button>
     <button id="delete-image" class="danger" type="button" role="menuitem">Move to Recycle Bin…</button>

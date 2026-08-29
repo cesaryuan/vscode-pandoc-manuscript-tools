@@ -22,7 +22,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
 - An Image Directory Preview opened from a folder's Explorer context menu (`View Images`). It recursively discovers supported images from the selected folder and its subfolders through incremental batches, loads only images near the viewport, and provides Grid, Masonry, and Folder layouts. The `Cols` control changes the number of columns, and `Ctrl` + mouse wheel adjusts it without forcing a right-side editor split.
 - Folder layout controls for collapsing or expanding all folder groups, plus Settings for scan depth and for including or excluding folders by case-insensitive path keywords.
-- Image-card hover metadata for relative path, natural resolution, creation time, modification time, and file size. Right-click an image to copy its root-relative path, or move it to the Recycle Bin after confirmation.
+- Image-card hover metadata for relative path, natural resolution, creation time, modification time, and file size. Right-click an image to copy the image itself, its workspace-relative or absolute path, or move it to the Recycle Bin after confirmation.
 
 ## Try It Locally
 
