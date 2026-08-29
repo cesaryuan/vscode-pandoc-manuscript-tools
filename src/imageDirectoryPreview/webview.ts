@@ -107,6 +107,7 @@ function startDirectoryPreview(): void {
   const closeSettings = getRequiredElement<HTMLButtonElement>("close-settings");
   const contextMenu = getRequiredElement<HTMLElement>("image-context-menu");
   const copyRelativePath = getRequiredElement<HTMLButtonElement>("copy-relative-path");
+  const copyAbsolutePath = getRequiredElement<HTMLButtonElement>("copy-absolute-path");
   const deleteImage = getRequiredElement<HTMLButtonElement>("delete-image");
   const notice = getRequiredElement<HTMLElement>("notice");
   const saved = vscode.getState() || {};
@@ -891,6 +892,12 @@ function startDirectoryPreview(): void {
   copyRelativePath.addEventListener("click", () => {
     if (state.contextResourceUri) {
       vscode.postMessage({ type: "copyRelativePath", resourceUri: state.contextResourceUri });
+    }
+    hideImageContextMenu();
+  });
+  copyAbsolutePath.addEventListener("click", () => {
+    if (state.contextResourceUri) {
+      vscode.postMessage({ type: "copyAbsolutePath", resourceUri: state.contextResourceUri });
     }
     hideImageContextMenu();
   });

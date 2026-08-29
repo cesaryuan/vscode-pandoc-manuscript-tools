@@ -238,6 +238,10 @@ class DirectoryPreviewSession {
       await this.copyRelativePath(message.resourceUri);
       return;
     }
+    if (message.type === "copyAbsolutePath" && message.resourceUri) {
+      await this.copyAbsolutePath(message.resourceUri);
+      return;
+    }
     if (message.type === "deleteImage" && message.resourceUri) {
       await this.deleteImage(message.resourceUri);
     }
@@ -336,19 +340,36 @@ class DirectoryPreviewSession {
     }
   }
 
-  /** Copies a selected image's root-relative path through VS Code's desktop clipboard API. */
+  /** Copies a selected image's slash-separated path relative to its workspace folder. */
   private async copyRelativePath(resourceUri: string): Promise<void> {
     const imageUri = this.getAllowedImageUri(resourceUri);
     if (!imageUri) {
       return;
     }
-    const relativePath = getRootRelativePath(this.rootUri, imageUri);
+    const relativePath = getWorkspaceRelativePath(imageUri);
     if (!relativePath) {
+      await this.panel.webview.postMessage({ type: "notice", text: "Cannot copy a workspace-relative path because this image is outside the workspace." });
       return;
     }
     try {
       await vscode.env.clipboard.writeText(relativePath);
       await this.panel.webview.postMessage({ type: "notice", text: `Copied ${relativePath}` });
+    } catch (error) {
+      this.output.appendLine(`Image directory preview could not copy ${imageUri.toString()}: ${formatError(error)}`);
+      await vscode.window.showErrorMessage("Could not copy the image path.");
+    }
+  }
+
+  /** Copies a selected image's filesystem absolute path through VS Code's desktop clipboard API. */
+  private async copyAbsolutePath(resourceUri: string): Promise<void> {
+    const imageUri = this.getAllowedImageUri(resourceUri);
+    if (!imageUri) {
+      return;
+    }
+    const absolutePath = imageUri.fsPath;
+    try {
+      await vscode.env.clipboard.writeText(absolutePath);
+      await this.panel.webview.postMessage({ type: "notice", text: `Copied ${absolutePath}` });
     } catch (error) {
       this.output.appendLine(`Image directory preview could not copy ${imageUri.toString()}: ${formatError(error)}`);
       await vscode.window.showErrorMessage("Could not copy the image path.");
@@ -710,7 +731,8 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     </form>
   </dialog>
   <div id="image-context-menu" role="menu" hidden>
-    <button id="copy-relative-path" type="button" role="menuitem">Copy relative path</button>
+    <button id="copy-relative-path" type="button" role="menuitem">Copy workspace-relative path</button>
+    <button id="copy-absolute-path" type="button" role="menuitem">Copy absolute path</button>
     <button id="delete-image" class="danger" type="button" role="menuitem">Move to Recycle Bin…</button>
   </div>
   <div id="notice" role="status" hidden></div>
@@ -1058,16 +1080,13 @@ async function writeDirectoryPreviewSettings(rootUri: vscode.Uri, filters: Direc
   await configuration.update("imageDirectoryPreviewScanDepth", scanDepth, target);
 }
 
-/** Returns a slash-separated path relative to the selected preview directory. */
-function getRootRelativePath(root: vscode.Uri, child: vscode.Uri): string | undefined {
-  if (!isDescendantUri(root, child) || root.toString() === child.toString()) {
+/** Returns a slash-separated path relative to the workspace folder containing the URI. */
+function getWorkspaceRelativePath(uri: vscode.Uri): string | undefined {
+  if (!vscode.workspace.getWorkspaceFolder(uri)) {
     return undefined;
   }
-  if (root.scheme === "file") {
-    return normalizePreviewRelativePath(path.relative(root.fsPath, child.fsPath).split(path.sep).join("/"));
-  }
-  const rootPath = root.path.endsWith("/") ? root.path : `${root.path}/`;
-  return child.path.startsWith(rootPath) ? normalizePreviewRelativePath(child.path.slice(rootPath.length)) : undefined;
+  // Use VS Code's workspace mapping so multi-root and remote workspaces retain their own root semantics.
+  return normalizePreviewRelativePath(vscode.workspace.asRelativePath(uri, false));
 }
 
 /** Escapes text inserted into HTML body content. */
