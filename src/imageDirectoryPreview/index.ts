@@ -17,6 +17,7 @@ import { initializeDirectoryPreviewWebview } from "./webviewInitialization";
 import { buildDirectoryPreviewWebviewSecurityMarkup } from "./webviewSecurity";
 import { normalizePreviewRelativePath } from "./relativePath";
 import { getNextScannableDirectoryWorkIndex } from "./scanScheduling";
+import { normalizeDirectoryPreviewScanDepth, shouldScanDirectoryAtDepth } from "./scanDepth";
 const MAX_IMAGES_PER_BATCH = 72;
 const MAX_ENTRIES_PER_BATCH = 1_000;
 const MAX_DIRECTORY_READS_PER_BATCH = 6;
@@ -48,6 +49,7 @@ type WebviewMessage = {
   resourceUri?: string;
   includedFolderKeywords?: unknown;
   excludedFolderKeywords?: unknown;
+  scanDepth?: unknown;
   collapsedFolders?: unknown;
   resumedFolders?: unknown;
 };
@@ -140,6 +142,7 @@ class DirectoryPreviewSession {
   private readonly scriptUri: vscode.Uri;
   private readonly output: vscode.OutputChannel;
   private filters: DirectoryPreviewFolderFilters;
+  private scanDepth: number;
   private scanner: IncrementalImageScanner;
   private readonly disposables: vscode.Disposable[] = [];
   private messageChain: Promise<void> = Promise.resolve();
@@ -160,12 +163,13 @@ class DirectoryPreviewSession {
     this.scriptUri = scriptUri;
     this.output = output;
     this.filters = readDirectoryPreviewFolderFilters(rootUri);
-    this.scanner = new IncrementalImageScanner(rootUri, panel.webview, output, this.filters);
+    this.scanDepth = readDirectoryPreviewScanDepth(rootUri);
+    this.scanner = new IncrementalImageScanner(rootUri, panel.webview, output, this.filters, this.scanDepth);
   }
 
   /** Initializes the Webview and begins listening for demand-driven requests. */
   start(): void {
-    this.output.appendLine(`Starting Image Directory Preview build 0.5.0 Webview for ${this.rootUri.toString()}`);
+    this.output.appendLine(`Starting Image Directory Preview build 0.5.0 Webview for ${this.rootUri.toString()} with scan depth ${this.scanDepth === -1 ? "unlimited" : this.scanDepth}`);
     this.disposables.push(initializeDirectoryPreviewWebview(this.panel.webview, buildDirectoryPreviewHtml(this.panel.webview, this.rootUri, this.scriptUri), (message: WebviewMessage) => {
       this.output.appendLine(`Image directory preview received ${message.type || "an unknown"} message for ${this.rootUri.toString()}`);
       // Messages are serialized so refresh cannot interleave two scanner batches.
@@ -223,7 +227,7 @@ class DirectoryPreviewSession {
       return;
     }
     if (message.type === "updateFolderFilters") {
-      await this.updateFolderFilters(message.includedFolderKeywords, message.excludedFolderKeywords);
+      await this.updateFolderFilters(message.includedFolderKeywords, message.excludedFolderKeywords, message.scanDepth);
       return;
     }
     if (message.type === "setCollapsedFolders") {
@@ -258,7 +262,7 @@ class DirectoryPreviewSession {
   /** Replaces current scan state and begins again using the active folder filters. */
   private async resetScanner(): Promise<void> {
     this.scanner.dispose();
-    this.scanner = new IncrementalImageScanner(this.rootUri, this.panel.webview, this.output, this.filters);
+    this.scanner = new IncrementalImageScanner(this.rootUri, this.panel.webview, this.output, this.filters, this.scanDepth);
     await this.panel.webview.postMessage({ type: "reset" });
     await this.postFolderFilters();
     await this.sendNextBatch();
@@ -270,20 +274,23 @@ class DirectoryPreviewSession {
       type: "folderFilters",
       includedFolderKeywords: [...this.filters.includedFolderKeywords],
       excludedFolderKeywords: [...this.filters.excludedFolderKeywords],
+      scanDepth: this.scanDepth,
     });
   }
 
-  /** Saves validated folder-keyword settings and starts a fresh incremental scan. */
-  private async updateFolderFilters(includedKeywords: unknown, excludedKeywords: unknown): Promise<void> {
+  /** Saves validated directory settings and starts a fresh incremental scan. */
+  private async updateFolderFilters(includedKeywords: unknown, excludedKeywords: unknown, scanDepth: unknown): Promise<void> {
     this.filters = {
       includedFolderKeywords: normalizeFolderKeywords(includedKeywords),
       excludedFolderKeywords: normalizeFolderKeywords(excludedKeywords),
     };
+    this.scanDepth = normalizeDirectoryPreviewScanDepth(scanDepth);
     try {
-      await writeDirectoryPreviewFolderFilters(this.rootUri, this.filters);
+      await writeDirectoryPreviewSettings(this.rootUri, this.filters, this.scanDepth);
+      this.output.appendLine(`Image directory preview updated scan depth to ${this.scanDepth === -1 ? "unlimited" : this.scanDepth} for ${this.rootUri.toString()}`);
     } catch (error) {
-      this.output.appendLine(`Image directory preview could not save folder filters for ${this.rootUri.toString()}: ${formatError(error)}`);
-      await this.panel.webview.postMessage({ type: "notice", text: "Filters apply to this preview, but could not be saved." });
+      this.output.appendLine(`Image directory preview could not save settings for ${this.rootUri.toString()}: ${formatError(error)}`);
+      await this.panel.webview.postMessage({ type: "notice", text: "Settings apply to this preview, but could not be saved." });
     }
     await this.resetScanner();
   }
@@ -401,6 +408,7 @@ class IncrementalImageScanner {
   private readonly webview: vscode.Webview;
   private readonly output: vscode.OutputChannel;
   private readonly filters: DirectoryPreviewFolderFilters;
+  private readonly scanDepth: number;
   private readonly pendingDirectories: DirectoryWork[];
   private pausedFolders = new Set<string>();
   private resumedFolders = new Set<string>();
@@ -414,12 +422,14 @@ class IncrementalImageScanner {
    * @param webview Webview used to create safe image resource URLs.
    * @param output Output channel for folders that cannot be read.
    * @param filters Include and exclude settings for directory branches and images.
+   * @param scanDepth Maximum subfolder depth, or -1 for unrestricted recursion.
    */
-  constructor(rootUri: vscode.Uri, webview: vscode.Webview, output: vscode.OutputChannel, filters: DirectoryPreviewFolderFilters) {
+  constructor(rootUri: vscode.Uri, webview: vscode.Webview, output: vscode.OutputChannel, filters: DirectoryPreviewFolderFilters, scanDepth: number) {
     this.rootUri = rootUri;
     this.webview = webview;
     this.output = output;
     this.filters = filters;
+    this.scanDepth = normalizeDirectoryPreviewScanDepth(scanDepth);
     this.pendingDirectories = [{ uri: rootUri, relativePath: "", nextEntryIndex: 0 }];
   }
 
@@ -500,7 +510,7 @@ class IncrementalImageScanner {
         if (isDirectory(fileType)) {
           // Do not follow folder symlinks: they can create cycles or leave the requested tree.
           const relativePath = joinRelativePath(work.relativePath, name);
-          if (!isSymbolicLink(fileType) && shouldTraverseDirectory(relativePath, this.filters)) {
+          if (!isSymbolicLink(fileType) && shouldTraverseDirectory(relativePath, this.filters) && shouldScanDirectoryAtDepth(relativePath, this.scanDepth)) {
             this.pendingDirectories.push({
               uri: childUri,
               relativePath,
@@ -647,6 +657,7 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     .settings-content p { margin: -6px 0 0; color: var(--vscode-descriptionForeground); line-height: 1.45; }
     .settings-field { display: grid; gap: 6px; color: var(--vscode-foreground); font-weight: 600; }
     .settings-field textarea { width: 100%; min-height: 78px; resize: vertical; color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; background: var(--vscode-input-background); font: inherit; padding: 6px 8px; }
+    .settings-field input[type="number"] { width: 112px; color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; background: var(--vscode-input-background); padding: 4px 6px; }
     .settings-field small { color: var(--vscode-descriptionForeground); font-weight: 400; }
     .settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
     #image-context-menu { position: fixed; z-index: 20; min-width: 178px; border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border)); border-radius: 4px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); box-shadow: 0 4px 14px var(--vscode-widget-shadow); padding: 4px; }
@@ -680,6 +691,10 @@ function buildDirectoryPreviewHtml(webview: vscode.Webview, rootUri: vscode.Uri,
     <form class="settings-content" method="dialog">
       <h2 id="settings-title">Directory preview settings</h2>
       <p>Keywords match root-relative folder paths case-insensitively. Excluded folders always take priority.</p>
+      <label class="settings-field" for="scan-depth">Scan depth
+        <input id="scan-depth" type="number" min="-1" step="1" value="-1" required aria-describedby="scan-depth-help">
+        <small id="scan-depth-help">-1 scans all nested folders. 0 scans only this folder. Positive values allow that many subfolder levels.</small>
+      </label>
       <label class="settings-field" for="included-folder-keywords">Allowed folder keywords
         <textarea id="included-folder-keywords" spellcheck="false" placeholder="figures&#10;supplement"></textarea>
         <small>One per line or comma-separated. Leave empty to include all folders not excluded.</small>
@@ -1026,14 +1041,21 @@ function readDirectoryPreviewFolderFilters(rootUri: vscode.Uri): DirectoryPrevie
   };
 }
 
-/** Saves folder-keyword settings to the most specific available configuration scope. */
-async function writeDirectoryPreviewFolderFilters(rootUri: vscode.Uri, filters: DirectoryPreviewFolderFilters): Promise<void> {
+/** Reads the configured maximum subfolder depth for one selected preview root. */
+function readDirectoryPreviewScanDepth(rootUri: vscode.Uri): number {
+  const configuration = vscode.workspace.getConfiguration("pandocManuscriptTools", rootUri);
+  return normalizeDirectoryPreviewScanDepth(configuration.get<unknown>("imageDirectoryPreviewScanDepth", -1));
+}
+
+/** Saves directory settings to the most specific available configuration scope. */
+async function writeDirectoryPreviewSettings(rootUri: vscode.Uri, filters: DirectoryPreviewFolderFilters, scanDepth: number): Promise<void> {
   const configuration = vscode.workspace.getConfiguration("pandocManuscriptTools", rootUri);
   const target = vscode.workspace.getWorkspaceFolder(rootUri)
     ? vscode.ConfigurationTarget.WorkspaceFolder
     : vscode.ConfigurationTarget.Global;
   await configuration.update("imageDirectoryPreviewIncludedFolderKeywords", [...filters.includedFolderKeywords], target);
   await configuration.update("imageDirectoryPreviewExcludedFolderKeywords", [...filters.excludedFolderKeywords], target);
+  await configuration.update("imageDirectoryPreviewScanDepth", scanDepth, target);
 }
 
 /** Returns a slash-separated path relative to the selected preview directory. */

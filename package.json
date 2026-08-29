@@ -228,6 +228,13 @@
           "default": "zh",
           "description": "Target language code for paragraph hover translations, for example zh or zh-TW."
         },
+        "pandocManuscriptTools.imageDirectoryPreviewScanDepth": {
+          "type": "number",
+          "scope": "resource",
+          "default": -1,
+          "minimum": -1,
+          "description": "Maximum subfolder depth scanned by Image Directory Preview. Use -1 for unlimited recursion, 0 for only the selected folder, or a positive integer for that many subfolder levels."
+        },
         "pandocManuscriptTools.imageDirectoryPreviewIncludedFolderKeywords": {
           "type": "array",
           "scope": "resource",

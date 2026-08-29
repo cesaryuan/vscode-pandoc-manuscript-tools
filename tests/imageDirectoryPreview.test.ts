@@ -12,6 +12,7 @@ import { clampColumnCount, getColumnCountBounds, getThumbnailSizeForColumns, get
 import { getImageAspectRatio, getNaturalImageHeight } from "../src/imageDirectoryPreview/imageSizing";
 import { getImageHoverDetails } from "../src/imageDirectoryPreview/imageHoverDetails";
 import { getNextScannableDirectoryWorkIndex, isDirectoryPaused } from "../src/imageDirectoryPreview/scanScheduling";
+import { normalizeDirectoryPreviewScanDepth, shouldScanDirectoryAtDepth } from "../src/imageDirectoryPreview/scanDepth";
 
 /** Verifies the directory scanner accepts browser-previewable image extensions case-insensitively. */
 function verifiesSupportedDirectoryPreviewImages(): void {
@@ -147,6 +148,20 @@ function filtersDirectoryImagesWithPredictableKeywordPrecedence(): void {
   assert.equal(shouldIncludeDirectoryImages("chapter/supplement/data", filters), true);
   assert.equal(shouldIncludeDirectoryImages("chapter/images", filters), false);
   assert.equal(shouldIncludeDirectoryImages("chapter/archive/figures", filters), false);
+}
+
+/** Verifies scan depth retains root images while preventing deeper directory traversal. */
+function boundsDirectoryTraversalAtTheConfiguredScanDepth(): void {
+  assert.equal(normalizeDirectoryPreviewScanDepth(-1), -1);
+  assert.equal(normalizeDirectoryPreviewScanDepth(0), 0);
+  assert.equal(normalizeDirectoryPreviewScanDepth(2), 2);
+  assert.equal(normalizeDirectoryPreviewScanDepth(1.5), -1);
+  assert.equal(normalizeDirectoryPreviewScanDepth(-2), -1);
+  assert.equal(shouldScanDirectoryAtDepth("", 0), true);
+  assert.equal(shouldScanDirectoryAtDepth("figures", 0), false);
+  assert.equal(shouldScanDirectoryAtDepth("figures", 1), true);
+  assert.equal(shouldScanDirectoryAtDepth("figures/results", 1), false);
+  assert.equal(shouldScanDirectoryAtDepth("figures/results", -1), true);
 }
 
 /** Verifies nested image folders expose every ancestor as an independently collapsible tree node. */
@@ -322,6 +337,7 @@ test("reuses mounted rows during virtual scrolling", reusesMountedRowsDuringScro
 test("appends scan batches without forcing a gallery rebuild", appendsScanBatchesWithoutForcedGalleryRebuild);
 test("appends masonry cards to the current shortest stable column", choosesTheCurrentShortestMasonryColumn);
 test("filters image folders with include and exclude keyword precedence", filtersDirectoryImagesWithPredictableKeywordPrecedence);
+test("bounds directory traversal at the configured scan depth", boundsDirectoryTraversalAtTheConfiguredScanDepth);
 test("builds a collapsible hierarchy for nested image folders", buildsCollapsibleFolderAncestors);
 test("renders virtual folder subtrees behind their parent toggle", rendersCollapsibleVirtualFolderSubtrees);
 test("skips a collapsed folder branch until it is reopened", skipsCollapsedFolderBranchesUntilTheyReopen);

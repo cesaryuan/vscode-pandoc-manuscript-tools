@@ -47,7 +47,7 @@ type GalleryVirtualRow =
 
 type WebviewMessage = ScanBatchMessage
   | { type: "reset" }
-  | { type: "folderFilters"; includedFolderKeywords?: string[]; excludedFolderKeywords?: string[] }
+  | { type: "folderFilters"; includedFolderKeywords?: string[]; excludedFolderKeywords?: string[]; scanDepth?: number }
   | { type: "notice"; text?: string }
   | { type: "imageDeleted"; resourceUri?: string }
   | { type: "imageMetadata"; resourceUri?: string; createdAt?: number; modifiedAt?: number; size?: number };
@@ -58,6 +58,7 @@ type VsCodeApi = {
     resourceUri?: string;
     includedFolderKeywords?: string[];
     excludedFolderKeywords?: string[];
+    scanDepth?: number;
     collapsedFolders?: string[];
     resumedFolders?: string[];
   }): void;
@@ -99,6 +100,7 @@ function startDirectoryPreview(): void {
   const expandFolders = getRequiredElement<HTMLButtonElement>("expand-folders");
   const settingsButton = getRequiredElement<HTMLButtonElement>("settings");
   const settingsDialog = getRequiredElement<HTMLDialogElement>("directory-settings");
+  const scanDepthInput = getRequiredElement<HTMLInputElement>("scan-depth");
   const includedFoldersInput = getRequiredElement<HTMLTextAreaElement>("included-folder-keywords");
   const excludedFoldersInput = getRequiredElement<HTMLTextAreaElement>("excluded-folder-keywords");
   const applySettings = getRequiredElement<HTMLButtonElement>("apply-settings");
@@ -811,10 +813,14 @@ function startDirectoryPreview(): void {
   settingsButton.addEventListener("click", () => settingsDialog.showModal());
   closeSettings.addEventListener("click", () => settingsDialog.close());
   applySettings.addEventListener("click", () => {
+    if (!scanDepthInput.reportValidity()) {
+      return;
+    }
     vscode.postMessage({
       type: "updateFolderFilters",
       includedFolderKeywords: splitFolderKeywords(includedFoldersInput.value),
       excludedFolderKeywords: splitFolderKeywords(excludedFoldersInput.value),
+      scanDepth: Number(scanDepthInput.value),
     });
     settingsDialog.close();
   });
@@ -916,6 +922,8 @@ function startDirectoryPreview(): void {
     if (message?.type === "folderFilters") {
       includedFoldersInput.value = (message.includedFolderKeywords || []).join("\n");
       excludedFoldersInput.value = (message.excludedFolderKeywords || []).join("\n");
+      const scanDepth = Number(message.scanDepth);
+      scanDepthInput.value = Number.isInteger(scanDepth) && scanDepth >= -1 ? String(scanDepth) : "-1";
       return;
     }
     if (message?.type === "notice" && message.text) {
