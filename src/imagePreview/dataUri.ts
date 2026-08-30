@@ -2,6 +2,7 @@ import { createJimp } from "@jimp/core";
 import jpeg from "@jimp/js-jpeg";
 import png from "@jimp/js-png";
 import * as resize from "@jimp/plugin-resize";
+import { compressSvgEmbeddedRasterDataUris } from "./svgPreview";
 
 type OutputChannelLike = { appendLine(message: string): void };
 type ParsedDataUri = { mimeType: string; parameters: string[]; payload: string };
@@ -23,6 +24,8 @@ const RESIZABLE_DATA_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
 ]);
+
+type HoverDataUriOptions = { maxNestedRasterDimension?: number };
 
 const DataUriRasterJimp = createJimp({
   plugins: [resize.methods],
@@ -60,25 +63,35 @@ export function normalizeSupportedImageDataUri(value: string): string | undefine
  * Prepares a supported image data URI for hover display.
  *
  * Large embedded PNG/JPEG images can exceed what VS Code hover Markdown will
- * render reliably. This shrinks those raster formats to a compact preview while
- * preserving SVG and other unsupported raster formats as normalized data URIs.
+ * render reliably. This shrinks raster images and recursively compresses PNG/JPEG
+ * images nested inside SVG payloads while keeping the result as a data URI.
  *
  * @param value Candidate data URI.
  * @param output Output channel for resize diagnostics.
  */
-export async function prepareImageDataUriForHover(value: string, output: OutputChannelLike): Promise<string | undefined> {
+export async function prepareImageDataUriForHover(value: string, output: OutputChannelLike, options: HoverDataUriOptions = {}): Promise<string | undefined> {
   const parsed = parseDataUri(value);
   if (!parsed || !SUPPORTED_DATA_IMAGE_MIME_TYPES.has(parsed.mimeType)) {
     return undefined;
   }
 
   const bytes = decodeDataUriPayload(parsed);
+  if (parsed.mimeType === "image/svg+xml") {
+    try {
+      const compactSvg = await compressSvgEmbeddedRasterDataUris(bytes.toString("utf8"), output, options.maxNestedRasterDimension);
+      return buildBase64DataUri(parsed.mimeType, Buffer.from(compactSvg, "utf8"));
+    } catch (error) {
+      output.appendLine(`Image data URI preview kept original SVG after inline raster resize failed: ${formatError(error)}`);
+      return buildBase64DataUri(parsed.mimeType, bytes);
+    }
+  }
+
   if (!RESIZABLE_DATA_IMAGE_MIME_TYPES.has(parsed.mimeType)) {
     return buildBase64DataUri(parsed.mimeType, bytes);
   }
 
   try {
-    const resized = await resizeDataUriRasterImage(bytes, parsed.mimeType);
+    const resized = await resizeDataUriRasterImage(bytes, parsed.mimeType, options.maxNestedRasterDimension);
     return buildBase64DataUri(resized.mimeType, resized.bytes);
   } catch (error) {
     output.appendLine(`Image data URI preview kept original raster after resize failed: ${formatError(error)}`);
@@ -132,10 +145,10 @@ function buildBase64DataUri(mimeType: string, bytes: Buffer): string {
  *
  * @param imageBytes Source image bytes.
  */
-async function resizeDataUriRasterImage(imageBytes: Buffer, mimeType: string) {
+async function resizeDataUriRasterImage(imageBytes: Buffer, mimeType: string, maxDimension: number | undefined) {
   const decoderBytes = mimeType === "image/png" ? trimPngTrailingBytes(imageBytes) : imageBytes;
   const image = await DataUriRasterJimp.fromBuffer(decoderBytes);
-  const dimensions = fitWithinBounds(image.width, image.height, MAX_DATA_URI_RASTER_DIMENSION);
+  const dimensions = fitWithinBounds(image.width, image.height, maxDimension ?? MAX_DATA_URI_RASTER_DIMENSION);
   if (!dimensions) {
     return { bytes: decoderBytes, mimeType };
   }

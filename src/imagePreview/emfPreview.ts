@@ -2,10 +2,12 @@ import * as fs from "fs/promises";
 
 type OutputChannelLike = { appendLine(message: string): void };
 import { convertEmfToSvg, convertWmfToSvg } from "./libemf2svgRuntime";
+import { compressSvgEmbeddedRasterDataUris } from "./svgPreview";
 
 export type MetafilePreviewOptions = {
   maxWidth?: number;
   maxHeight?: number;
+  nestedRasterMaxDimension?: number;
 };
 
 /**
@@ -50,7 +52,8 @@ async function renderSvgMetafilePreviewDataUri(bytes: Buffer, extension: ".emf" 
   if (!svg) {
     return undefined;
   }
-  return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  const compactSvg = await compressSvgEmbeddedRasterDataUris(svg, output, options.nestedRasterMaxDimension);
+  return `data:image/svg+xml;base64,${Buffer.from(compactSvg, "utf8").toString("base64")}`;
 }
 
 /**
