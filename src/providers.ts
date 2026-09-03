@@ -9,11 +9,13 @@ import type { MathJaxRenderer } from "./mathJaxRenderer";
 import type { ParagraphTranslator, TranslationEngine } from "./paragraphTranslator";
 import type { ImagePreviewRenderer } from "./imagePreview";
 import type { HeadingEntry, InlineMathEntry, LabelEntry, MathBlockEntry, PandocTokenAtPosition, ParsedPandocDocument, PlainPosition, PlainRange, ReferenceEntry } from "./parser";
+import { diffParagraphSentences, resolveParagraphDiff } from "./paragraphTranslationDiff";
+import type { ParagraphDiffSide, ParagraphSentenceDiff } from "./paragraphTranslationDiff";
 
 const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
 
-type ParagraphHover = { range: vscode.Range; text: string; translationText: string; startOffset: number; inlineMath: InlineMathEntry[]; showMathPreview: boolean; showTranslation: boolean };
-type RenderedTranslation = { markdown: string; engine: TranslationEngine };
+type ParagraphHover = { range: vscode.Range; text: string; translationText: string; startOffset: number; inlineMath: InlineMathEntry[]; showMathPreview: boolean; showTranslation: boolean; isStandaloneComment: boolean };
+type RenderedTranslation = { markdown: string; engine: TranslationEngine; diffSide?: ParagraphDiffSide };
 type MarkdownPipeTable = { rows: { cells: string[] }[]; separatorIndex: number; captionLines: string[] };
 type TranslatedPipeTableHtml = { rows: string[][]; caption: string };
 type SimpleMarkdownList = { items: { prefix: string; text: string }[] };
@@ -97,10 +99,11 @@ export class PandocHoverProvider {
    *
    * @param document Markdown document.
    * @param position Cursor position.
+   * @param cancellationToken Hover cancellation token.
    */
-  async provideHover(document: vscode.TextDocument, position: vscode.Position) {
+  async provideHover(document: vscode.TextDocument, position: vscode.Position, cancellationToken: vscode.CancellationToken) {
     try {
-      return await this.provideHoverUnchecked(document, position);
+      return await this.provideHoverUnchecked(document, position, cancellationToken);
     } catch (error) {
       this.output.appendLine(`Hover provider failed at ${document.uri.toString()}:${position.line + 1}:${position.character + 1}: ${formatError(error)}`);
       return undefined;
@@ -112,8 +115,13 @@ export class PandocHoverProvider {
    *
    * @param document Markdown document.
    * @param position Cursor position.
+   * @param cancellationToken Hover cancellation token.
    */
-  async provideHoverUnchecked(document: vscode.TextDocument, position: vscode.Position) {
+  async provideHoverUnchecked(document: vscode.TextDocument, position: vscode.Position, cancellationToken: vscode.CancellationToken) {
+    if (cancellationToken.isCancellationRequested) {
+      return undefined;
+    }
+
     const parsed = this.index.getParsedDocument(document);
     const plainPosition = toPlainPosition(position);
     if (supportsPandocTextFeatures(document)) {
@@ -138,7 +146,7 @@ export class PandocHoverProvider {
 
       const paragraphHover = findParagraphHover(document, parsed, position);
       if (paragraphHover) {
-        const paragraphMarkdown = await buildParagraphHover(paragraphHover, this.mathRenderer, this.paragraphTranslator);
+        const paragraphMarkdown = await buildParagraphHover(document, position, paragraphHover, this.mathRenderer, this.paragraphTranslator, this.output, cancellationToken);
         if (paragraphMarkdown) {
           return new vscode.Hover(paragraphMarkdown, paragraphHover.range);
         }
@@ -275,6 +283,7 @@ function findParagraphHover(document: vscode.TextDocument, parsed: import("./par
     inlineMath,
     showMathPreview,
     showTranslation,
+    isStandaloneComment: Boolean(commentRange),
   };
 }
 
@@ -693,17 +702,38 @@ async function buildInlineMathHover(inlineMath: import("./parser").InlineMathEnt
 /**
  * Builds a hover body for paragraph-level math preview and/or translation.
  *
+ * @param document Hovered document.
+ * @param position Hover position.
  * @param paragraph Paragraph hover data.
  * @param mathRenderer MathJax SVG renderer.
  * @param paragraphTranslator Paragraph translation service.
+ * @param output Output channel for recoverable diff-hover failures.
+ * @param token Hover cancellation token.
  */
-async function buildParagraphHover(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
+async function buildParagraphHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  paragraph: ParagraphHover,
+  mathRenderer: MathJaxRenderer,
+  paragraphTranslator: ParagraphTranslator,
+  output: vscode.OutputChannel,
+  token: vscode.CancellationToken,
+) {
   const markdown = new vscode.MarkdownString(undefined, true);
   let hasContent = false;
 
-  const translation = await buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator);
+  const diffTranslation = await buildDiffAwareParagraphTranslation(document, position, paragraph, mathRenderer, paragraphTranslator, output, token);
+  if (token.isCancellationRequested) {
+    return undefined;
+  }
+
+  const translation: RenderedTranslation | undefined = diffTranslation || await buildParagraphTranslation(paragraph, mathRenderer, paragraphTranslator);
   if (translation && translation.markdown) {
-    markdown.appendMarkdown(`**Chinese translation** (${formatTranslationEngineName(translation.engine)})\n\n`);
+    const diffSideLabel = translation.diffSide === "original"
+      ? " · before"
+      : translation.diffSide === "modified" ? " · after" : "";
+    markdown.supportHtml = translation.diffSide !== undefined;
+    markdown.appendMarkdown(`**Chinese translation** (${formatTranslationEngineName(translation.engine)}${diffSideLabel})\n\n`);
     markdown.appendMarkdown(translation.markdown);
     hasContent = true;
   }
@@ -721,6 +751,110 @@ async function buildParagraphHover(paragraph: ParagraphHover, mathRenderer: Math
 }
 
 /**
+ * Builds a sentence-marked translation from VS Code's current diff hunks.
+ *
+ * VS Code supplies the document-level and line-level pairing. This function
+ * performs only a small sentence alignment inside the hovered paragraph so a
+ * one-line manuscript paragraph can still identify its changed sentence.
+ *
+ * @param document Hovered diff document.
+ * @param position Hover position.
+ * @param paragraph Current paragraph hover data.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
+ * @param output Output channel for recoverable diff-hover failures.
+ * @param token Hover cancellation token.
+ */
+async function buildDiffAwareParagraphTranslation(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  paragraph: ParagraphHover,
+  mathRenderer: MathJaxRenderer,
+  paragraphTranslator: ParagraphTranslator,
+  output: vscode.OutputChannel,
+  token: vscode.CancellationToken,
+): Promise<RenderedTranslation | undefined> {
+  if (
+    !paragraph.showTranslation
+    || paragraph.isStandaloneComment
+    || !getConfiguration().get("enableDiffAwareParagraphHoverTranslation", true)
+    || parseMarkdownPipeTable(paragraph.translationText)
+    || parseSimpleMarkdownList(paragraph.translationText)
+  ) {
+    return undefined;
+  }
+
+  const activeTabInput = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+  if (!(activeTabInput instanceof vscode.TabInputTextDiff)) {
+    return undefined;
+  }
+
+  try {
+    const paragraphDiff = await resolveParagraphDiff({
+      document,
+      paragraphRange: paragraph.range,
+      hoverPosition: position,
+      diffInput: activeTabInput,
+      visibleTextEditors: vscode.window.visibleTextEditors,
+      openTextDocument: (uri) => vscode.workspace.openTextDocument(uri),
+      findParagraphRange,
+      cancellationToken: token,
+    });
+    if (!paragraphDiff || token.isCancellationRequested) {
+      return undefined;
+    }
+
+    const sentenceDiff = diffParagraphSentences(paragraphDiff.originalText, paragraphDiff.modifiedText);
+    const currentSentences = paragraphDiff.side === "original" ? sentenceDiff.original : sentenceDiff.modified;
+    if (currentSentences.length === 0 || currentSentences.every((sentence) => sentence.kind === "equal")) {
+      return undefined;
+    }
+
+    const translation = await paragraphTranslator.translateTextSegments(currentSentences.map((sentence) => sentence.text));
+    if (!translation || token.isCancellationRequested) {
+      return undefined;
+    }
+
+    const renderedSentences = [];
+    for (let index = 0; index < currentSentences.length; index += 1) {
+      const renderedSentence = await renderInlineMathTextMarkdown(translation.texts[index], mathRenderer, undefined, 0, true);
+      renderedSentences.push(formatDiffTranslatedSentence(renderedSentence, currentSentences[index]));
+    }
+
+    return {
+      markdown: renderedSentences.join(" ").trim(),
+      engine: translation.engine,
+      diffSide: paragraphDiff.side,
+    };
+  } catch (error) {
+    output.appendLine(`Diff-aware paragraph translation fell back to the ordinary hover: ${formatError(error)}`);
+    return undefined;
+  }
+}
+
+/**
+ * Applies VS Code's own diff colors to one translated sentence.
+ *
+ * The plus/minus marker keeps the meaning visible in high-contrast themes and
+ * for users who cannot distinguish the background colors alone.
+ *
+ * @param renderedSentence Hover-safe sentence Markdown.
+ * @param sentence Source sentence and diff kind.
+ */
+function formatDiffTranslatedSentence(renderedSentence: string, sentence: ParagraphSentenceDiff): string {
+  if (sentence.kind === "equal") {
+    return renderedSentence;
+  }
+
+  const isAdded = sentence.kind === "added";
+  const background = isAdded
+    ? "var(--vscode-diffEditor-insertedTextBackground)"
+    : "var(--vscode-diffEditor-removedTextBackground)";
+  const marker = isAdded ? "＋" : "－";
+  return `<span style="background-color:${background};"><strong>${marker}</strong> ${renderedSentence}</span>`;
+}
+
+/**
  * Builds the optional translated paragraph preview.
  *
  * The full paragraph, including TeX, is sent to the translation engine because
@@ -731,7 +865,7 @@ async function buildParagraphHover(paragraph: ParagraphHover, mathRenderer: Math
  * @param mathRenderer MathJax SVG renderer.
  * @param paragraphTranslator Paragraph translation service.
  */
-async function buildParagraphTranslation(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator) {
+async function buildParagraphTranslation(paragraph: ParagraphHover, mathRenderer: MathJaxRenderer, paragraphTranslator: ParagraphTranslator): Promise<RenderedTranslation | undefined> {
   if (!paragraph.showTranslation) {
     return undefined;
   }
@@ -1260,8 +1394,15 @@ async function renderInlineMathParagraphMarkdown(paragraph: ParagraphHover, math
  * @param mathRenderer MathJax SVG renderer.
  * @param inlineMath Inline math entries, if already known.
  * @param startOffset Offset used by precomputed inline math entries.
+ * @param escapeHtml Whether prose chunks must be escaped for an HTML-enabled hover.
  */
-async function renderInlineMathTextMarkdown(text: string, mathRenderer: MathJaxRenderer, inlineMath: import("./parser").InlineMathEntry[] | undefined = undefined, startOffset: number | undefined = 0) {
+async function renderInlineMathTextMarkdown(
+  text: string,
+  mathRenderer: MathJaxRenderer,
+  inlineMath: import("./parser").InlineMathEntry[] | undefined = undefined,
+  startOffset: number | undefined = 0,
+  escapeHtml = false,
+) {
   const mathEntries = inlineMath || parsePandocDocument(text).inlineMath;
   const parts = [];
   let cursor = 0;
@@ -1273,7 +1414,7 @@ async function renderInlineMathTextMarkdown(text: string, mathRenderer: MathJaxR
       continue;
     }
 
-    parts.push(normalizeMarkdownLineBreaks(text.slice(cursor, formulaStart)));
+    parts.push(formatHoverTextChunk(text.slice(cursor, formulaStart), escapeHtml));
     const renderedSvg = await mathRenderer.renderToDataUri(inlineMathEntry.tex, false, getMathPreviewForegroundColor());
     if (renderedSvg) {
       parts.push(`![Rendered inline equation preview](${renderedSvg})`);
@@ -1283,8 +1424,23 @@ async function renderInlineMathTextMarkdown(text: string, mathRenderer: MathJaxR
     cursor = formulaEnd;
   }
 
-  parts.push(normalizeMarkdownLineBreaks(text.slice(cursor)));
+  parts.push(formatHoverTextChunk(text.slice(cursor), escapeHtml));
   return parts.join("").trim();
+}
+
+/**
+ * Normalizes a prose chunk and optionally escapes raw HTML for styled hovers.
+ *
+ * Diff-aware hovers enable safe HTML for background colors, so translated text
+ * must not be able to inject its own tags. Math is handled separately before
+ * this helper runs and therefore keeps its original TeX characters.
+ *
+ * @param value Prose outside an inline-math span.
+ * @param escapeHtml Whether the surrounding hover enables raw HTML.
+ */
+function formatHoverTextChunk(value: string, escapeHtml: boolean): string {
+  const normalized = normalizeMarkdownLineBreaks(value);
+  return escapeHtml ? escapeHtmlText(normalized) : normalized;
 }
 
 /**

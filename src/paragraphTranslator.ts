@@ -11,6 +11,7 @@ const TRANSLATION_PROBE_TEXT = "Library";
 
 export type TranslationEngine = "google" | "microsoft";
 export type TranslationResult = { text: string; engine: TranslationEngine };
+export type TranslationSegmentsResult = { texts: string[]; engine: TranslationEngine };
 
 export class ParagraphTranslator {
   declare output: import("vscode").OutputChannel;
@@ -79,6 +80,51 @@ export class ParagraphTranslator {
     }
 
     return this.translationCache.get(cacheKey);
+  }
+
+  /**
+   * Translates sentence segments in one request while preserving their order.
+   *
+   * Both configured translation backends accept HTML, so paragraph tags keep
+   * sentence boundaries stable without paying for one network request per
+   * sentence. A per-sentence fallback handles providers that unexpectedly drop
+   * those tags.
+   *
+   * @param texts Source sentence segments.
+   */
+  async translateTextSegments(texts: readonly string[]): Promise<TranslationSegmentsResult | undefined> {
+    if (texts.length === 0) {
+      const engine = await this.ensurePreferredEngine();
+      return engine ? { texts: [], engine } : undefined;
+    }
+
+    if (texts.length === 1) {
+      const translation = await this.translateText(texts[0]);
+      return translation ? { texts: [translation.text], engine: translation.engine } : undefined;
+    }
+
+    const translatedHtml = await this.translateText(formatTranslationSegmentsHtml(texts));
+    if (translatedHtml === undefined) {
+      return undefined;
+    }
+
+    const translatedSegments = parseTranslationSegmentsHtml(translatedHtml.text);
+    if (translatedSegments.length === texts.length) {
+      return { texts: translatedSegments, engine: translatedHtml.engine };
+    }
+
+    // Some translation responses may flatten otherwise valid HTML boundaries.
+    this.output.appendLine("Segmented paragraph translation lost its HTML boundaries; retrying sentences individually.");
+    const individualTranslations = await Promise.all(texts.map((text) => this.translateText(text)));
+    if (individualTranslations.some((translation) => translation === undefined)) {
+      return undefined;
+    }
+
+    const completedTranslations = individualTranslations as TranslationResult[];
+    return {
+      texts: completedTranslations.map((translation) => translation.text),
+      engine: completedTranslations[0].engine,
+    };
   }
 
   /**
@@ -323,6 +369,37 @@ function decodeHtmlText(value: string) {
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&");
+}
+
+/**
+ * Formats source sentences as HTML blocks understood by both translators.
+ *
+ * @param texts Source sentence segments.
+ */
+function formatTranslationSegmentsHtml(texts: readonly string[]): string {
+  return `<div>${texts.map((text) => `<p>${escapeTranslationHtmlText(text)}</p>`).join("")}</div>`;
+}
+
+/**
+ * Recovers ordered sentence translations from protected paragraph tags.
+ *
+ * @param html Translated HTML fragment.
+ */
+function parseTranslationSegmentsHtml(html: string): string[] {
+  return [...html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((match) => match[1].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim());
+}
+
+/**
+ * Escapes source text before embedding it in translator-facing HTML.
+ *
+ * @param value Raw source sentence.
+ */
+function escapeTranslationHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /**

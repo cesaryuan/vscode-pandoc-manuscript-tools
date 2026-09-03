@@ -31,7 +31,7 @@
     "publish:patch": "npm run check && vsce publish patch",
     "publish:minor": "npm run check && vsce publish minor",
     "profile:test-md": "tsx scripts/profile-test-md.ts test.md",
-    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts tests/inlineFoldParser.test.ts tests/headingStructure.test.ts tests/metafilePreviewAppearance.test.ts tests/customImagePreviewContext.test.ts tests/pathResolver.test.ts tests/imageDirectoryPreview.test.ts",
+    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts tests/inlineFoldParser.test.ts tests/headingStructure.test.ts tests/metafilePreviewAppearance.test.ts tests/customImagePreviewContext.test.ts tests/pathResolver.test.ts tests/imageDirectoryPreview.test.ts tests/paragraphTranslationDiff.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run bundle && npm run check:bundle"
   },
@@ -216,6 +216,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback."
+        },
+        "pandocManuscriptTools.enableDiffAwareParagraphHoverTranslation": {
+          "type": "boolean",
+          "default": true,
+          "description": "When VS Code exposes diff information, mark added or removed sentences in paragraph translation hovers with the editor's diff colors."
         },
         "pandocManuscriptTools.paragraphHoverTranslationMaxCharacters": {
           "type": "number",
