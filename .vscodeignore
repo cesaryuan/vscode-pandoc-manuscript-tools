@@ -2,7 +2,9 @@
 .vscode/**
 node_modules/**
 scripts/**
+third_party/**
 test.md
 src/**
 *.vsix
 test_project/**
+tests/**
