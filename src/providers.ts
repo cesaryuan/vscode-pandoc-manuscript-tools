@@ -806,23 +806,29 @@ async function buildDiffAwareParagraphTranslation(
 
     const wordDiff = diffParagraphWords(paragraphDiff.originalText, paragraphDiff.modifiedText);
     const currentWords = paragraphDiff.side === "original" ? wordDiff.original : wordDiff.modified;
-    if (currentWords.some((word) => word.kind !== "equal")) {
-      const markedInput = formatDiffTranslationInput(currentWords);
-      const markedTranslation = await paragraphTranslator.translateText(markedInput);
-      if (markedTranslation && !token.isCancellationRequested) {
-        const markedParts = parseDiffTranslationParts(markedTranslation.text);
-        if (markedParts) {
-          const renderedMarkedTranslation = await renderDiffTranslationParts(markedParts, mathRenderer);
-          if (renderedMarkedTranslation) {
-            return {
-              markdown: renderedMarkedTranslation,
-              engine: markedTranslation.engine,
-              diffSide: paragraphDiff.side,
-            };
-          }
+    const hasCurrentSideWordChanges = currentWords.some((word) => word.kind !== "equal");
+    if (!hasCurrentSideWordChanges) {
+      // A deletion can shorten the original sentence without adding any token
+      // on the modified side. Do not let sentence boundaries turn that intact
+      // modified sentence into a false green addition.
+      return undefined;
+    }
+
+    const markedInput = formatDiffTranslationInput(currentWords);
+    const markedTranslation = await paragraphTranslator.translateText(markedInput);
+    if (markedTranslation && !token.isCancellationRequested) {
+      const markedParts = parseDiffTranslationParts(markedTranslation.text);
+      if (markedParts) {
+        const renderedMarkedTranslation = await renderDiffTranslationParts(markedParts, mathRenderer);
+        if (renderedMarkedTranslation) {
+          return {
+            markdown: renderedMarkedTranslation,
+            engine: markedTranslation.engine,
+            diffSide: paragraphDiff.side,
+          };
         }
-        output.appendLine("Word-level diff markers were not preserved; using sentence-level diff hover.");
       }
+      output.appendLine("Word-level diff markers were not preserved; using sentence-level diff hover.");
     }
 
     if (token.isCancellationRequested) {

@@ -101,9 +101,20 @@ function verifiesProtectedWordTokens(): void {
   );
 }
 
+/** Verifies deleting a clause does not mark the surviving modified words. */
+function verifiesClauseDeletionKeepsModifiedWordsEqual(): void {
+  const original = "This study uses a pixel-aligned normalized scalar field because it satisfies four requirements. It shares pixel coordinates with the original image.";
+  const modified = "This study uses a pixel-aligned normalized scalar field. It shares pixel coordinates with the original image.";
+  const result = diffParagraphWords(original, modified);
+
+  assert.equal(result.original.some((token) => token.kind === "removed"), true);
+  assert.equal(result.modified.some((token) => token.kind !== "equal"), false);
+}
+
 test("marks only a rewritten sentence as removed and added", verifiesSentenceReplacementDiff);
 test("keeps Fig. and Eq. inside scientific sentences", verifiesScientificSentenceSegmentation);
 test("matches an addition only on the modified side", verifiesDiffLineIntersection);
 test("resolves a pure addition without an original diff URI", verifiesPureAdditionResolution);
 test("isolates changed words inside a rewritten sentence", verifiesWordDiffWithinSentence);
 test("keeps formulas and scientific compounds atomic", verifiesProtectedWordTokens);
+test("does not mark surviving words after a clause deletion", verifiesClauseDeletionKeepsModifiedWordsEqual);
