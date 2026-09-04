@@ -9,8 +9,8 @@ import type { MathJaxRenderer } from "./mathJaxRenderer";
 import type { ParagraphTranslator, TranslationEngine } from "./paragraphTranslator";
 import type { ImagePreviewRenderer } from "./imagePreview";
 import type { HeadingEntry, InlineMathEntry, LabelEntry, MathBlockEntry, PandocTokenAtPosition, ParsedPandocDocument, PlainPosition, PlainRange, ReferenceEntry } from "./parser";
-import { diffParagraphSentences, resolveParagraphDiff } from "./paragraphTranslationDiff";
-import type { ParagraphDiffSide, ParagraphSentenceDiff } from "./paragraphTranslationDiff";
+import { diffParagraphSentences, diffParagraphWords, resolveParagraphDiff } from "./paragraphTranslationDiff";
+import type { ParagraphDiffSide, ParagraphSentenceDiff, ParagraphWordDiff } from "./paragraphTranslationDiff";
 
 const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
 
@@ -751,11 +751,11 @@ async function buildParagraphHover(
 }
 
 /**
- * Builds a sentence-marked translation from VS Code's current diff hunks.
+ * Builds a word-marked translation from VS Code's current diff hunks.
  *
  * VS Code supplies the document-level and line-level pairing. This function
- * performs only a small sentence alignment inside the hovered paragraph so a
- * one-line manuscript paragraph can still identify its changed sentence.
+ * performs only a small token alignment inside the hovered paragraph, while
+ * the sentence-level path remains available when a provider drops markers.
  *
  * @param document Hovered diff document.
  * @param position Hover position.
@@ -804,28 +804,34 @@ async function buildDiffAwareParagraphTranslation(
       return undefined;
     }
 
-    const sentenceDiff = diffParagraphSentences(paragraphDiff.originalText, paragraphDiff.modifiedText);
-    const currentSentences = paragraphDiff.side === "original" ? sentenceDiff.original : sentenceDiff.modified;
-    if (currentSentences.length === 0 || currentSentences.every((sentence) => sentence.kind === "equal")) {
+    const wordDiff = diffParagraphWords(paragraphDiff.originalText, paragraphDiff.modifiedText);
+    const currentWords = paragraphDiff.side === "original" ? wordDiff.original : wordDiff.modified;
+    if (currentWords.some((word) => word.kind !== "equal")) {
+      const markedInput = formatDiffTranslationInput(currentWords);
+      const markedTranslation = await paragraphTranslator.translateText(markedInput);
+      if (markedTranslation && !token.isCancellationRequested) {
+        const markedParts = parseDiffTranslationParts(markedTranslation.text);
+        if (markedParts) {
+          const renderedMarkedTranslation = await renderDiffTranslationParts(markedParts, mathRenderer);
+          if (renderedMarkedTranslation) {
+            return {
+              markdown: renderedMarkedTranslation,
+              engine: markedTranslation.engine,
+              diffSide: paragraphDiff.side,
+            };
+          }
+        }
+        output.appendLine("Word-level diff markers were not preserved; using sentence-level diff hover.");
+      }
+    }
+
+    if (token.isCancellationRequested) {
       return undefined;
     }
 
-    const translation = await paragraphTranslator.translateTextSegments(currentSentences.map((sentence) => sentence.text));
-    if (!translation || token.isCancellationRequested) {
-      return undefined;
-    }
-
-    const renderedSentences = [];
-    for (let index = 0; index < currentSentences.length; index += 1) {
-      const renderedSentence = await renderInlineMathTextMarkdown(translation.texts[index], mathRenderer, undefined, 0, true);
-      renderedSentences.push(formatDiffTranslatedSentence(renderedSentence, currentSentences[index]));
-    }
-
-    return {
-      markdown: renderedSentences.join(" ").trim(),
-      engine: translation.engine,
-      diffSide: paragraphDiff.side,
-    };
+    // A provider may remove token markers even though it can translate plain
+    // HTML. Keep the previous sentence-level presentation as a safe fallback.
+    return buildSentenceDiffTranslation(paragraphDiff, mathRenderer, paragraphTranslator, token);
   } catch (error) {
     output.appendLine(`Diff-aware paragraph translation fell back to the ordinary hover: ${formatError(error)}`);
     return undefined;
@@ -833,25 +839,168 @@ async function buildDiffAwareParagraphTranslation(
 }
 
 /**
- * Applies VS Code's own diff colors to one translated sentence.
+ * Translates a paired paragraph with the existing sentence-level fallback.
  *
- * The plus/minus marker keeps the meaning visible in high-contrast themes and
- * for users who cannot distinguish the background colors alone.
- *
- * @param renderedSentence Hover-safe sentence Markdown.
- * @param sentence Source sentence and diff kind.
+ * @param paragraphDiff Paired original and modified paragraph text.
+ * @param mathRenderer MathJax SVG renderer.
+ * @param paragraphTranslator Paragraph translation service.
+ * @param token Hover cancellation token.
  */
-function formatDiffTranslatedSentence(renderedSentence: string, sentence: ParagraphSentenceDiff): string {
-  if (sentence.kind === "equal") {
-    return renderedSentence;
+async function buildSentenceDiffTranslation(
+  paragraphDiff: { side: ParagraphDiffSide; originalText: string; modifiedText: string },
+  mathRenderer: MathJaxRenderer,
+  paragraphTranslator: ParagraphTranslator,
+  token: vscode.CancellationToken,
+): Promise<RenderedTranslation | undefined> {
+  const sentenceDiff = diffParagraphSentences(paragraphDiff.originalText, paragraphDiff.modifiedText);
+  const currentSentences = paragraphDiff.side === "original" ? sentenceDiff.original : sentenceDiff.modified;
+  if (currentSentences.length === 0 || currentSentences.every((sentence) => sentence.kind === "equal")) {
+    return undefined;
   }
 
-  const isAdded = sentence.kind === "added";
+  const translation = await paragraphTranslator.translateTextSegments(currentSentences.map((sentence) => sentence.text));
+  if (!translation || token.isCancellationRequested) {
+    return undefined;
+  }
+
+  const renderedSentences = [];
+  for (let index = 0; index < currentSentences.length; index += 1) {
+    const renderedSentence = await renderInlineMathTextMarkdown(translation.texts[index], mathRenderer, undefined, 0, true);
+    renderedSentences.push(formatDiffTranslatedPart(renderedSentence, currentSentences[index]));
+  }
+
+  return {
+    markdown: renderedSentences.join(" ").trim(),
+    engine: translation.engine,
+    diffSide: paragraphDiff.side,
+  };
+}
+
+/**
+ * Wraps changed source tokens in translator-preserved HTML markers.
+ *
+ * @param words Word-level diff for the hovered side.
+ */
+function formatDiffTranslationInput(words: readonly ParagraphWordDiff[]): string {
+  const body = words.map((word) => {
+    const escapedText = escapeHtmlText(word.text);
+    return word.kind === "equal"
+      ? escapedText
+      : `<span data-pmt-diff="${word.kind}">${escapedText}</span>`;
+  }).join("");
+  return `<div><p>${body}</p></div>`;
+}
+
+type DiffTranslationPart = {
+  text: string;
+  kind: "equal" | "added" | "removed";
+};
+
+/**
+ * Extracts changed spans from a translated HTML response.
+ *
+ * Unknown tags are removed from the text chunks so translated markup cannot
+ * inject arbitrary HTML into the hover. Returning undefined signals that the
+ * provider discarded the markers and activates sentence-level fallback.
+ *
+ * @param html Translated HTML fragment.
+ */
+function parseDiffTranslationParts(html: string): DiffTranslationPart[] | undefined {
+  const markerPattern = /<span\b[^>]*\bdata-pmt-diff\s*=\s*(["'])(added|removed)\1[^>]*>([\s\S]*?)<\/span>/gi;
+  const parts: DiffTranslationPart[] = [];
+  let cursor = 0;
+  let markerCount = 0;
+
+  for (const match of html.matchAll(markerPattern)) {
+    const before = stripDiffTranslationMarkup(html.slice(cursor, match.index));
+    if (before.trim()) {
+      parts.push({ text: before, kind: "equal" });
+    }
+    const markedText = stripDiffTranslationMarkup(match[3]);
+    if (markedText.trim()) {
+      parts.push({ text: markedText, kind: match[2].toLowerCase() as "added" | "removed" });
+    }
+    markerCount += 1;
+    cursor = match.index + match[0].length;
+  }
+
+  const after = stripDiffTranslationMarkup(html.slice(cursor));
+  if (after.trim()) {
+    parts.push({ text: after, kind: "equal" });
+  }
+
+  return markerCount > 0 ? mergeAdjacentDiffTranslationParts(parts) : undefined;
+}
+
+/**
+ * Removes translator container tags and collapses response-only whitespace.
+ *
+ * @param value Translated HTML chunk.
+ */
+function stripDiffTranslationMarkup(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Merges adjacent spans with the same status to show one marker per change run.
+ *
+ * @param parts Parsed translated chunks.
+ */
+function mergeAdjacentDiffTranslationParts(parts: readonly DiffTranslationPart[]): DiffTranslationPart[] {
+  const merged: DiffTranslationPart[] = [];
+  for (const part of parts) {
+    const previous = merged[merged.length - 1];
+    if (previous && previous.kind === part.kind) {
+      previous.text = `${previous.text}${part.text}`;
+    } else {
+      merged.push({ ...part });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Renders translated marker chunks with inline math support and diff colors.
+ *
+ * @param parts Parsed translated chunks.
+ * @param mathRenderer MathJax SVG renderer.
+ */
+async function renderDiffTranslationParts(parts: readonly DiffTranslationPart[], mathRenderer: MathJaxRenderer): Promise<string> {
+  const renderedParts: string[] = [];
+  for (const part of parts) {
+    const leadingWhitespace = part.text.match(/^\s*/u)?.[0] ?? "";
+    const trailingWhitespace = part.text.match(/\s*$/u)?.[0] ?? "";
+    const contentEnd = Math.max(leadingWhitespace.length, part.text.length - trailingWhitespace.length);
+    const content = part.text.slice(leadingWhitespace.length, contentEnd);
+    const rendered = await renderInlineMathTextMarkdown(content, mathRenderer, undefined, 0, true);
+    if (!rendered) {
+      continue;
+    }
+    const renderedWithWhitespace = `${leadingWhitespace}${rendered}${trailingWhitespace}`;
+    renderedParts.push(formatDiffTranslatedPart(renderedWithWhitespace, part));
+  }
+  return renderedParts.join("").trim();
+}
+
+/**
+ * Applies VS Code's own diff colors to one translated diff part.
+ *
+ * @param renderedPart Hover-safe translated Markdown.
+ * @param part Source diff part and its kind.
+ */
+function formatDiffTranslatedPart(renderedPart: string, part: { kind: "equal" | "added" | "removed" }): string {
+  if (part.kind === "equal") {
+    return renderedPart;
+  }
+
+  const isAdded = part.kind === "added";
   const background = isAdded
     ? "var(--vscode-diffEditor-insertedTextBackground)"
     : "var(--vscode-diffEditor-removedTextBackground)";
-  const marker = isAdded ? "＋" : "－";
-  return `<span style="background-color:${background};"><strong>${marker}</strong> ${renderedSentence}</span>`;
+  return `<span style="background-color:${background};">${renderedPart}</span>`;
 }
 
 /**

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type * as vscode from "vscode";
-import { diffParagraphSentences, findIntersectingDiffChanges, resolveParagraphDiff, splitParagraphSentences } from "../src/paragraphTranslationDiff";
+import { diffParagraphSentences, diffParagraphWords, findIntersectingDiffChanges, resolveParagraphDiff, splitParagraphSentences, splitParagraphWords } from "../src/paragraphTranslationDiff";
 
 /** Verifies that a rewritten sentence alone receives removed and added states. */
 function verifiesSentenceReplacementDiff(): void {
@@ -81,7 +81,29 @@ async function verifiesPureAdditionResolution(): Promise<void> {
   });
 }
 
+/** Verifies changed words are isolated while surrounding context stays equal. */
+function verifiesWordDiffWithinSentence(): void {
+  const original = "The field is treated as physical damage.";
+  const modified = "The field is used only as a geometry-update input.";
+  const result = diffParagraphWords(original, modified);
+
+  assert.deepEqual(result.original.map((token) => token.kind), ["equal", "equal", "equal", "removed", "equal", "removed", "removed", "equal"]);
+  assert.deepEqual(result.modified.map((token) => token.kind), ["equal", "equal", "equal", "added", "added", "equal", "added", "added", "added", "equal"]);
+  assert.equal(result.original.filter((token) => token.kind === "equal").map((token) => token.text).join(""), "The field is as.");
+  assert.equal(result.modified.filter((token) => token.kind === "equal").map((token) => token.text).join(""), "The field is as.");
+}
+
+/** Verifies formulas and hyphenated scientific terms stay atomic tokens. */
+function verifiesProtectedWordTokens(): void {
+  assert.deepEqual(
+    splitParagraphWords("The geometry-update input uses $x^2$ and `candidate_field`."),
+    ["The", " geometry-update", " input", " uses", " $x^2$", " and", " `candidate_field`", "."],
+  );
+}
+
 test("marks only a rewritten sentence as removed and added", verifiesSentenceReplacementDiff);
 test("keeps Fig. and Eq. inside scientific sentences", verifiesScientificSentenceSegmentation);
 test("matches an addition only on the modified side", verifiesDiffLineIntersection);
 test("resolves a pure addition without an original diff URI", verifiesPureAdditionResolution);
+test("isolates changed words inside a rewritten sentence", verifiesWordDiffWithinSentence);
+test("keeps formulas and scientific compounds atomic", verifiesProtectedWordTokens);

@@ -2,10 +2,16 @@ import type * as vscode from "vscode";
 
 export type ParagraphDiffSide = "original" | "modified";
 export type ParagraphSentenceDiffKind = "equal" | "added" | "removed";
+export type ParagraphWordDiffKind = ParagraphSentenceDiffKind;
 
 export type ParagraphSentenceDiff = {
   text: string;
   kind: ParagraphSentenceDiffKind;
+};
+
+export type ParagraphWordDiff = {
+  text: string;
+  kind: ParagraphWordDiffKind;
 };
 
 export type ProposedTextEditorLineRange = {
@@ -56,6 +62,11 @@ export type ParagraphDiffResolution = {
 export type ParagraphSentenceDiffResult = {
   original: ParagraphSentenceDiff[];
   modified: ParagraphSentenceDiff[];
+};
+
+export type ParagraphWordDiffResult = {
+  original: ParagraphWordDiff[];
+  modified: ParagraphWordDiff[];
 };
 
 /**
@@ -186,6 +197,55 @@ export function diffParagraphSentences(originalText: string, modifiedText: strin
 }
 
 /**
+ * Computes word-level additions and removals inside one already-paired paragraph.
+ *
+ * Whitespace is retained in each token so the translated input keeps readable
+ * spacing. Inline math, code spans, URLs, and hyphenated scientific terms are
+ * treated as atomic tokens to avoid wrapping their syntax halfway through.
+ *
+ * @param originalText Paragraph text from the original side.
+ * @param modifiedText Paragraph text from the modified side.
+ */
+export function diffParagraphWords(originalText: string, modifiedText: string): ParagraphWordDiffResult {
+  const originalTokens = tokenizeParagraphWords(originalText);
+  const modifiedTokens = tokenizeParagraphWords(modifiedText);
+  const lengths = buildWordLcsLengths(originalTokens, modifiedTokens);
+  const original: ParagraphWordDiff[] = [];
+  const modified: ParagraphWordDiff[] = [];
+  let originalIndex = 0;
+  let modifiedIndex = 0;
+
+  while (originalIndex < originalTokens.length && modifiedIndex < modifiedTokens.length) {
+    if (wordTokensMatch(originalTokens[originalIndex], modifiedTokens[modifiedIndex])) {
+      original.push({ text: originalTokens[originalIndex].text, kind: "equal" });
+      modified.push({ text: modifiedTokens[modifiedIndex].text, kind: "equal" });
+      originalIndex += 1;
+      modifiedIndex += 1;
+      continue;
+    }
+
+    if (lengths[originalIndex + 1][modifiedIndex] >= lengths[originalIndex][modifiedIndex + 1]) {
+      original.push({ text: originalTokens[originalIndex].text, kind: "removed" });
+      originalIndex += 1;
+    } else {
+      modified.push({ text: modifiedTokens[modifiedIndex].text, kind: "added" });
+      modifiedIndex += 1;
+    }
+  }
+
+  while (originalIndex < originalTokens.length) {
+    original.push({ text: originalTokens[originalIndex].text, kind: "removed" });
+    originalIndex += 1;
+  }
+  while (modifiedIndex < modifiedTokens.length) {
+    modified.push({ text: modifiedTokens[modifiedIndex].text, kind: "added" });
+    modifiedIndex += 1;
+  }
+
+  return { original, modified };
+}
+
+/**
  * Splits manuscript prose into sentences while keeping scientific
  * abbreviations such as `Fig.` and `Eq.` attached to their surrounding text.
  *
@@ -206,6 +266,15 @@ export function splitParagraphSentences(text: string): string[] {
 
   // This fallback is needed only on older extension hosts without Segmenter.
   return normalizedText.split(/(?<=[.!?])\s+/u).map((sentence) => sentence.trim()).filter(Boolean);
+}
+
+/**
+ * Splits prose into diffable tokens while retaining leading whitespace.
+ *
+ * @param text Markdown paragraph text.
+ */
+export function splitParagraphWords(text: string): string[] {
+  return tokenizeParagraphWords(text).map((token) => token.text);
 }
 
 /**
@@ -404,4 +473,61 @@ function sentencesMatch(left: string, right: string): boolean {
  */
 function normalizeSentenceForComparison(sentence: string): string {
   return sentence.replace(/\s+/g, " ").trim();
+}
+
+type ParagraphWordToken = {
+  text: string;
+  value: string;
+};
+
+/**
+ * Tokenizes words and protected inline constructs for the paragraph diff.
+ *
+ * @param text Markdown paragraph text.
+ */
+function tokenizeParagraphWords(text: string): ParagraphWordToken[] {
+  const normalizedText = text.replace(/\r\n/g, "\n").replace(/\s+/g, " ").trim();
+  if (!normalizedText) {
+    return [];
+  }
+
+  const tokenPattern = /`[^`]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|https?:\/\/\S+|[\p{L}\p{M}\p{N}]+(?:['’_-][\p{L}\p{M}\p{N}]+)*|[^\s]/gu;
+  const tokens: ParagraphWordToken[] = [];
+  let cursor = 0;
+  for (const match of normalizedText.matchAll(tokenPattern)) {
+    const value = match[0];
+    const leadingWhitespace = normalizedText.slice(cursor, match.index);
+    tokens.push({ text: `${leadingWhitespace}${value}`, value });
+    cursor = match.index + value.length;
+  }
+  return tokens;
+}
+
+/**
+ * Builds the dynamic-programming table used for word LCS alignment.
+ *
+ * @param original Original word tokens.
+ * @param modified Modified word tokens.
+ */
+function buildWordLcsLengths(original: readonly ParagraphWordToken[], modified: readonly ParagraphWordToken[]): number[][] {
+  const lengths = Array.from({ length: original.length + 1 }, () => Array(modified.length + 1).fill(0));
+  for (let originalIndex = original.length - 1; originalIndex >= 0; originalIndex -= 1) {
+    for (let modifiedIndex = modified.length - 1; modifiedIndex >= 0; modifiedIndex -= 1) {
+      lengths[originalIndex][modifiedIndex] = wordTokensMatch(original[originalIndex], modified[modifiedIndex])
+        ? lengths[originalIndex + 1][modifiedIndex + 1] + 1
+        : Math.max(lengths[originalIndex + 1][modifiedIndex], lengths[originalIndex][modifiedIndex + 1]);
+    }
+  }
+  return lengths;
+}
+
+/**
+ * Compares token values without allowing line wrapping or surrounding spaces
+ * to create a false wording change.
+ *
+ * @param left First token.
+ * @param right Second token.
+ */
+function wordTokensMatch(left: ParagraphWordToken, right: ParagraphWordToken): boolean {
+  return left.value === right.value;
 }
