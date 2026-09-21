@@ -9,8 +9,8 @@ import type { MathJaxRenderer } from "./mathJaxRenderer";
 import type { ParagraphTranslator, TranslationEngine } from "./paragraphTranslator";
 import type { ImagePreviewRenderer } from "./imagePreview";
 import type { HeadingEntry, InlineMathEntry, LabelEntry, MathBlockEntry, PandocTokenAtPosition, ParsedPandocDocument, PlainPosition, PlainRange, ReferenceEntry } from "./parser";
-import { diffParagraphSentences, diffParagraphWords, resolveParagraphDiff } from "./paragraphTranslationDiff";
-import type { ParagraphDiffSide, ParagraphSentenceDiff, ParagraphWordDiff } from "./paragraphTranslationDiff";
+import { diffParagraphSentences, diffParagraphWords, formatDiffTranslationInput, resolveParagraphDiff } from "./paragraphTranslationDiff";
+import type { ParagraphDiffSide, ParagraphSentenceDiff } from "./paragraphTranslationDiff";
 
 const MAX_TRANSLATABLE_CJK_RATIO = 0.3;
 
@@ -880,21 +880,6 @@ async function buildSentenceDiffTranslation(
     engine: translation.engine,
     diffSide: paragraphDiff.side,
   };
-}
-
-/**
- * Wraps changed source tokens in translator-preserved HTML markers.
- *
- * @param words Word-level diff for the hovered side.
- */
-function formatDiffTranslationInput(words: readonly ParagraphWordDiff[]): string {
-  const body = words.map((word) => {
-    const escapedText = escapeHtmlText(word.text);
-    return word.kind === "equal"
-      ? escapedText
-      : `<span data-pmt-diff="${word.kind}">${escapedText}</span>`;
-  }).join("");
-  return `<div><p>${body}</p></div>`;
 }
 
 type DiffTranslationPart = {

@@ -202,6 +202,14 @@ export class ParagraphTranslator {
     const timeout = setTimeout(() => controller.abort(), TRANSLATION_TIMEOUT_MS);
 
     try {
+      // Keep the exact marked HTML and returned text visible when diagnosing
+      // paragraph diff marker drift through Google's HTML translation path.
+      if (shouldLog) {
+        this.output.appendLine("Google paragraph translation request text BEGIN");
+        this.output.appendLine(text);
+        this.output.appendLine("Google paragraph translation request text END");
+      }
+
       const response = await fetch(GOOGLE_TRANSLATE_HTML_URL, {
         method: "POST",
         headers: {
@@ -231,7 +239,13 @@ export class ParagraphTranslator {
         return undefined;
       }
 
-      return decodeHtmlText(result[0][0]).trim();
+      const translatedText = decodeHtmlText(result[0][0]).trim();
+      if (shouldLog) {
+        this.output.appendLine("Google paragraph translation response text BEGIN");
+        this.output.appendLine(translatedText);
+        this.output.appendLine("Google paragraph translation response text END");
+      }
+      return translatedText;
     } catch (error) {
       if (shouldLog) {
         this.output.appendLine(`Google paragraph translation failed for ${formatTranslationTextForLog(text)}: ${String(error)}`);

@@ -246,6 +246,34 @@ export function diffParagraphWords(originalText: string, modifiedText: string): 
 }
 
 /**
+ * Builds the HTML sent to the translator for one side of a word diff.
+ *
+ * Adjacent tokens with the same status share one marker so the translation
+ * service cannot relocate dozens of word-level tags independently.
+ *
+ * @param words Word diff for the hovered side.
+ */
+export function formatDiffTranslationInput(words: readonly ParagraphWordDiff[]): string {
+  const groupedWords: ParagraphWordDiff[] = [];
+  for (const word of words) {
+    const previous = groupedWords[groupedWords.length - 1];
+    if (previous && previous.kind === word.kind) {
+      previous.text += word.text;
+    } else {
+      groupedWords.push({ ...word });
+    }
+  }
+
+  const body = groupedWords.map((word) => {
+    const escapedText = escapeHtmlText(word.text);
+    return word.kind === "equal"
+      ? escapedText
+      : `<span data-pmt-diff="${word.kind}">${escapedText}</span>`;
+  }).join("");
+  return `<div><p>${body}</p></div>`;
+}
+
+/**
  * Splits manuscript prose into sentences while keeping scientific
  * abbreviations such as `Fig.` and `Eq.` attached to their surrounding text.
  *
@@ -530,4 +558,16 @@ function buildWordLcsLengths(original: readonly ParagraphWordToken[], modified: 
  */
 function wordTokensMatch(left: ParagraphWordToken, right: ParagraphWordToken): boolean {
   return left.value === right.value;
+}
+
+/**
+ * Escapes text before embedding it in translator HTML.
+ *
+ * @param value Raw token text.
+ */
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

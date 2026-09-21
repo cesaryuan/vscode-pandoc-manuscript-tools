@@ -1,0 +1,7 @@
+<div>
+  <p>
+    Each node contains structural, traffic, and management-related attributes. Structural attributes include reliability index $\beta\_i$, structural failure probability $P\_{s,i}$, service age, deterioration-related variables, maintenance condition, and node capacity $C\_i$.
+    <span data-pmt-diff="added"> Here, traffic flow denotes the traffic volume carried by a node or directed link during the analysis interval, and node capacity denotes the effective traffic-carrying capacity of a bridge-tunnel node.</span>
+     Traffic attributes include total node flow, inflow, outflow, local flow, through-flow, and saturation. Local flow represents demand associated with the local bridge-tunnel node, while through-flow represents traffic that passes through the node and can be decomposed into movements between upstream and downstream neighboring nodes when the node fails. Each directed edge contains edge flow $q\_{ij}$, capacity $C\_{ij}$, free-flow travel time $t^0\_{ij}$, current travel time $t\_{ij}$, length, and topological indicators.
+  </p>
+</div>

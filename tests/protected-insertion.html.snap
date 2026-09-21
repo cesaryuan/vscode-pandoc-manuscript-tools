@@ -1,0 +1,9 @@
+<div>
+  <p>
+    The loss is $L=0$ and the
+    <span data-pmt-diff="added"> calibrated</span>
+     value
+    <span data-pmt-diff="added">, computed per bridge-tunnel node,</span>
+     is stored in `candidate_field`.
+  </p>
+</div>
