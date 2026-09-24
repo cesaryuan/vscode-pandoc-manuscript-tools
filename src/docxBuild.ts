@@ -4,7 +4,7 @@ import * as http from "http";
 import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
-import { CAN_BUILD_DOCX_CONTEXT } from "./constants";
+import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 type PandocManuscriptProject = { rootUri: vscode.Uri };
@@ -15,7 +15,7 @@ export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
   declare contextRefreshId: number;
   /**
-   * Creates the DOCX build runner used by the editor-title command.
+   * Creates the Papper build runner used by the editor-title commands.
    *
    * @param output Output channel for build logs.
    */
@@ -25,7 +25,7 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Recomputes whether the active editor should show the DOCX build button.
+   * Recomputes whether the active editor should show the Papper build buttons.
    *
    */
   async refreshContext() {
@@ -33,11 +33,13 @@ export class PandocBuildRunner {
     this.contextRefreshId = refreshId;
 
     const canBuild = await this.canBuildActiveDocument();
+    const canBuildHtml = await this.canBuildHtmlActiveDocument();
     if (refreshId !== this.contextRefreshId) {
       return;
     }
 
     await vscode.commands.executeCommand("setContext", CAN_BUILD_DOCX_CONTEXT, canBuild);
+    await vscode.commands.executeCommand("setContext", CAN_BUILD_HTML_CONTEXT, canBuildHtml);
   }
 
   /**
@@ -56,6 +58,22 @@ export class PandocBuildRunner {
     }
 
     return isUvxAvailable();
+  }
+
+  /**
+   * Returns whether the active Markdown file can be rendered by Papper as HTML.
+   *
+   * HTML preview uses the same saved-file and `style.yml` project boundary as
+   * the DOCX command, so non-Papper workspaces do not expose this feature.
+   */
+  async canBuildHtmlActiveDocument() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
+      return false;
+    }
+
+    const project = await findPandocManuscriptProject(editor.document.uri);
+    return Boolean(project) && isUvxAvailable();
   }
 
   /**
@@ -104,6 +122,42 @@ export class PandocBuildRunner {
   }
 
   /**
+   * Builds the active Markdown file as Papper HTML and opens it in the browser.
+   *
+   * The generated HTML is standalone, so opening the file URI preserves the
+   * embedded Pandoc styles and resources without introducing a second renderer.
+   */
+  async buildActiveMarkdownHtml() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
+      vscode.window.showWarningMessage("Open a saved Markdown file before building HTML preview.");
+      return;
+    }
+
+    const project = await findPandocManuscriptProject(editor.document.uri);
+    if (!project) {
+      vscode.window.showWarningMessage("This Markdown file is not inside a Papper project with style.yml.");
+      await this.refreshContext();
+      return;
+    }
+
+    if (!(await isUvxAvailable())) {
+      vscode.window.showErrorMessage("Cannot build HTML preview because `uvx` is not available on PATH.");
+      await this.refreshContext();
+      return;
+    }
+
+    const saved = await editor.document.save();
+    if (!saved) {
+      vscode.window.showWarningMessage("The Markdown file must be saved before building HTML preview.");
+      return;
+    }
+
+    await this.runHtmlBuild(project, editor.document);
+    await this.refreshContext();
+  }
+
+  /**
    * Runs `uvx papper build docx <current-file>` and opens the output DOCX.
    *
    * @param project Detected manuscript project root.
@@ -136,6 +190,44 @@ export class PandocBuildRunner {
     } catch (error) {
       const message = `Failed to build DOCX: ${String(error.message || error)}`;
       this.output.appendLine(`[DOCX] ${message}`);
+      vscode.window.showErrorMessage(message);
+    }
+  }
+
+  /**
+   * Runs Papper's HTML target and opens the exact output file in the browser.
+   *
+   * @param project Detected manuscript project root.
+   * @param document Markdown document to build.
+   */
+  async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
+    const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
+    const htmlUri = getExpectedHtmlUri(project.rootUri, document.uri);
+    const htmlRelativePath = path.relative(project.rootUri.fsPath, htmlUri.fsPath);
+    const args = ["papper", "build", "html", markdownRelativePath, "--output-file", htmlRelativePath];
+
+    this.output.show(true);
+    this.output.appendLine("");
+    this.output.appendLine(`[HTML] Building ${markdownRelativePath}`);
+    this.output.appendLine(`[HTML] Working directory: ${project.rootUri.fsPath}`);
+    this.output.appendLine(`[HTML] Command: uvx ${args.join(" ")}`);
+
+    try {
+      await runProcess("uvx", args, { cwd: project.rootUri.fsPath, output: this.output });
+      if (!(await pathExists(htmlUri))) {
+        throw new Error(`Build finished, but the expected HTML was not found: ${htmlUri.fsPath}`);
+      }
+
+      const opened = await vscode.env.openExternal(htmlUri);
+      if (!opened) {
+        throw new Error(`VS Code could not open the generated HTML: ${htmlUri.fsPath}`);
+      }
+
+      this.output.appendLine(`[HTML] Opened ${htmlUri.fsPath}`);
+      vscode.window.setStatusBarMessage(`$(check) Built and opened ${path.basename(htmlUri.fsPath)}.`, 5000);
+    } catch (error) {
+      const message = `Failed to build HTML preview: ${String(error.message || error)}`;
+      this.output.appendLine(`[HTML] ${message}`);
       vscode.window.showErrorMessage(message);
     }
   }
@@ -567,6 +659,17 @@ function escapeXml(value: string) {
 function getExpectedDocxUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
   const outputName = `${path.parse(markdownUri.fsPath).name}.docx`;
   return vscode.Uri.file(path.join(rootUri.fsPath, "output", "docx", outputName));
+}
+
+/**
+ * Returns the HTML path produced by Papper for a Markdown input file.
+ *
+ * @param rootUri Project root URI.
+ * @param markdownUri Markdown file URI.
+ */
+function getExpectedHtmlUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
+  const outputName = `${path.parse(markdownUri.fsPath).name}.html`;
+  return vscode.Uri.file(path.join(rootUri.fsPath, "output", "html", outputName));
 }
 
 /**
