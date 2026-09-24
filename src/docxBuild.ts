@@ -5,6 +5,7 @@ import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
+import { buildHtmlPreviewCsp } from "./htmlPreviewCsp";
 import { cacheHtmlMetafileImages } from "./htmlPreviewResourceCache";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
@@ -1030,7 +1031,8 @@ function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, sourceDi
  * @param cspSource Webview CSP source token.
  */
 function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
-  const bridge = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; img-src ${cspSource} data: blob:; style-src ${cspSource} 'unsafe-inline' data: blob:; style-src-elem ${cspSource} 'unsafe-inline' data: blob:; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource} data: blob:; media-src ${cspSource} data: blob:;"><script nonce="${nonce}">
+  const csp = buildHtmlPreviewCsp(html, nonce, cspSource);
+  const bridge = `<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 let suppressScroll = false;
 let scrollFrame = 0;
