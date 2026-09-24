@@ -5,6 +5,7 @@ import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
+import { cacheHtmlMetafileImages } from "./htmlPreviewResourceCache";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 type PandocManuscriptProject = { rootUri: vscode.Uri };
@@ -14,6 +15,7 @@ type HtmlPreviewMessage = { type?: string; ratio?: number };
 
 export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
+  declare htmlPreviewMetafileCacheUri: vscode.Uri;
   declare contextRefreshId: number;
   declare htmlPreviewPanel: vscode.WebviewPanel | undefined;
   declare htmlPreviewDocumentUri: vscode.Uri | undefined;
@@ -29,9 +31,11 @@ export class PandocBuildRunner {
    * Creates the Papper build runner used by the editor-title commands.
    *
    * @param output Output channel for build logs.
+   * @param htmlPreviewMetafileCacheUri Global extension storage for converted HTML preview images.
    */
-  constructor(output: vscode.OutputChannel) {
+  constructor(output: vscode.OutputChannel, htmlPreviewMetafileCacheUri: vscode.Uri) {
     this.output = output;
+    this.htmlPreviewMetafileCacheUri = htmlPreviewMetafileCacheUri;
     this.contextRefreshId = 0;
     this.htmlPreviewPanel = undefined;
     this.htmlPreviewDocumentUri = undefined;
@@ -297,7 +301,7 @@ export class PandocBuildRunner {
         throw new Error(`Build finished, but the expected HTML was not found: ${htmlUri.fsPath}`);
       }
 
-      await this.updateHtmlPreviewPanel(htmlUri, document);
+      await this.updateHtmlPreviewPanel(htmlUri, document, project);
       this.output.appendLine(`[HTML] Updated side preview ${htmlUri.fsPath}`);
     } catch (error) {
       const message = `Failed to build HTML preview: ${String(error.message || error)}`;
@@ -321,7 +325,7 @@ export class PandocBuildRunner {
       this.htmlPreviewPanel.webview.options = {
         ...this.htmlPreviewPanel.webview.options,
         enableScripts: true,
-        localResourceRoots: [project.rootUri],
+        localResourceRoots: [project.rootUri, this.htmlPreviewMetafileCacheUri],
       };
       this.htmlPreviewPanel.reveal(vscode.ViewColumn.Beside, true);
       return;
@@ -334,7 +338,7 @@ export class PandocBuildRunner {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [project.rootUri],
+        localResourceRoots: [project.rootUri, this.htmlPreviewMetafileCacheUri],
       },
     );
     this.htmlPreviewPanel = panel;
@@ -414,14 +418,23 @@ export class PandocBuildRunner {
    *
    * @param htmlUri Generated HTML file.
    * @param document Source Markdown document.
+   * @param project Detected Papper project that bounds image resource access.
    */
-  private async updateHtmlPreviewPanel(htmlUri: vscode.Uri, document: vscode.TextDocument) {
+  private async updateHtmlPreviewPanel(htmlUri: vscode.Uri, document: vscode.TextDocument, project: PandocManuscriptProject) {
     if (!this.htmlPreviewPanel) {
       return;
     }
     const html = await fs.readFile(htmlUri.fsPath, "utf8");
     const nonce = createNonce();
-    const rewrittenHtml = rewriteHtmlResourceUris(html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
+    const cachedHtml = await cacheHtmlMetafileImages(
+      html,
+      path.dirname(document.uri.fsPath),
+      project.rootUri.fsPath,
+      this.htmlPreviewMetafileCacheUri.fsPath,
+      (filePath) => this.htmlPreviewPanel!.webview.asWebviewUri(vscode.Uri.file(filePath)).toString(),
+      this.output,
+    );
+    const rewrittenHtml = rewriteHtmlResourceUris(cachedHtml.html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
     if (countHtmlElements(html, "style") !== countHtmlElements(rewrittenHtml, "style")) {
       this.output.appendLine(`[HTML] Preserving Pandoc styles failed: style element count changed for ${htmlUri.fsPath}`);
       return;
