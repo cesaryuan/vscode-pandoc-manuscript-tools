@@ -22,6 +22,9 @@ export class PandocBuildRunner {
   declare htmlPreviewSyncing: boolean;
   declare htmlPreviewBuildRunning: boolean;
   declare htmlPreviewRefreshPending: boolean;
+  declare htmlPreviewLastPreviewMessageAt: number;
+  declare htmlPreviewScrollSyncUntil: number;
+  declare htmlPreviewLastSourceRatio: number;
   /**
    * Creates the Papper build runner used by the editor-title commands.
    *
@@ -37,6 +40,9 @@ export class PandocBuildRunner {
     this.htmlPreviewSyncing = false;
     this.htmlPreviewBuildRunning = false;
     this.htmlPreviewRefreshPending = false;
+    this.htmlPreviewLastPreviewMessageAt = 0;
+    this.htmlPreviewScrollSyncUntil = 0;
+    this.htmlPreviewLastSourceRatio = -1;
   }
 
   /**
@@ -198,13 +204,17 @@ export class PandocBuildRunner {
    * @param editor Editor whose visible range changed.
    */
   syncHtmlPreviewFromEditor(editor: vscode.TextEditor) {
-    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, editor.document.uri) || this.htmlPreviewSyncing) {
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, editor.document.uri) || this.htmlPreviewSyncing || Date.now() < this.htmlPreviewScrollSyncUntil) {
       return;
     }
 
     const visibleRange = editor.visibleRanges[0];
     const denominator = Math.max(1, editor.document.lineCount - 1);
     const ratio = Math.max(0, Math.min(1, visibleRange.start.line / denominator));
+    if (Math.abs(ratio - this.htmlPreviewLastSourceRatio) < 0.01) {
+      return;
+    }
+    this.htmlPreviewLastSourceRatio = ratio;
     void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
   }
 
@@ -330,6 +340,7 @@ export class PandocBuildRunner {
     this.htmlPreviewPanel = panel;
     panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage) => {
       if (message.type === "ready") {
+        this.htmlPreviewLastSourceRatio = -1;
         const editor = vscode.window.visibleTextEditors.find((candidate) => this.htmlPreviewDocumentUri && isSameUri(candidate.document.uri, this.htmlPreviewDocumentUri));
         if (editor) {
           this.syncHtmlPreviewFromEditor(editor);
@@ -339,12 +350,18 @@ export class PandocBuildRunner {
       if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !this.htmlPreviewDocumentUri) {
         return;
       }
+      const now = Date.now();
+      if (now - this.htmlPreviewLastPreviewMessageAt < 60) {
+        return;
+      }
+      this.htmlPreviewLastPreviewMessageAt = now;
       const editor = vscode.window.visibleTextEditors.find((candidate) => isSameUri(candidate.document.uri, this.htmlPreviewDocumentUri!));
       if (!editor) {
         return;
       }
       const line = Math.round(Math.max(0, Math.min(1, message.ratio)) * Math.max(0, editor.document.lineCount - 1));
       this.htmlPreviewSyncing = true;
+      this.htmlPreviewScrollSyncUntil = now + 220;
       editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
       setTimeout(() => {
         this.htmlPreviewSyncing = false;
@@ -405,10 +422,15 @@ export class PandocBuildRunner {
     const html = await fs.readFile(htmlUri.fsPath, "utf8");
     const nonce = createNonce();
     const rewrittenHtml = rewriteHtmlResourceUris(html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
+    if (countHtmlElements(html, "style") !== countHtmlElements(rewrittenHtml, "style")) {
+      this.output.appendLine(`[HTML] Preserving Pandoc styles failed: style element count changed for ${htmlUri.fsPath}`);
+      return;
+    }
     this.htmlPreviewPanel.webview.html = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
     const visibleRange = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri))?.visibleRanges[0];
     if (visibleRange) {
       const ratio = Math.max(0, Math.min(1, visibleRange.start.line / Math.max(1, document.lineCount - 1)));
+      this.htmlPreviewLastSourceRatio = ratio;
       void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
     }
   }
@@ -961,6 +983,16 @@ function isFileNotFoundError(error: unknown) {
 }
 
 /**
+ * Counts one HTML element type without parsing or rewriting its contents.
+ *
+ * @param html HTML source.
+ * @param elementName Element name to count.
+ */
+function countHtmlElements(html: string, elementName: string) {
+  return (html.match(new RegExp(`<${elementName}\\b`, "gi")) || []).length;
+}
+
+/**
  * Rewrites local HTML resources into Webview-safe URIs.
  *
  * Papper's HTML output keeps relative image/resource paths. Webviews cannot
@@ -988,34 +1020,54 @@ function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, sourceDi
  * @param cspSource Webview CSP source token.
  */
 function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
-  const bridge = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data: blob:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource} data:;"><script nonce="${nonce}">
+  const bridge = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; img-src ${cspSource} data: blob:; style-src ${cspSource} 'unsafe-inline' data: blob:; style-src-elem ${cspSource} 'unsafe-inline' data: blob:; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource} data: blob:; media-src ${cspSource} data: blob:;"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 let suppressScroll = false;
+let scrollFrame = 0;
+let lastSentRatio = -1;
 function scrollRatio() {
   const root = document.documentElement;
   const max = Math.max(1, root.scrollHeight - window.innerHeight);
   return Math.max(0, Math.min(1, window.scrollY / max));
 }
+// Remove Webview-injected style elements while preserving every style from Pandoc's HTML.
+const removeNonPandocStyles = () => {
+  document.querySelectorAll('style:not([data-papper-preview-style="pandoc"])').forEach(style => style.remove());
+};
+const styleObserver = new MutationObserver(removeNonPandocStyles);
+styleObserver.observe(document.documentElement, { childList: true, subtree: true });
+document.addEventListener('DOMContentLoaded', removeNonPandocStyles, { once: true });
+removeNonPandocStyles();
 window.addEventListener('message', event => {
   if (!event.data || event.data.type !== 'sourceScroll') return;
   const root = document.documentElement;
   const max = Math.max(0, root.scrollHeight - window.innerHeight);
   suppressScroll = true;
   window.scrollTo({ top: Math.max(0, Math.min(1, event.data.ratio || 0)) * max, behavior: 'auto' });
-  requestAnimationFrame(() => { suppressScroll = false; });
+  window.setTimeout(() => { suppressScroll = false; }, 180);
 });
 window.addEventListener('scroll', () => {
-  if (!suppressScroll) vscode.postMessage({ type: 'previewScroll', ratio: scrollRatio() });
+  if (suppressScroll || scrollFrame) return;
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = 0;
+    if (suppressScroll) return;
+    const ratio = scrollRatio();
+    if (Math.abs(ratio - lastSentRatio) < 0.01) return;
+    lastSentRatio = ratio;
+    vscode.postMessage({ type: 'previewScroll', ratio });
+  });
 }, { passive: true });
 window.addEventListener('load', () => vscode.postMessage({ type: 'ready' }), { once: true });
 vscode.postMessage({ type: 'ready' });
 </script>`;
-  const headIndex = html.search(/<head(?:\s[^>]*)?>/i);
+  const withoutExistingCsp = html.replace(/<meta\s+http-equiv=["']content-security-policy["'][^>]*>\s*/gi, "");
+  const markedPandocStyles = withoutExistingCsp.replace(/<style(?=[\s>])/gi, '<style data-papper-preview-style="pandoc"');
+  const headIndex = markedPandocStyles.search(/<head(?:\s[^>]*)?>/i);
   if (headIndex >= 0) {
-    const end = html.indexOf(">", headIndex) + 1;
-    return `${html.slice(0, end)}${bridge}${html.slice(end)}`;
+    const end = markedPandocStyles.indexOf(">", headIndex) + 1;
+    return `${markedPandocStyles.slice(0, end)}${bridge}${markedPandocStyles.slice(end)}`;
   }
-  return `${bridge}${html}`;
+  return `${bridge}${markedPandocStyles}`;
 }
 
 
