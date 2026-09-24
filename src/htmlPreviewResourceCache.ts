@@ -22,7 +22,7 @@ const CACHE_FORMAT_VERSION = "html-metafile-svg-v1";
  * @param html Papper-generated HTML.
  * @param sourceDirectory Directory containing the Markdown source.
  * @param allowedRoot Papper project root allowed for resource reads.
- * @param cacheDirectory Extension global-storage directory for converted SVGs.
+ * @param cacheDirectory Papper project's hidden cache directory for converted SVGs.
  * @param toWebviewUri Converts a cached SVG path to a Webview-safe URI.
  * @param output Extension output channel.
  */
