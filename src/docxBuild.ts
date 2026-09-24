@@ -7,9 +7,7 @@ import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT } from "./constants";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
-const BUILD_SCRIPT_PATH = "scripts/build.py";
-
-type PandocManuscriptProject = { rootUri: vscode.Uri; buildScript: string };
+type PandocManuscriptProject = { rootUri: vscode.Uri };
 type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
 type RunProcessOptions = { cwd?: string; output?: vscode.OutputChannel };
 
@@ -57,7 +55,7 @@ export class PandocBuildRunner {
       return false;
     }
 
-    return isUvAvailable();
+    return isUvxAvailable();
   }
 
   /**
@@ -81,8 +79,8 @@ export class PandocBuildRunner {
       return;
     }
 
-    if (!(await isUvAvailable())) {
-      vscode.window.showErrorMessage("Cannot build DOCX because `uv` is not available on PATH.");
+    if (!(await isUvxAvailable())) {
+      vscode.window.showErrorMessage("Cannot build DOCX because `uvx` is not available on PATH.");
       await this.refreshContext();
       return;
     }
@@ -106,7 +104,7 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Runs `uv run scripts/build... docx <current-file>` and opens the output DOCX.
+   * Runs `uvx papper build docx <current-file>` and opens the output DOCX.
    *
    * @param project Detected manuscript project root.
    * @param document Markdown document to build.
@@ -114,16 +112,16 @@ export class PandocBuildRunner {
   async runDocxBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
     const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
-    const args = ["run", project.buildScript, "docx", markdownRelativePath];
+    const args = ["papper", "build", "docx", markdownRelativePath];
 
     this.output.show(true);
     this.output.appendLine("");
     this.output.appendLine(`[DOCX] Building ${markdownRelativePath}`);
     this.output.appendLine(`[DOCX] Working directory: ${project.rootUri.fsPath}`);
-    this.output.appendLine(`[DOCX] Command: uv ${args.join(" ")}`);
+    this.output.appendLine(`[DOCX] Command: uvx ${args.join(" ")}`);
 
     try {
-      await runProcess("uv", args, { cwd: project.rootUri.fsPath, output: this.output });
+      await runProcess("uvx", args, { cwd: project.rootUri.fsPath, output: this.output });
       if (!(await pathExists(docxUri))) {
         throw new Error(`Build finished, but the expected DOCX was not found: ${docxUri.fsPath}`);
       }
@@ -180,7 +178,7 @@ async function readPandocManuscriptProject(rootUri: vscode.Uri) {
     return undefined;
   }
 
-  return { rootUri, buildScript: BUILD_SCRIPT_PATH };
+  return { rootUri };
 }
 
 /**
@@ -561,7 +559,7 @@ function escapeXml(value: string) {
 }
 
 /**
- * Returns the DOCX path produced by scripts/build.py for a Markdown input file.
+ * Returns the DOCX path produced by Papper for a Markdown input file.
  *
  * @param rootUri Project root URI.
  * @param markdownUri Markdown file URI.
@@ -572,12 +570,12 @@ function getExpectedDocxUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
 }
 
 /**
- * Checks whether `uv` can be executed from the VS Code extension host.
+ * Checks whether `uvx` can be executed from the VS Code extension host.
  *
  */
-async function isUvAvailable() {
+async function isUvxAvailable() {
   try {
-    await runProcess("uv", ["--version"], {});
+    await runProcess("uvx", ["--version"], {});
     return true;
   } catch {
     return false;

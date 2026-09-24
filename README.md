@@ -19,7 +19,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Inline folding for the attribute block in `[revised text]{custom-style="Revision Char"}` spans; other custom styles remain visible.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
-- A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uv` is installed.
+- A DOCX build button in the editor title for saved Markdown files inside a detected Pandoc manuscript template project when `uvx` is installed.
 - An Image Directory Preview opened from a folder's Explorer context menu (`View Images`). It recursively discovers supported images from the selected folder and its subfolders through incremental batches, loads only images near the viewport, and provides Grid, Masonry, and Folder layouts. The `Cols` control changes the number of columns, and `Ctrl` + mouse wheel adjusts it without forcing a right-side editor split.
 - Folder layout controls for collapsing or expanding all folder groups, plus Settings for scan depth and for including or excluding folders by case-insensitive path keywords.
 - Image-card hover metadata for relative path, natural resolution, creation time, modification time, and file size. Right-click an image to copy the image itself, its workspace-relative or absolute path, or move it to the Recycle Bin after confirmation.
@@ -79,4 +79,4 @@ The math hover uses MathJax's Node component loader to convert TeX into SVG and 
 
 Image hovers resolve local Markdown and HTML image references for `.svg`, `.emf`, and `.wmf` files. SVG previews are embedded as self-contained data URIs so nested local `<image href>` references can use relative paths, absolute paths, or `file://` URLs. EMF and WMF previews use the bundled libemf2svg renderer and are returned as SVG so hover and side-preview rendering use the same inline-SVG display path. Metafile previews may differ from Windows GDI for complex clipping, raster operations, gradients, or unavailable fonts.
 
-The DOCX build button is shown only when the active saved Markdown file belongs to a workspace folder that looks like this Pandoc manuscript template: it has `scripts/build.py` or `scripts/build`, the DOCX post-processing scripts, and `pandoc/pandoc-docx.yml`. The command runs `uv run <build-script> docx <markdown-file>` from the detected project root, then opens the generated file from `output/docx/`.
+The DOCX build button is shown only when the active saved Markdown file belongs to a workspace folder with a `style.yml` Papper manuscript configuration. The command runs `uvx papper build docx <markdown-file>` from the detected project root, then opens the generated file from `output/docx/`.
