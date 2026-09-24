@@ -5,7 +5,7 @@ import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
-import { buildHtmlPreviewCsp } from "./htmlPreviewCsp";
+import { applyHtmlPreviewMathJaxNonce, buildHtmlPreviewCsp } from "./htmlPreviewCsp";
 import { cacheHtmlMetafileImages } from "./htmlPreviewResourceCache";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
@@ -1031,7 +1031,8 @@ function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, sourceDi
  * @param cspSource Webview CSP source token.
  */
 function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
-  const csp = buildHtmlPreviewCsp(html, nonce, cspSource);
+  const noncePreparedHtml = applyHtmlPreviewMathJaxNonce(html, nonce);
+  const csp = buildHtmlPreviewCsp(noncePreparedHtml, nonce, cspSource);
   const bridge = `<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 let suppressScroll = false;
@@ -1042,14 +1043,14 @@ function scrollRatio() {
   const max = Math.max(1, root.scrollHeight - window.innerHeight);
   return Math.max(0, Math.min(1, window.scrollY / max));
 }
-// Remove Webview-injected style elements while preserving every style from Pandoc's HTML.
-const removeNonPandocStyles = () => {
-  document.querySelectorAll('style:not([data-papper-preview-style="pandoc"])').forEach(style => style.remove());
+// VS Code marks its injected style as #_defaultStyles; keep MathJax's runtime CHTML styles intact.
+const removeVscodeDefaultStyles = () => {
+  document.querySelectorAll('style#_defaultStyles').forEach(style => style.remove());
 };
-const styleObserver = new MutationObserver(removeNonPandocStyles);
+const styleObserver = new MutationObserver(removeVscodeDefaultStyles);
 styleObserver.observe(document.documentElement, { childList: true, subtree: true });
-document.addEventListener('DOMContentLoaded', removeNonPandocStyles, { once: true });
-removeNonPandocStyles();
+document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once: true });
+removeVscodeDefaultStyles();
 window.addEventListener('message', event => {
   if (!event.data || event.data.type !== 'sourceScroll') return;
   const root = document.documentElement;
@@ -1072,7 +1073,7 @@ window.addEventListener('scroll', () => {
 window.addEventListener('load', () => vscode.postMessage({ type: 'ready' }), { once: true });
 vscode.postMessage({ type: 'ready' });
 </script>`;
-  const withoutExistingCsp = html.replace(/<meta\s+http-equiv=["']content-security-policy["'][^>]*>\s*/gi, "");
+  const withoutExistingCsp = noncePreparedHtml.replace(/<meta\s+http-equiv=["']content-security-policy["'][^>]*>\s*/gi, "");
   const markedPandocStyles = withoutExistingCsp.replace(/<style(?=[\s>])/gi, '<style data-papper-preview-style="pandoc"');
   const headIndex = markedPandocStyles.search(/<head(?:\s[^>]*)?>/i);
   if (headIndex >= 0) {
