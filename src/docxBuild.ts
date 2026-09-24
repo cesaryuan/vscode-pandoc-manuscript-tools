@@ -10,10 +10,18 @@ import { isBuildableMarkdownDocument } from "./vscodeUtils";
 type PandocManuscriptProject = { rootUri: vscode.Uri };
 type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
 type RunProcessOptions = { cwd?: string; output?: vscode.OutputChannel };
+type HtmlPreviewMessage = { type?: string; ratio?: number };
 
 export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
   declare contextRefreshId: number;
+  declare htmlPreviewPanel: vscode.WebviewPanel | undefined;
+  declare htmlPreviewDocumentUri: vscode.Uri | undefined;
+  declare htmlPreviewTimer: NodeJS.Timeout | undefined;
+  declare htmlPreviewBuildId: number;
+  declare htmlPreviewSyncing: boolean;
+  declare htmlPreviewBuildRunning: boolean;
+  declare htmlPreviewRefreshPending: boolean;
   /**
    * Creates the Papper build runner used by the editor-title commands.
    *
@@ -22,6 +30,13 @@ export class PandocBuildRunner {
   constructor(output: vscode.OutputChannel) {
     this.output = output;
     this.contextRefreshId = 0;
+    this.htmlPreviewPanel = undefined;
+    this.htmlPreviewDocumentUri = undefined;
+    this.htmlPreviewTimer = undefined;
+    this.htmlPreviewBuildId = 0;
+    this.htmlPreviewSyncing = false;
+    this.htmlPreviewBuildRunning = false;
+    this.htmlPreviewRefreshPending = false;
   }
 
   /**
@@ -122,15 +137,15 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Builds the active Markdown file as Papper HTML and opens it in the browser.
+   * Opens the active Markdown file in the Papper HTML side preview.
    *
-   * The generated HTML is standalone, so opening the file URI preserves the
-   * embedded Pandoc styles and resources without introducing a second renderer.
+   * The preview is built from the current editor buffer, including unsaved
+   * changes, and keeps the generated standalone HTML inside a Webview panel.
    */
   async buildActiveMarkdownHtml() {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !isBuildableMarkdownDocument(editor.document)) {
-      vscode.window.showWarningMessage("Open a saved Markdown file before building HTML preview.");
+      vscode.window.showWarningMessage("Open a Markdown file before starting HTML preview.");
       return;
     }
 
@@ -147,14 +162,61 @@ export class PandocBuildRunner {
       return;
     }
 
-    const saved = await editor.document.save();
-    if (!saved) {
-      vscode.window.showWarningMessage("The Markdown file must be saved before building HTML preview.");
+    this.openHtmlPreview(editor.document, project);
+    await this.refreshHtmlPreview(editor.document, project);
+    await this.refreshContext();
+  }
+
+  /**
+   * Schedules a live HTML preview rebuild for the currently previewed document.
+   *
+   * Unsaved text is rendered through a temporary Markdown mirror next to the
+   * source file, so refreshing the preview never changes the user's document.
+   *
+   * @param document Changed Markdown document.
+   */
+  scheduleHtmlPreviewRefresh(document: vscode.TextDocument) {
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, document.uri)) {
       return;
     }
 
-    await this.runHtmlBuild(project, editor.document);
-    await this.refreshContext();
+    if (this.htmlPreviewTimer) {
+      clearTimeout(this.htmlPreviewTimer);
+    }
+    this.htmlPreviewTimer = setTimeout(() => {
+      this.htmlPreviewTimer = undefined;
+      void this.refreshHtmlPreview(document);
+    }, 350);
+  }
+
+  /**
+   * Synchronizes the source editor's visible line with the HTML preview.
+   *
+   * The generated Papper HTML does not expose Pandoc source-line markers, so
+   * the stable fallback is proportional document-to-page scrolling.
+   *
+   * @param editor Editor whose visible range changed.
+   */
+  syncHtmlPreviewFromEditor(editor: vscode.TextEditor) {
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, editor.document.uri) || this.htmlPreviewSyncing) {
+      return;
+    }
+
+    const visibleRange = editor.visibleRanges[0];
+    const denominator = Math.max(1, editor.document.lineCount - 1);
+    const ratio = Math.max(0, Math.min(1, visibleRange.start.line / denominator));
+    void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
+  }
+
+  /**
+   * Disposes preview resources when the extension deactivates.
+   */
+  dispose() {
+    if (this.htmlPreviewTimer) {
+      clearTimeout(this.htmlPreviewTimer);
+    }
+    this.htmlPreviewPanel?.dispose();
+    this.htmlPreviewPanel = undefined;
   }
 
   /**
@@ -195,16 +257,19 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Runs Papper's HTML target and opens the exact output file in the browser.
+   * Runs Papper's HTML target and updates the open side preview panel.
    *
    * @param project Detected manuscript project root.
    * @param document Markdown document to build.
    */
   async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
+    const buildId = ++this.htmlPreviewBuildId;
     const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
     const htmlUri = getExpectedHtmlUri(project.rootUri, document.uri);
     const htmlRelativePath = path.relative(project.rootUri.fsPath, htmlUri.fsPath);
-    const args = ["papper", "build", "html", markdownRelativePath, "--output-file", htmlRelativePath];
+    const temporaryMarkdownPath = path.join(path.dirname(document.uri.fsPath), `.pmt-preview-${process.pid}-${buildId}-${path.basename(document.uri.fsPath)}`);
+    const temporaryMarkdownRelativePath = path.relative(project.rootUri.fsPath, temporaryMarkdownPath);
+    const args = ["papper", "build", "html", temporaryMarkdownRelativePath, "--output-file", htmlRelativePath];
 
     this.output.show(true);
     this.output.appendLine("");
@@ -213,22 +278,138 @@ export class PandocBuildRunner {
     this.output.appendLine(`[HTML] Command: uvx ${args.join(" ")}`);
 
     try {
+      await fs.writeFile(temporaryMarkdownPath, document.getText(), "utf8");
       await runProcess("uvx", args, { cwd: project.rootUri.fsPath, output: this.output });
+      if (buildId !== this.htmlPreviewBuildId) {
+        return;
+      }
       if (!(await pathExists(htmlUri))) {
         throw new Error(`Build finished, but the expected HTML was not found: ${htmlUri.fsPath}`);
       }
 
-      const opened = await vscode.env.openExternal(htmlUri);
-      if (!opened) {
-        throw new Error(`VS Code could not open the generated HTML: ${htmlUri.fsPath}`);
-      }
-
-      this.output.appendLine(`[HTML] Opened ${htmlUri.fsPath}`);
-      vscode.window.setStatusBarMessage(`$(check) Built and opened ${path.basename(htmlUri.fsPath)}.`, 5000);
+      await this.updateHtmlPreviewPanel(htmlUri, document);
+      this.output.appendLine(`[HTML] Updated side preview ${htmlUri.fsPath}`);
     } catch (error) {
       const message = `Failed to build HTML preview: ${String(error.message || error)}`;
       this.output.appendLine(`[HTML] ${message}`);
       vscode.window.showErrorMessage(message);
+    } finally {
+      await removeTemporaryMarkdown(temporaryMarkdownPath, this.output);
+    }
+  }
+
+  /**
+   * Opens or focuses the Papper HTML preview beside the source editor.
+   *
+   * @param document Source Markdown document.
+   * @param project Detected Papper project.
+   */
+  openHtmlPreview(document: vscode.TextDocument, project: PandocManuscriptProject) {
+    this.htmlPreviewDocumentUri = document.uri;
+    if (this.htmlPreviewPanel) {
+      this.htmlPreviewPanel.title = `${path.basename(document.uri.fsPath)} — Papper HTML Preview`;
+      this.htmlPreviewPanel.webview.options = {
+        ...this.htmlPreviewPanel.webview.options,
+        enableScripts: true,
+        localResourceRoots: [project.rootUri],
+      };
+      this.htmlPreviewPanel.reveal(vscode.ViewColumn.Beside, true);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      "pandocManuscriptTools.htmlPreview",
+      `${path.basename(document.uri.fsPath)} — Papper HTML Preview`,
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [project.rootUri],
+      },
+    );
+    this.htmlPreviewPanel = panel;
+    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage) => {
+      if (message.type === "ready") {
+        const editor = vscode.window.visibleTextEditors.find((candidate) => this.htmlPreviewDocumentUri && isSameUri(candidate.document.uri, this.htmlPreviewDocumentUri));
+        if (editor) {
+          this.syncHtmlPreviewFromEditor(editor);
+        }
+        return;
+      }
+      if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !this.htmlPreviewDocumentUri) {
+        return;
+      }
+      const editor = vscode.window.visibleTextEditors.find((candidate) => isSameUri(candidate.document.uri, this.htmlPreviewDocumentUri!));
+      if (!editor) {
+        return;
+      }
+      const line = Math.round(Math.max(0, Math.min(1, message.ratio)) * Math.max(0, editor.document.lineCount - 1));
+      this.htmlPreviewSyncing = true;
+      editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      setTimeout(() => {
+        this.htmlPreviewSyncing = false;
+      }, 80);
+    });
+    panel.onDidDispose(() => {
+      if (this.htmlPreviewPanel === panel) {
+        this.htmlPreviewPanel = undefined;
+        this.htmlPreviewDocumentUri = undefined;
+      }
+    });
+  }
+
+  /**
+   * Rebuilds the current preview and keeps the side panel alive.
+   *
+   * @param document Source Markdown document.
+   * @param project Optional already detected Papper project.
+   */
+  async refreshHtmlPreview(document: vscode.TextDocument, project?: PandocManuscriptProject) {
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, document.uri)) {
+      return;
+    }
+    if (this.htmlPreviewBuildRunning) {
+      this.htmlPreviewRefreshPending = true;
+      return;
+    }
+    const resolvedProject = project || await findPandocManuscriptProject(document.uri);
+    if (!resolvedProject) {
+      return;
+    }
+    this.htmlPreviewBuildRunning = true;
+    try {
+      await this.runHtmlBuild(resolvedProject, document);
+    } finally {
+      this.htmlPreviewBuildRunning = false;
+      if (this.htmlPreviewRefreshPending) {
+        this.htmlPreviewRefreshPending = false;
+        const latestDocument = vscode.workspace.textDocuments.find((candidate) => isSameUri(candidate.uri, document.uri));
+        if (latestDocument) {
+          void this.refreshHtmlPreview(latestDocument);
+        }
+      }
+    }
+  }
+
+  /**
+   * Reads generated HTML and wraps it with the scroll-sync bridge used by the
+   * Webview panel.
+   *
+   * @param htmlUri Generated HTML file.
+   * @param document Source Markdown document.
+   */
+  private async updateHtmlPreviewPanel(htmlUri: vscode.Uri, document: vscode.TextDocument) {
+    if (!this.htmlPreviewPanel) {
+      return;
+    }
+    const html = await fs.readFile(htmlUri.fsPath, "utf8");
+    const nonce = createNonce();
+    const rewrittenHtml = rewriteHtmlResourceUris(html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
+    this.htmlPreviewPanel.webview.html = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    const visibleRange = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri))?.visibleRanges[0];
+    if (visibleRange) {
+      const ratio = Math.max(0, Math.min(1, visibleRange.start.line / Math.max(1, document.lineCount - 1)));
+      void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
     }
   }
 }
@@ -729,6 +910,112 @@ function isSameFsPath(left: string, right: string) {
     return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
   }
   return normalizedLeft === normalizedRight;
+}
+
+/**
+ * Compares two file URIs using the same platform-aware path rules as project detection.
+ *
+ * @param left First URI.
+ * @param right Second URI.
+ */
+function isSameUri(left: vscode.Uri, right: vscode.Uri) {
+  return left.scheme === right.scheme && isSameFsPath(left.fsPath, right.fsPath);
+}
+
+/**
+ * Creates a nonce for the inline Webview scroll bridge script.
+ */
+function createNonce() {
+  return crypto.randomBytes(16).toString("base64");
+}
+
+/**
+ * Removes a temporary Markdown mirror, retrying briefly if Papper still holds it.
+ *
+ * @param filePath Temporary Markdown path.
+ * @param output Output channel for an unusual cleanup failure.
+ */
+async function removeTemporaryMarkdown(filePath: string, output: vscode.OutputChannel) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await fs.unlink(filePath);
+      return;
+    } catch (error) {
+      if (!isFileNotFoundError(error)) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      return;
+    }
+  }
+  output.appendLine(`[HTML] Could not remove temporary Markdown mirror: ${filePath}`);
+}
+
+/**
+ * Returns whether a filesystem error means the temporary file is already gone.
+ *
+ * @param error Filesystem error.
+ */
+function isFileNotFoundError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && String(error.code) === "ENOENT");
+}
+
+/**
+ * Rewrites local HTML resources into Webview-safe URIs.
+ *
+ * Papper's HTML output keeps relative image/resource paths. Webviews cannot
+ * load those paths directly, so resolve them against the Markdown directory.
+ *
+ * @param html Generated HTML.
+ * @param webview Target Webview.
+ * @param sourceDirectory Directory containing the source Markdown file.
+ */
+function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, sourceDirectory: string) {
+  return html.replace(/(\b(?:src|href)\s*=\s*["'])([^"']+)(["'])/gi, (match, prefix: string, value: string, suffix: string) => {
+    if (/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(value)) {
+      return match;
+    }
+    const resourcePath = path.resolve(sourceDirectory, value);
+    return `${prefix}${webview.asWebviewUri(vscode.Uri.file(resourcePath)).toString()}${suffix}`;
+  });
+}
+
+/**
+ * Injects the Webview scroll bridge into generated standalone HTML.
+ *
+ * @param html Generated HTML.
+ * @param nonce Script nonce.
+ * @param cspSource Webview CSP source token.
+ */
+function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
+  const bridge = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data: blob:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource} data:;"><script nonce="${nonce}">
+const vscode = acquireVsCodeApi();
+let suppressScroll = false;
+function scrollRatio() {
+  const root = document.documentElement;
+  const max = Math.max(1, root.scrollHeight - window.innerHeight);
+  return Math.max(0, Math.min(1, window.scrollY / max));
+}
+window.addEventListener('message', event => {
+  if (!event.data || event.data.type !== 'sourceScroll') return;
+  const root = document.documentElement;
+  const max = Math.max(0, root.scrollHeight - window.innerHeight);
+  suppressScroll = true;
+  window.scrollTo({ top: Math.max(0, Math.min(1, event.data.ratio || 0)) * max, behavior: 'auto' });
+  requestAnimationFrame(() => { suppressScroll = false; });
+});
+window.addEventListener('scroll', () => {
+  if (!suppressScroll) vscode.postMessage({ type: 'previewScroll', ratio: scrollRatio() });
+}, { passive: true });
+window.addEventListener('load', () => vscode.postMessage({ type: 'ready' }), { once: true });
+vscode.postMessage({ type: 'ready' });
+</script>`;
+  const headIndex = html.search(/<head(?:\s[^>]*)?>/i);
+  if (headIndex >= 0) {
+    const end = html.indexOf(">", headIndex) + 1;
+    return `${html.slice(0, end)}${bridge}${html.slice(end)}`;
+  }
+  return `${bridge}${html}`;
 }
 
 

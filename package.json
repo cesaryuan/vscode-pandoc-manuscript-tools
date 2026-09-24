@@ -71,7 +71,7 @@
       },
       {
         "command": "pandocManuscriptTools.buildHtmlAndOpen",
-        "title": "Pandoc Manuscript Tools: Build HTML Preview",
+        "title": "Pandoc Manuscript Tools: Preview Markdown (Papper HTML)",
         "icon": "$(open-preview)"
       },
       {

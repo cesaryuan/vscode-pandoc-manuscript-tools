@@ -68,6 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
   context.subscriptions.push({ dispose: () => imageDirectoryPreview.dispose() });
+  context.subscriptions.push({ dispose: () => buildRunner.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
   context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
 
@@ -101,6 +102,10 @@ export function activate(context: vscode.ExtensionContext) {
     void buildRunner.refreshContext();
     fencedDivHighlighter.updateVisibleEditors();
     inlineFoldController.updateVisibleEditors();
+  }));
+
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+    buildRunner.syncHtmlPreviewFromEditor(event.textEditor);
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
@@ -149,6 +154,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
       fencedDivHighlighter.updateVisibleEditors(event.document);
       inlineFoldController.updateVisibleEditors(event.document);
+      buildRunner.scheduleHtmlPreviewRefresh(event.document);
     }
   }));
 
