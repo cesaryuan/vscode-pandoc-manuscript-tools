@@ -243,7 +243,7 @@ export class PandocBuildRunner {
   async runDocxBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
     const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
-    const args = ["papper", "build", "docx", markdownRelativePath];
+    const args = ["build", "docx", markdownRelativePath];
 
     this.output.show(true);
     this.output.appendLine("");
@@ -286,7 +286,7 @@ export class PandocBuildRunner {
     const htmlRelativePath = path.relative(project.rootUri.fsPath, htmlUri.fsPath);
     const temporaryMarkdownPath = path.join(path.dirname(document.uri.fsPath), `.pmt-preview-${process.pid}-${buildId}-${path.basename(document.uri.fsPath)}`);
     const temporaryMarkdownRelativePath = path.relative(project.rootUri.fsPath, temporaryMarkdownPath);
-    const args = ["papper", "build", "html", temporaryMarkdownRelativePath, "--output-file", htmlRelativePath];
+    const args = ["build", "html", temporaryMarkdownRelativePath, "--output-file", htmlRelativePath];
 
     this.output.show(true);
     this.output.appendLine("");
