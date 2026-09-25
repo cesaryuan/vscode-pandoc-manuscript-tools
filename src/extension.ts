@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
   const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
   const imageDirectoryPreview = new ImageDirectoryPreview(context.extensionUri, output);
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
-  const buildRunner = new PandocBuildRunner(output);
+  const buildRunner = new PandocBuildRunner(output, context.extensionMode === vscode.ExtensionMode.Development);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);
   const customImagePreviewContext = new CustomImagePreviewContext((key, value) => {

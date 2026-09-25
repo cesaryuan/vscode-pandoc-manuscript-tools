@@ -60,6 +60,7 @@ export async function cacheHtmlMetafileImages(
     }
 
     try {
+      const cacheStartedAt = Date.now();
       const cachedSvg = await getOrCreateCachedMetafileSvg(sourcePath, extension, cacheDirectory, output);
       if (!cachedSvg) {
         unavailable += 1;
@@ -75,6 +76,7 @@ export async function cacheHtmlMetafileImages(
       } else {
         converted += 1;
       }
+      output.appendLine(`[HTML][timing] ${extension.slice(1).toUpperCase()} ${cachedSvg.reused ? "cache hit" : "conversion and cache write"} (${path.basename(sourcePath)}): ${formatElapsedMs(cacheStartedAt)}`);
     } catch (error) {
       unavailable += 1;
       output.appendLine(`[HTML] Could not cache metafile image ${sourcePath}: ${String(error)}`);
@@ -120,16 +122,31 @@ async function getOrCreateCachedMetafileSvg(
     return { filePath: cachedPath, reused: true };
   }
 
+  const readStartedAt = Date.now();
   const sourceBytes = await fs.readFile(sourcePath);
+  output.appendLine(`[HTML][timing] ${extension.slice(1).toUpperCase()} source read (${path.basename(sourcePath)}, ${sourceBytes.byteLength} bytes): ${formatElapsedMs(readStartedAt)}`);
+  const conversionStartedAt = Date.now();
   const svg = extension === ".emf"
     ? await convertEmfToSvg(sourceBytes, output, { maxWidth: WEBVIEW_METAFILE_MAX_WIDTH, maxHeight: WEBVIEW_METAFILE_MAX_HEIGHT })
     : await convertWmfToSvg(sourceBytes, output, { maxWidth: WEBVIEW_METAFILE_MAX_WIDTH, maxHeight: WEBVIEW_METAFILE_MAX_HEIGHT });
+  output.appendLine(`[HTML][timing] ${extension.slice(1).toUpperCase()} conversion (${path.basename(sourcePath)}): ${formatElapsedMs(conversionStartedAt)}`);
   if (!svg) {
     return undefined;
   }
 
+  const writeStartedAt = Date.now();
   await writeFileAtomically(cachedPath, cacheDirectory, svg);
+  output.appendLine(`[HTML][timing] ${extension.slice(1).toUpperCase()} cache write (${path.basename(sourcePath)}): ${formatElapsedMs(writeStartedAt)}`);
   return { filePath: cachedPath, reused: false };
+}
+
+/**
+ * Formats an elapsed wall-clock duration for Output channel timing logs.
+ *
+ * @param startedAt Epoch milliseconds captured before an operation.
+ */
+function formatElapsedMs(startedAt: number) {
+  return `${Math.max(0, Date.now() - startedAt)} ms`;
 }
 
 /**

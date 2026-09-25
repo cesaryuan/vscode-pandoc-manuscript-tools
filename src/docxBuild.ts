@@ -11,7 +11,12 @@ import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 type PandocManuscriptProject = { rootUri: vscode.Uri };
 type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
-type RunProcessOptions = { cwd?: string; output?: vscode.OutputChannel; captureStdout?: boolean };
+type RunProcessOptions = {
+  cwd?: string;
+  output?: vscode.OutputChannel;
+  captureStdout?: boolean;
+  env?: NodeJS.ProcessEnv;
+};
 type HtmlPreviewMessage = { type?: string; ratio?: number };
 
 let cachedPapperExecutable: string | undefined;
@@ -30,12 +35,14 @@ export class PandocBuildRunner {
   declare htmlPreviewLastPreviewMessageAt: number;
   declare htmlPreviewScrollSyncUntil: number;
   declare htmlPreviewLastSourceRatio: number;
+  declare htmlPreviewVerbose: boolean;
   /**
    * Creates the Papper build runner used by the editor-title commands.
    *
    * @param output Output channel for build logs.
+   * @param verboseHtmlBuilds Whether HTML preview builds should enable Papper's verbose diagnostics.
    */
-  constructor(output: vscode.OutputChannel) {
+  constructor(output: vscode.OutputChannel, verboseHtmlBuilds = false) {
     this.output = output;
     this.contextRefreshId = 0;
     this.htmlPreviewPanel = undefined;
@@ -48,6 +55,7 @@ export class PandocBuildRunner {
     this.htmlPreviewLastPreviewMessageAt = 0;
     this.htmlPreviewScrollSyncUntil = 0;
     this.htmlPreviewLastSourceRatio = -1;
+    this.htmlPreviewVerbose = verboseHtmlBuilds;
   }
 
   /**
@@ -280,13 +288,21 @@ export class PandocBuildRunner {
    * @param document Markdown document to build.
    */
   async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
+    const totalStartedAt = Date.now();
     const buildId = ++this.htmlPreviewBuildId;
     const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
     const htmlUri = getExpectedHtmlUri(project.rootUri, document.uri);
     const htmlRelativePath = path.relative(project.rootUri.fsPath, htmlUri.fsPath);
     const temporaryMarkdownPath = path.join(path.dirname(document.uri.fsPath), `.pmt-preview-${process.pid}-${buildId}-${path.basename(document.uri.fsPath)}`);
     const temporaryMarkdownRelativePath = path.relative(project.rootUri.fsPath, temporaryMarkdownPath);
-    const args = ["build", "html", temporaryMarkdownRelativePath, "--output-file", htmlRelativePath];
+    const args = [
+      "build",
+      ...(this.htmlPreviewVerbose ? ["--verbose"] : []),
+      "html",
+      temporaryMarkdownRelativePath,
+      "--output-file",
+      htmlRelativePath,
+    ];
 
     this.output.show(true);
     this.output.appendLine("");
@@ -295,25 +311,51 @@ export class PandocBuildRunner {
     this.output.appendLine(`[HTML] Command: papper ${args.join(" ")}`);
 
     try {
+      const writeStartedAt = Date.now();
       await fs.writeFile(temporaryMarkdownPath, document.getText(), "utf8");
+      this.output.appendLine(`[HTML][timing] Temporary Markdown write: ${formatElapsedMs(writeStartedAt)}`);
+
+      const resolveStartedAt = Date.now();
       const papperExecutable = await resolvePapperExecutable(this.output);
+      this.output.appendLine(`[HTML][timing] Papper executable resolution: ${formatElapsedMs(resolveStartedAt)}`);
       this.output.appendLine(`[HTML] Resolved executable: ${papperExecutable}`);
-      await runProcess(papperExecutable, args, { cwd: project.rootUri.fsPath, output: this.output });
+
+      const environmentStartedAt = Date.now();
+      const papperEnvironment = await preparePapperEnvironment(papperExecutable);
+      this.output.appendLine(`[HTML][timing] Papper environment preparation: ${formatElapsedMs(environmentStartedAt)}`);
+      this.output.appendLine(`[HTML] Pandoc tool PATH entries: ${papperEnvironment.toolPathEntries.length ? papperEnvironment.toolPathEntries.join(path.delimiter) : "none"}`);
+
+      const papperStartedAt = Date.now();
+      await runProcess(papperExecutable, args, {
+        cwd: project.rootUri.fsPath,
+        output: this.output,
+        env: papperEnvironment.env,
+      });
+      this.output.appendLine(`[HTML][timing] Papper build (including Pandoc): ${formatElapsedMs(papperStartedAt)}`);
       if (buildId !== this.htmlPreviewBuildId) {
         return;
       }
+
+      const outputCheckStartedAt = Date.now();
       if (!(await pathExists(htmlUri))) {
         throw new Error(`Build finished, but the expected HTML was not found: ${htmlUri.fsPath}`);
       }
+      this.output.appendLine(`[HTML][timing] Generated HTML check: ${formatElapsedMs(outputCheckStartedAt)}`);
 
+      const panelStartedAt = Date.now();
       await this.updateHtmlPreviewPanel(htmlUri, document, project);
+      this.output.appendLine(`[HTML][timing] WebView preparation and update: ${formatElapsedMs(panelStartedAt)}`);
+      this.output.appendLine(`[HTML][timing] Total refresh: ${formatElapsedMs(totalStartedAt)}`);
       this.output.appendLine(`[HTML] Updated side preview ${htmlUri.fsPath}`);
     } catch (error) {
+      this.output.appendLine(`[HTML][timing] Failed refresh total: ${formatElapsedMs(totalStartedAt)}`);
       const message = `Failed to build HTML preview: ${String(error.message || error)}`;
       this.output.appendLine(`[HTML] ${message}`);
       vscode.window.showErrorMessage(message);
     } finally {
+      const cleanupStartedAt = Date.now();
       await removeTemporaryMarkdown(temporaryMarkdownPath, this.output);
+      this.output.appendLine(`[HTML][timing] Temporary Markdown cleanup: ${formatElapsedMs(cleanupStartedAt)}`);
     }
   }
 
@@ -429,8 +471,11 @@ export class PandocBuildRunner {
     if (!this.htmlPreviewPanel) {
       return;
     }
+    const readStartedAt = Date.now();
     const html = await fs.readFile(htmlUri.fsPath, "utf8");
+    this.output.appendLine(`[HTML][timing] Generated HTML read (${html.length} chars): ${formatElapsedMs(readStartedAt)}`);
     const nonce = createNonce();
+    const cacheStartedAt = Date.now();
     const cachedHtml = await cacheHtmlMetafileImages(
       html,
       path.dirname(document.uri.fsPath),
@@ -439,12 +484,18 @@ export class PandocBuildRunner {
       (filePath) => this.htmlPreviewPanel!.webview.asWebviewUri(vscode.Uri.file(filePath)).toString(),
       this.output,
     );
+    this.output.appendLine(`[HTML][timing] EMF/WMF cache and conversion: ${formatElapsedMs(cacheStartedAt)}`);
+
+    const rewriteStartedAt = Date.now();
     const rewrittenHtml = rewriteHtmlResourceUris(cachedHtml.html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
+    this.output.appendLine(`[HTML][timing] Local resource URI rewrite: ${formatElapsedMs(rewriteStartedAt)}`);
     if (countHtmlElements(html, "style") !== countHtmlElements(rewrittenHtml, "style")) {
       this.output.appendLine(`[HTML] Preserving Pandoc styles failed: style element count changed for ${htmlUri.fsPath}`);
       return;
     }
+    const injectStartedAt = Date.now();
     this.htmlPreviewPanel.webview.html = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    this.output.appendLine(`[HTML][timing] WebView HTML injection: ${formatElapsedMs(injectStartedAt)}`);
     const visibleRange = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri))?.visibleRanges[0];
     if (visibleRange) {
       const ratio = Math.max(0, Math.min(1, visibleRange.start.line / Math.max(1, document.lineCount - 1)));
@@ -452,6 +503,15 @@ export class PandocBuildRunner {
       void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
     }
   }
+}
+
+/**
+ * Formats an elapsed wall-clock duration for Output channel timing logs.
+ *
+ * @param startedAt Epoch milliseconds captured before an operation.
+ */
+function formatElapsedMs(startedAt: number) {
+  return `${Math.max(0, Date.now() - startedAt)} ms`;
 }
 
 
@@ -1017,6 +1077,72 @@ async function isExecutableFile(filePath: string) {
 }
 
 /**
+ * Adds discoverable system Pandoc tool directories to Papper's child environment.
+ *
+ * VS Code can keep an older PATH than the shell that launched Scoop. In that
+ * case Papper cannot see an already installed Pandoc and may enter its network
+ * installation path on every preview refresh. The ancestor scan covers Scoop's
+ * `persist\\uv\\tools\\shims` and sibling `shims` layout without hard-coding a
+ * user-specific drive or installation root.
+ *
+ * @param papperExecutable Resolved Papper executable path.
+ */
+async function preparePapperEnvironment(papperExecutable: string) {
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  const existingPath = environment.PATH || environment.Path || "";
+  const existingEntries = existingPath
+    .split(path.delimiter)
+    .map((entry) => entry.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean);
+  const candidateEntries = new Map<string, string>();
+  const rememberCandidate = (entry: string) => {
+    const normalized = path.resolve(entry);
+    const key = process.platform === "win32" ? normalized.toLowerCase() : normalized;
+    if (!candidateEntries.has(key)) {
+      candidateEntries.set(key, normalized);
+    }
+  };
+
+  if (process.env.SCOOP) {
+    rememberCandidate(path.join(process.env.SCOOP, "shims"));
+  }
+
+  let ancestor = path.dirname(papperExecutable);
+  for (let depth = 0; depth < 8; depth += 1) {
+    rememberCandidate(path.join(ancestor, "shims"));
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) {
+      break;
+    }
+    ancestor = parent;
+  }
+
+  const toolPathEntries: string[] = [];
+  const prependEntries: string[] = [];
+  for (const candidate of candidateEntries.values()) {
+    const hasPandoc = Boolean(await findExecutableInDirectory("pandoc", candidate));
+    const hasCrossref = Boolean(await findExecutableInDirectory("pandoc-crossref", candidate));
+    if (!hasPandoc && !hasCrossref) {
+      continue;
+    }
+    toolPathEntries.push(candidate);
+    const alreadyPresent = existingEntries.some((entry) => isSameFsPath(entry, candidate));
+    if (!alreadyPresent) {
+      prependEntries.push(candidate);
+    }
+  }
+
+  const combinedPath = [...prependEntries, ...existingEntries].join(path.delimiter);
+  if (combinedPath) {
+    environment.PATH = combinedPath;
+    if (environment.Path !== undefined) {
+      environment.Path = combinedPath;
+    }
+  }
+  return { env: environment, toolPathEntries };
+}
+
+/**
  * Runs a child process and optionally streams output to the extension channel.
  *
  * @param command Command executable.
@@ -1028,6 +1154,7 @@ function runProcess(command: string, args: string[], options: RunProcessOptions)
   return new Promise<string>((resolve, reject) => {
     const child = cp.spawn(command, args, {
       cwd: options.cwd,
+      env: options.env,
       shell: process.platform === "win32" && /\.(?:bat|cmd)$/i.test(command),
       windowsHide: true,
     });
