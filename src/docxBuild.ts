@@ -249,6 +249,58 @@ export class PandocBuildRunner {
   }
 
   /**
+   * Builds and reads PMT's processed JSON AST for the current editor buffer.
+   *
+   * The Markdown mirror stays beside the source so relative resources resolve
+   * as usual; the AST is written under the OS temporary directory. This path
+   * only uses an installed Papper executable and never auto-installs a CLI
+   * during ordinary editor hint refreshes.
+   *
+   * @param document Markdown document to build.
+   */
+  async buildJsonAstForDocument(document: vscode.TextDocument): Promise<unknown | undefined> {
+    if (!isBuildableMarkdownDocument(document)) {
+      return undefined;
+    }
+
+    const project = await findPandocManuscriptProject(document.uri);
+    if (!project) {
+      return undefined;
+    }
+
+    const papperExecutable = await findExistingPapperExecutable();
+    if (!papperExecutable) {
+      return undefined;
+    }
+
+    const buildId = crypto.randomBytes(8).toString("hex");
+    const markdownMirrorPath = path.join(
+      path.dirname(document.uri.fsPath),
+      `.pmt-inlay-${process.pid}-${buildId}-${path.basename(document.uri.fsPath)}`,
+    );
+    const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-numbering-"));
+    const astPath = path.join(outputDirectory, "ast.json");
+    const markdownRelativePath = path.relative(project.rootUri.fsPath, markdownMirrorPath);
+
+    try {
+      await fs.writeFile(markdownMirrorPath, document.getText(), "utf8");
+      const environment = await preparePapperEnvironment(papperExecutable);
+      await runProcess(papperExecutable, ["build", "json", markdownRelativePath, "--output-file", astPath], {
+        cwd: project.rootUri.fsPath,
+        env: environment.env,
+      });
+      return JSON.parse(await fs.readFile(astPath, "utf8")) as unknown;
+    } finally {
+      await fs.rm(markdownMirrorPath, { force: true }).catch((error) => {
+        this.output.appendLine(`[Inlay hints] Could not remove temporary Markdown mirror: ${String(error)}`);
+      });
+      await fs.rm(outputDirectory, { recursive: true, force: true }).catch((error) => {
+        this.output.appendLine(`[Inlay hints] Could not remove temporary AST directory: ${String(error)}`);
+      });
+    }
+  }
+
+  /**
    * Runs `papper build docx <current-file>` and opens the output DOCX.
    *
    * @param project Detected manuscript project root.
@@ -1016,6 +1068,37 @@ async function isPapperBuildAvailable() {
     return true;
   }
   return Boolean(await findExecutableOnPath("uv"));
+}
+
+/**
+ * Finds Papper only when it is already installed, without starting a tool installation.
+ */
+async function findExistingPapperExecutable() {
+  const pathExecutable = await findExecutableOnPath("papper");
+  if (pathExecutable) {
+    cachedPapperExecutable = pathExecutable;
+    return pathExecutable;
+  }
+  if (cachedPapperExecutable && await isExecutableFile(cachedPapperExecutable)) {
+    return cachedPapperExecutable;
+  }
+
+  const uvExecutable = await findExecutableOnPath("uv");
+  if (!uvExecutable) {
+    return undefined;
+  }
+
+  try {
+    const toolBinDirectory = await runProcess(uvExecutable, ["tool", "dir", "--bin"], { captureStdout: true });
+    const installedExecutable = toolBinDirectory ? await findExecutableInDirectory("papper", toolBinDirectory) : undefined;
+    if (installedExecutable) {
+      cachedPapperExecutable = installedExecutable;
+      return installedExecutable;
+    }
+  } catch {
+    // Missing or unavailable uv tool metadata means background hints should stay idle.
+  }
+  return undefined;
 }
 
 /**

@@ -14,6 +14,7 @@ import { getConfiguration } from "./configuration";
 import { isPandocDocument } from "./vscodeUtils";
 import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocFoldingRangeProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
+import { NumberingInlayHints } from "./numberingInlayHints";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -31,6 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
   const imageDirectoryPreview = new ImageDirectoryPreview(context.extensionUri, output);
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output, context.extensionMode === vscode.ExtensionMode.Development);
+  const numberingInlayHints = new NumberingInlayHints(buildRunner, output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);
   const customImagePreviewContext = new CustomImagePreviewContext((key, value) => {
@@ -63,6 +65,7 @@ export function activate(context: vscode.ExtensionContext) {
   }));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(PANDOC_SELECTOR, new PandocFoldingRangeProvider(index)));
+  context.subscriptions.push(vscode.languages.registerInlayHintsProvider(PANDOC_SELECTOR, numberingInlayHints));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
@@ -71,6 +74,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => buildRunner.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
   context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
+  context.subscriptions.push(numberingInlayHints);
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
     await index.refreshWorkspace();
@@ -134,12 +138,16 @@ export function activate(context: vscode.ExtensionContext) {
     ) {
       inlineFoldController.updateVisibleEditors();
     }
+    if (event.affectsConfiguration("pandocManuscriptTools.enableNumberInlayHints")) {
+      numberingInlayHints.refreshOpenDocuments();
+    }
   }));
 
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async (document) => {
     if (isPandocDocument(document)) {
       await index.prepareDocument(document);
       updateDiagnostics(document, index, diagnostics);
+      numberingInlayHints.scheduleRefresh(document);
       void buildRunner.refreshContext();
     }
   }));
@@ -147,6 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
     if (isPandocDocument(event.document)) {
       index.updateDocument(event.document);
+      numberingInlayHints.scheduleRefresh(event.document);
       if (index.isDefinitionSourceForOpenReviewerReply(event.document)) {
         updateDiagnosticsForOpenDocuments(index, diagnostics);
       } else {
@@ -161,13 +170,21 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (document) => {
     if (isPandocDocument(document)) {
       index.updateDocument(document);
+      numberingInlayHints.scheduleRefresh(document, 0);
       await index.refreshWorkspace();
       updateDiagnosticsForOpenDocuments(index, diagnostics);
     }
     await imagePreviewSidePanel.refreshIfOpen(document);
   }));
 
+  context.subscriptions.push(vscode.workspace.onDidCloseTextDocument((document) => {
+    numberingInlayHints.closeDocument(document);
+  }));
+
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
+  for (const document of vscode.workspace.textDocuments) {
+    numberingInlayHints.scheduleRefresh(document);
+  }
   void buildRunner.refreshContext();
   fencedDivHighlighter.updateVisibleEditors();
   inlineFoldController.updateVisibleEditors();
