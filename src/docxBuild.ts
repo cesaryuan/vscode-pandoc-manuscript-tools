@@ -11,8 +11,11 @@ import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 type PandocManuscriptProject = { rootUri: vscode.Uri };
 type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
-type RunProcessOptions = { cwd?: string; output?: vscode.OutputChannel };
+type RunProcessOptions = { cwd?: string; output?: vscode.OutputChannel; captureStdout?: boolean };
 type HtmlPreviewMessage = { type?: string; ratio?: number };
+
+let cachedPapperExecutable: string | undefined;
+let papperResolutionPromise: Promise<string> | undefined;
 
 export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
@@ -80,7 +83,7 @@ export class PandocBuildRunner {
       return false;
     }
 
-    return isUvxAvailable();
+    return isPapperBuildAvailable();
   }
 
   /**
@@ -96,7 +99,7 @@ export class PandocBuildRunner {
     }
 
     const project = await findPandocManuscriptProject(editor.document.uri);
-    return Boolean(project) && isUvxAvailable();
+    return Boolean(project) && isPapperBuildAvailable();
   }
 
   /**
@@ -120,8 +123,8 @@ export class PandocBuildRunner {
       return;
     }
 
-    if (!(await isUvxAvailable())) {
-      vscode.window.showErrorMessage("Cannot build DOCX because `uvx` is not available on PATH.");
+    if (!(await isPapperBuildAvailable())) {
+      vscode.window.showErrorMessage("Cannot build DOCX because `papper` is not on PATH and `uv` is not available to install it.");
       await this.refreshContext();
       return;
     }
@@ -164,8 +167,8 @@ export class PandocBuildRunner {
       return;
     }
 
-    if (!(await isUvxAvailable())) {
-      vscode.window.showErrorMessage("Cannot build HTML preview because `uvx` is not available on PATH.");
+    if (!(await isPapperBuildAvailable())) {
+      vscode.window.showErrorMessage("Cannot build HTML preview because `papper` is not on PATH and `uv` is not available to install it.");
       await this.refreshContext();
       return;
     }
@@ -232,7 +235,7 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Runs `uvx papper build docx <current-file>` and opens the output DOCX.
+   * Runs `papper build docx <current-file>` and opens the output DOCX.
    *
    * @param project Detected manuscript project root.
    * @param document Markdown document to build.
@@ -246,10 +249,12 @@ export class PandocBuildRunner {
     this.output.appendLine("");
     this.output.appendLine(`[DOCX] Building ${markdownRelativePath}`);
     this.output.appendLine(`[DOCX] Working directory: ${project.rootUri.fsPath}`);
-    this.output.appendLine(`[DOCX] Command: uvx ${args.join(" ")}`);
+    this.output.appendLine(`[DOCX] Command: papper ${args.join(" ")}`);
 
     try {
-      await runProcess("uvx", args, { cwd: project.rootUri.fsPath, output: this.output });
+      const papperExecutable = await resolvePapperExecutable(this.output);
+      this.output.appendLine(`[DOCX] Resolved executable: ${papperExecutable}`);
+      await runProcess(papperExecutable, args, { cwd: project.rootUri.fsPath, output: this.output });
       if (!(await pathExists(docxUri))) {
         throw new Error(`Build finished, but the expected DOCX was not found: ${docxUri.fsPath}`);
       }
@@ -287,11 +292,13 @@ export class PandocBuildRunner {
     this.output.appendLine("");
     this.output.appendLine(`[HTML] Building ${markdownRelativePath}`);
     this.output.appendLine(`[HTML] Working directory: ${project.rootUri.fsPath}`);
-    this.output.appendLine(`[HTML] Command: uvx ${args.join(" ")}`);
+    this.output.appendLine(`[HTML] Command: papper ${args.join(" ")}`);
 
     try {
       await fs.writeFile(temporaryMarkdownPath, document.getText(), "utf8");
-      await runProcess("uvx", args, { cwd: project.rootUri.fsPath, output: this.output });
+      const papperExecutable = await resolvePapperExecutable(this.output);
+      this.output.appendLine(`[HTML] Resolved executable: ${papperExecutable}`);
+      await runProcess(papperExecutable, args, { cwd: project.rootUri.fsPath, output: this.output });
       if (buildId !== this.htmlPreviewBuildId) {
         return;
       }
@@ -887,13 +894,123 @@ function getExpectedHtmlUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
 }
 
 /**
- * Checks whether `uvx` can be executed from the VS Code extension host.
- *
+ * Checks whether Papper is already on PATH or can be installed with uv.
  */
-async function isUvxAvailable() {
-  try {
-    await runProcess("uvx", ["--version"], {});
+async function isPapperBuildAvailable() {
+  if (cachedPapperExecutable && await isExecutableFile(cachedPapperExecutable)) {
     return true;
+  }
+  if (await findExecutableOnPath("papper")) {
+    return true;
+  }
+  return Boolean(await findExecutableOnPath("uv"));
+}
+
+/**
+ * Resolves a direct Papper executable, installing the uv tool only when needed.
+ *
+ * @param output Build log channel.
+ */
+async function resolvePapperExecutable(output: vscode.OutputChannel) {
+  const pathExecutable = await findExecutableOnPath("papper");
+  if (pathExecutable) {
+    cachedPapperExecutable = pathExecutable;
+    return pathExecutable;
+  }
+  if (cachedPapperExecutable && await isExecutableFile(cachedPapperExecutable)) {
+    return cachedPapperExecutable;
+  }
+
+  if (!papperResolutionPromise) {
+    papperResolutionPromise = installPapperTool(output).finally(() => {
+      papperResolutionPromise = undefined;
+    });
+  }
+  return papperResolutionPromise;
+}
+
+/**
+ * Finds an existing uv tool install, or installs Papper and resolves its launcher.
+ *
+ * @param output Build log channel.
+ */
+async function installPapperTool(output: vscode.OutputChannel) {
+  const uvExecutable = await findExecutableOnPath("uv");
+  if (!uvExecutable) {
+    throw new Error("`papper` is not on PATH and `uv` is not available to install it.");
+  }
+
+  let toolBinDirectory = await runProcess(uvExecutable, ["tool", "dir", "--bin"], { captureStdout: true });
+  let installedExecutable = toolBinDirectory ? await findExecutableInDirectory("papper", toolBinDirectory) : undefined;
+  if (installedExecutable) {
+    cachedPapperExecutable = installedExecutable;
+    return installedExecutable;
+  }
+
+  output.appendLine("[Papper] `papper` is not on PATH; installing it with `uv tool install papper`.");
+  await runProcess(uvExecutable, ["tool", "install", "papper"], { output });
+
+  installedExecutable = await findExecutableOnPath("papper");
+  if (!installedExecutable) {
+    toolBinDirectory = await runProcess(uvExecutable, ["tool", "dir", "--bin"], { captureStdout: true });
+    installedExecutable = toolBinDirectory ? await findExecutableInDirectory("papper", toolBinDirectory) : undefined;
+  }
+  if (!installedExecutable) {
+    throw new Error("uv installed Papper, but its `papper` executable could not be found on PATH or in uv's tool bin directory.");
+  }
+
+  cachedPapperExecutable = installedExecutable;
+  return installedExecutable;
+}
+
+/**
+ * Finds a named executable in the current process PATH.
+ *
+ * @param executable Executable basename without its platform suffix.
+ */
+async function findExecutableOnPath(executable: string) {
+  const pathValue = process.env.PATH || process.env.Path || "";
+  for (const entry of pathValue.split(path.delimiter)) {
+    const directory = entry.trim().replace(/^"(.*)"$/, "$1");
+    if (!directory) {
+      continue;
+    }
+    const found = await findExecutableInDirectory(executable, directory);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Finds an executable file by name in one directory, honoring Windows PATHEXT.
+ *
+ * @param executable Executable basename without its platform suffix.
+ * @param directory Directory to inspect.
+ */
+async function findExecutableInDirectory(executable: string, directory: string) {
+  const suffixes = process.platform === "win32"
+    ? [...(process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";"), ""]
+    : [""];
+  for (const suffix of suffixes) {
+    const candidate = path.join(directory, `${executable}${suffix}`);
+    if (await isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Checks that a path points to a runnable file for the current platform.
+ *
+ * @param filePath Candidate executable path.
+ */
+async function isExecutableFile(filePath: string) {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile() && (process.platform === "win32" || (stat.mode & 0o111) !== 0);
   } catch {
     return false;
   }
@@ -905,26 +1022,37 @@ async function isUvxAvailable() {
  * @param command Command executable.
  * @param args Command arguments.
  * @param options Process options.
+ * @returns Captured stdout when requested; otherwise an empty string.
  */
 function runProcess(command: string, args: string[], options: RunProcessOptions) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const child = cp.spawn(command, args, {
       cwd: options.cwd,
-      shell: process.platform === "win32",
+      shell: process.platform === "win32" && /\.(?:bat|cmd)$/i.test(command),
       windowsHide: true,
     });
 
-    if (options.output) {
-      child.stdout.on("data", (chunk) => options.output.append(chunk.toString()));
-      child.stderr.on("data", (chunk) => options.output.append(chunk.toString()));
-    }
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      if (options.captureStdout) {
+        stdout += text;
+      }
+      options.output?.append(text);
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr = `${stderr}${text}`.slice(-8192);
+      options.output?.append(text);
+    });
 
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
-        resolve();
+        resolve(stdout.trim());
       } else {
-        reject(new Error(`${command} exited with code ${code}`));
+        reject(new Error(`${command} exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
       }
     });
   });
