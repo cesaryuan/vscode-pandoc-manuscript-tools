@@ -2,6 +2,7 @@ import * as cp from "child_process";
 import * as fs from "fs/promises";
 import * as http from "http";
 import * as crypto from "crypto";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
@@ -452,13 +453,16 @@ export class PandocBuildRunner {
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
         this.htmlPreviewLastSourceRatio = -1;
-        const editor = vscode.window.visibleTextEditors.find((candidate) => this.htmlPreviewDocumentUri && isSameUri(candidate.document.uri, this.htmlPreviewDocumentUri));
-        if (editor) {
-          this.syncHtmlPreviewFromEditor(editor);
-        }
+        // The host assigns the first complete HTML before the Webview emits
+        // `ready`; rebuilding here duplicates that build and can start a
+        // second MathJax queue before the first one settles.
         return;
       }
-      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed" || message.type === "previewMathStarted" || message.type === "previewMathFinished" || message.type === "previewMathFailed" || message.type === "previewMathUnavailable") {
+      if (message.type === "previewMathTimeout" || message.type === "previewMathFailed" || message.type === "previewMathUnavailable") {
+        this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
+        return;
+      }
+      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed" || message.type === "previewMathStarted" || message.type === "previewMathCleared" || message.type === "previewMathTypesetCalled" || message.type === "previewMathFinished") {
         this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
         if (message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed") {
           const pending = this.htmlPreviewPendingUpdate;
@@ -605,7 +609,10 @@ export class PandocBuildRunner {
 async function waitForWebviewUpdate(confirmation: Promise<boolean>) {
   return Promise.race([
     confirmation,
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)),
+    // MathJax v4 may fetch dynamic font chunks before the staged DOM can be
+    // committed. Give the in-place renderer enough time to finish; a timeout
+    // still protects the build queue from an unavailable external resource.
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
   ]);
 }
 
@@ -1429,6 +1436,19 @@ let suppressScroll = false;
 let scrollFrame = 0;
 let lastSentRatio = -1;
 let previewUpdateChain = Promise.resolve();
+let previewContent = null;
+function ensurePreviewContent() {
+  if (previewContent && previewContent.isConnected) return previewContent;
+  if (!document.body) return null;
+  previewContent = document.getElementById('pmt-preview-content');
+  if (!previewContent) {
+    previewContent = document.createElement('div');
+    previewContent.id = 'pmt-preview-content';
+    previewContent.append(...Array.from(document.body.childNodes));
+    document.body.appendChild(previewContent);
+  }
+  return previewContent;
+}
 function scrollRatio() {
   const root = document.documentElement;
   const max = Math.max(1, root.scrollHeight - window.innerHeight);
@@ -1444,7 +1464,7 @@ document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once:
 removeVscodeDefaultStyles();
 async function replacePreviewHtml(html, token) {
   const previousScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
-      vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
+  vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
   let staging = null;
   try {
     const parsed = new DOMParser().parseFromString(html, 'text/html');
@@ -1452,8 +1472,10 @@ async function replacePreviewHtml(html, token) {
     if (!nextBody) throw new Error('The generated preview has no body element.');
     suppressScroll = true;
     staging = document.createElement('div');
-    staging.setAttribute('aria-hidden', 'true');
-    staging.style.cssText = 'position:fixed;left:0;top:0;width:100%;visibility:hidden;pointer-events:none;z-index:-1;';
+    // Keep the next revision in a live but invisible tree. MathJax must finish
+    // against this stable tree before the visible tree is replaced, matching
+    // the hidden-preview pipeline used by Markdown Preview Enhanced.
+    staging.style.cssText = 'position:fixed;left:-100000px;top:0;width:100%;visibility:hidden;pointer-events:none;z-index:-1;';
     staging.innerHTML = nextBody.innerHTML;
     document.body.appendChild(staging);
     const currentPandocStyles = Array.from(document.head.querySelectorAll('style[data-papper-preview-style="pandoc"]'));
@@ -1463,11 +1485,49 @@ async function replacePreviewHtml(html, token) {
       currentPandocStyles.forEach(style => style.remove());
       nextPandocStyles.forEach(style => document.head.appendChild(style.cloneNode(true)));
     }
-    const nextChildren = Array.from(staging.childNodes);
+    const content = ensurePreviewContent();
+    if (!content) throw new Error('Preview content container is unavailable.');
+    const mathJax = window.MathJax;
+    const mathCount = staging.querySelectorAll('.math, .mathjax-exps').length;
+    if (mathJax && typeof mathJax.typesetPromise === 'function' && mathCount > 0) {
+      vscode.postMessage({ type: 'previewMathStarted', detail: 'math=' + mathCount });
+      if (typeof mathJax.typesetClear === 'function') {
+        // Every revision replaces the whole preview document. Clear the full
+        // MathJax document because the previous rendered nodes may have lived
+        // in an earlier hidden staging tree rather than the current container.
+        mathJax.typesetClear();
+        vscode.postMessage({ type: 'previewMathCleared', detail: token || '' });
+      }
+      if (typeof mathJax.texReset === 'function') {
+        mathJax.texReset();
+      }
+      vscode.postMessage({ type: 'previewMathTypesetCalled', detail: token || '' });
+      // This is diagnostic only. The visible document remains unchanged while
+      // MathJax loads dynamic fonts and renders the staged revision.
+      const mathTypesetWarning = window.setTimeout(() => {
+        vscode.postMessage({ type: 'previewMathTimeout', detail: 'token=' + (token || '') + ';math=' + mathCount });
+      }, 8000);
+      try {
+        await Promise.resolve(mathJax.startup && mathJax.startup.promise);
+        await mathJax.typesetPromise([staging]);
+        window.clearTimeout(mathTypesetWarning);
+        vscode.postMessage({ type: 'previewMathFinished', detail: 'mjx=' + staging.querySelectorAll('mjx-container, .MathJax').length });
+      } catch (error) {
+        window.clearTimeout(mathTypesetWarning);
+        vscode.postMessage({ type: 'previewMathFailed', detail: 'token=' + (token || '') + ';math=' + mathCount + ';error=' + String(error) });
+        throw error;
+      }
+    } else if (mathCount > 0) {
+      vscode.postMessage({ type: 'previewMathUnavailable', detail: 'token=' + (token || '') + ';math=' + mathCount });
+    }
+
+    // Copy the fully typeset staging markup into the stable visible container.
+    // Assigning HTML, rather than moving nodes, prevents MathJax's internal
+    // references to the staging document from being reused as live nodes.
+    const nextContentHtml = staging.innerHTML;
     staging.remove();
     staging = null;
-    document.body.replaceChildren(...nextChildren);
-    staging = null;
+    content.innerHTML = nextContentHtml;
     removeVscodeDefaultStyles();
     const restoreScrollTop = () => {
       window.scrollTo(0, previousScrollTop);
@@ -1478,39 +1538,12 @@ async function replacePreviewHtml(html, token) {
       suppressScroll = false;
     });
     window.setTimeout(restoreScrollTop, 120);
-    const pendingImages = Array.from(document.images).filter(image => !image.complete);
+    const pendingImages = Array.from(content.querySelectorAll('img')).filter(image => !image.complete);
     if (pendingImages.length) {
       Promise.all(pendingImages.map(image => new Promise(resolve => {
         image.addEventListener('load', resolve, { once: true });
         image.addEventListener('error', resolve, { once: true });
       }))).then(restoreScrollTop);
-    }
-    // MathJax must never delay the visible HTML replacement. It runs after the
-    // swap on the live document so a slow font or external loader cannot make
-    // the preview appear stuck on its previous revision.
-    const mathJax = window.MathJax;
-    if (mathJax && typeof mathJax.typesetPromise === 'function') {
-      const mathCount = document.body.querySelectorAll('.math').length;
-      vscode.postMessage({ type: 'previewMathStarted', detail: 'math=' + mathCount });
-      Promise.resolve(mathJax.startup?.promise)
-        .then(() => {
-          if (typeof mathJax.typesetClear === 'function') {
-            mathJax.typesetClear();
-          }
-          if (typeof mathJax.texReset === 'function') {
-            mathJax.texReset();
-          }
-          return mathJax.typesetPromise([document.body]);
-        })
-        .then(() => {
-          restoreScrollTop();
-          vscode.postMessage({ type: 'previewMathFinished', detail: 'mjx=' + document.body.querySelectorAll('mjx-container').length });
-        })
-        .catch(error => {
-          vscode.postMessage({ type: 'previewMathFailed', detail: String(error) });
-        });
-    } else {
-      vscode.postMessage({ type: 'previewMathUnavailable' });
     }
     vscode.postMessage({ type: 'previewUpdateFinished', detail: token || '' });
   } catch (error) {
@@ -1544,8 +1577,15 @@ window.addEventListener('scroll', () => {
     vscode.postMessage({ type: 'previewScroll', ratio });
   });
 }, { passive: true });
-window.addEventListener('load', () => vscode.postMessage({ type: 'ready' }), { once: true });
-vscode.postMessage({ type: 'ready' });
+let readySent = false;
+const sendReady = () => {
+  if (readySent) return;
+  ensurePreviewContent();
+  readySent = true;
+  vscode.postMessage({ type: 'ready' });
+};
+window.addEventListener('DOMContentLoaded', sendReady, { once: true });
+window.addEventListener('load', sendReady, { once: true });
 </script>`;
   const withoutExistingCsp = noncePreparedHtml.replace(/<meta\s+http-equiv=["']content-security-policy["'][^>]*>\s*/gi, "");
   const markedPandocStyles = withoutExistingCsp.replace(/<style(?=[\s>])/gi, '<style data-papper-preview-style="pandoc"');

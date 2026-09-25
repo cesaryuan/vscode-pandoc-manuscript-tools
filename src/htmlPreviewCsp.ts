@@ -11,6 +11,11 @@ export function buildHtmlPreviewCsp(html: string, nonce: string, cspSource: stri
   const scriptOrigins = [...new Set([...collectExternalScriptOrigins(html), ...mathJaxFontOrigins])].sort();
   const styleOrigins = collectExternalStylesheetOrigins(html);
   const fontOrigins = [...new Set([...scriptOrigins, ...styleOrigins, ...mathJaxFontOrigins])];
+  // MathJax 4 loads extension and dynamic font chunks through fetch/import()
+  // after the initial script has loaded. Those requests are not covered by
+  // script-src or font-src alone, so the WebView must permit HTTPS connections
+  // for the same external-resource scenario supported by the MPE preview.
+  const externalResourceSources = [...new Set(["https:", ...scriptOrigins, ...styleOrigins, ...mathJaxFontOrigins])];
 
   return [
     "default-src 'none'",
@@ -19,8 +24,9 @@ export function buildHtmlPreviewCsp(html: string, nonce: string, cspSource: stri
     `style-src ${joinSources([cspSource, "'unsafe-inline'", "data:", "blob:", ...styleOrigins])}`,
     `style-src-elem ${joinSources([cspSource, "'unsafe-inline'", "data:", "blob:", ...styleOrigins])}`,
     "style-src-attr 'unsafe-inline'",
-    `script-src ${joinSources([`'nonce-${nonce}'`, ...scriptOrigins])}`,
-    `font-src ${joinSources([cspSource, "data:", "blob:", ...fontOrigins])}`,
+    `script-src ${joinSources([`'nonce-${nonce}'`, ...externalResourceSources])}`,
+    `font-src ${joinSources([cspSource, "data:", "blob:", ...externalResourceSources, ...fontOrigins])}`,
+    `connect-src ${joinSources([cspSource, "data:", "blob:", ...externalResourceSources])}`,
     `media-src ${joinSources([cspSource, "data:", "blob:"])}`,
   ].join("; ") + ";";
 }
