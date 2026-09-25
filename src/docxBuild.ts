@@ -17,7 +17,7 @@ type RunProcessOptions = {
   captureStdout?: boolean;
   env?: NodeJS.ProcessEnv;
 };
-type HtmlPreviewMessage = { type?: string; ratio?: number };
+type HtmlPreviewMessage = { type?: string; ratio?: number; detail?: string };
 
 let cachedPapperExecutable: string | undefined;
 let papperResolutionPromise: Promise<string> | undefined;
@@ -36,6 +36,7 @@ export class PandocBuildRunner {
   declare htmlPreviewScrollSyncUntil: number;
   declare htmlPreviewLastSourceRatio: number;
   declare htmlPreviewVerbose: boolean;
+  declare htmlPreviewWebviewReady: boolean;
   /**
    * Creates the Papper build runner used by the editor-title commands.
    *
@@ -56,6 +57,7 @@ export class PandocBuildRunner {
     this.htmlPreviewScrollSyncUntil = 0;
     this.htmlPreviewLastSourceRatio = -1;
     this.htmlPreviewVerbose = verboseHtmlBuilds;
+    this.htmlPreviewWebviewReady = false;
   }
 
   /**
@@ -389,13 +391,19 @@ export class PandocBuildRunner {
       },
     );
     this.htmlPreviewPanel = panel;
+    this.htmlPreviewWebviewReady = false;
     panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage) => {
       if (message.type === "ready") {
+        this.htmlPreviewWebviewReady = true;
         this.htmlPreviewLastSourceRatio = -1;
         const editor = vscode.window.visibleTextEditors.find((candidate) => this.htmlPreviewDocumentUri && isSameUri(candidate.document.uri, this.htmlPreviewDocumentUri));
         if (editor) {
           this.syncHtmlPreviewFromEditor(editor);
         }
+        return;
+      }
+      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed") {
+        this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
         return;
       }
       if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !this.htmlPreviewDocumentUri) {
@@ -422,6 +430,7 @@ export class PandocBuildRunner {
       if (this.htmlPreviewPanel === panel) {
         this.htmlPreviewPanel = undefined;
         this.htmlPreviewDocumentUri = undefined;
+        this.htmlPreviewWebviewReady = false;
       }
     });
   }
@@ -494,10 +503,16 @@ export class PandocBuildRunner {
       return;
     }
     const injectStartedAt = Date.now();
-    this.htmlPreviewPanel.webview.html = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    const updateExistingWebview = this.htmlPreviewWebviewReady;
+    if (updateExistingWebview) {
+      await this.htmlPreviewPanel.webview.postMessage({ type: "replacePreviewHtml", html: preparedHtml });
+    } else {
+      this.htmlPreviewPanel.webview.html = preparedHtml;
+    }
     this.output.appendLine(`[HTML][timing] WebView HTML injection: ${formatElapsedMs(injectStartedAt)}`);
     const visibleRange = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri))?.visibleRanges[0];
-    if (visibleRange) {
+    if (!updateExistingWebview && visibleRange) {
       const ratio = Math.max(0, Math.min(1, visibleRange.start.line / Math.max(1, document.lineCount - 1)));
       this.htmlPreviewLastSourceRatio = ratio;
       void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
@@ -1293,6 +1308,7 @@ const vscode = acquireVsCodeApi();
 let suppressScroll = false;
 let scrollFrame = 0;
 let lastSentRatio = -1;
+let previewUpdateChain = Promise.resolve();
 function scrollRatio() {
   const root = document.documentElement;
   const max = Math.max(1, root.scrollHeight - window.innerHeight);
@@ -1306,7 +1322,76 @@ const styleObserver = new MutationObserver(removeVscodeDefaultStyles);
 styleObserver.observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once: true });
 removeVscodeDefaultStyles();
+async function replacePreviewHtml(html) {
+  const previousScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+  vscode.postMessage({ type: 'previewUpdateStarted' });
+  let staging = null;
+  try {
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const nextBody = parsed.body;
+    if (!nextBody) throw new Error('The generated preview has no body element.');
+    suppressScroll = true;
+    staging = document.createElement('div');
+    staging.setAttribute('aria-hidden', 'true');
+    staging.style.cssText = 'position:fixed;left:0;top:0;width:100%;visibility:hidden;pointer-events:none;z-index:-1;';
+    staging.innerHTML = nextBody.innerHTML;
+    document.body.appendChild(staging);
+    const mathJax = window.MathJax;
+    if (mathJax && typeof mathJax.typesetPromise === 'function') {
+      try {
+        if (typeof mathJax.typesetClear === 'function') {
+          mathJax.typesetClear([staging]);
+        }
+        await Promise.race([
+          mathJax.typesetPromise([staging]),
+          new Promise(resolve => window.setTimeout(resolve, 1500)),
+        ]);
+      } catch (_) {
+        // Keep the HTML refresh usable when a document contains invalid TeX.
+      }
+    }
+    const currentPandocStyles = Array.from(document.head.querySelectorAll('style[data-papper-preview-style="pandoc"]'));
+    const nextPandocStyles = Array.from(parsed.head.querySelectorAll('style[data-papper-preview-style="pandoc"]'));
+    const stylesChanged = currentPandocStyles.length !== nextPandocStyles.length || currentPandocStyles.some((style, index) => style.textContent !== nextPandocStyles[index].textContent);
+    if (stylesChanged) {
+      currentPandocStyles.forEach(style => style.remove());
+      nextPandocStyles.forEach(style => document.head.appendChild(style.cloneNode(true)));
+    }
+    const nextChildren = Array.from(staging.childNodes);
+    staging.remove();
+    staging = null;
+    document.body.replaceChildren(...nextChildren);
+    removeVscodeDefaultStyles();
+    const restoreScrollTop = () => {
+      window.scrollTo(0, previousScrollTop);
+      lastSentRatio = scrollRatio();
+    };
+    requestAnimationFrame(() => {
+      restoreScrollTop();
+      suppressScroll = false;
+    });
+    window.setTimeout(restoreScrollTop, 120);
+    const pendingImages = Array.from(document.images).filter(image => !image.complete);
+    if (pendingImages.length) {
+      Promise.all(pendingImages.map(image => new Promise(resolve => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      }))).then(restoreScrollTop);
+    }
+    vscode.postMessage({ type: 'previewUpdateFinished' });
+  } catch (error) {
+    if (staging) staging.remove();
+    suppressScroll = false;
+    vscode.postMessage({ type: 'previewUpdateFailed', detail: String(error) });
+    const fallback = new DOMParser().parseFromString(html, 'text/html').body;
+    if (fallback) document.body.innerHTML = fallback.innerHTML;
+  }
+}
 window.addEventListener('message', event => {
+  if (event.data && event.data.type === 'replacePreviewHtml' && typeof event.data.html === 'string') {
+    previewUpdateChain = previewUpdateChain.then(() => replacePreviewHtml(event.data.html));
+    return;
+  }
   if (!event.data || event.data.type !== 'sourceScroll') return;
   const root = document.documentElement;
   const max = Math.max(0, root.scrollHeight - window.innerHeight);
