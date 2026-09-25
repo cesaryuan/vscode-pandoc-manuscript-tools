@@ -1336,20 +1336,6 @@ async function replacePreviewHtml(html) {
     staging.style.cssText = 'position:fixed;left:0;top:0;width:100%;visibility:hidden;pointer-events:none;z-index:-1;';
     staging.innerHTML = nextBody.innerHTML;
     document.body.appendChild(staging);
-    const mathJax = window.MathJax;
-    if (mathJax && typeof mathJax.typesetPromise === 'function') {
-      try {
-        if (typeof mathJax.typesetClear === 'function') {
-          mathJax.typesetClear([staging]);
-        }
-        await Promise.race([
-          mathJax.typesetPromise([staging]),
-          new Promise(resolve => window.setTimeout(resolve, 1500)),
-        ]);
-      } catch (_) {
-        // Keep the HTML refresh usable when a document contains invalid TeX.
-      }
-    }
     const currentPandocStyles = Array.from(document.head.querySelectorAll('style[data-papper-preview-style="pandoc"]'));
     const nextPandocStyles = Array.from(parsed.head.querySelectorAll('style[data-papper-preview-style="pandoc"]'));
     const stylesChanged = currentPandocStyles.length !== nextPandocStyles.length || currentPandocStyles.some((style, index) => style.textContent !== nextPandocStyles[index].textContent);
@@ -1377,6 +1363,25 @@ async function replacePreviewHtml(html) {
         image.addEventListener('load', resolve, { once: true });
         image.addEventListener('error', resolve, { once: true });
       }))).then(restoreScrollTop);
+    }
+    const mathJax = window.MathJax;
+    if (mathJax && typeof mathJax.typesetPromise === 'function') {
+      // Do not typeset the staging tree and then move it before MathJax has
+      // finished. MathJax v4 may load font chunks asynchronously; typesetting
+      // the live tree after the swap keeps the final nodes attached until the
+      // renderer has completed.
+      Promise.resolve(mathJax.startup?.promise)
+        .then(() => {
+          if (typeof mathJax.typesetClear === 'function') {
+            mathJax.typesetClear();
+          }
+          if (typeof mathJax.texReset === 'function') {
+            mathJax.texReset();
+          }
+          return mathJax.typesetPromise([document.body]);
+        })
+        .then(restoreScrollTop)
+        .catch(() => undefined);
     }
     vscode.postMessage({ type: 'previewUpdateFinished' });
   } catch (error) {
