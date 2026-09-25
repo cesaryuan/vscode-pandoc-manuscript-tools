@@ -402,7 +402,7 @@ export class PandocBuildRunner {
         }
         return;
       }
-      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed") {
+      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed" || message.type === "previewMathStarted" || message.type === "previewMathFinished" || message.type === "previewMathFailed" || message.type === "previewMathUnavailable") {
         this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
         return;
       }
@@ -1347,6 +1347,7 @@ async function replacePreviewHtml(html) {
     staging.remove();
     staging = null;
     document.body.replaceChildren(...nextChildren);
+    staging = null;
     removeVscodeDefaultStyles();
     const restoreScrollTop = () => {
       window.scrollTo(0, previousScrollTop);
@@ -1364,12 +1365,13 @@ async function replacePreviewHtml(html) {
         image.addEventListener('error', resolve, { once: true });
       }))).then(restoreScrollTop);
     }
+    // MathJax must never delay the visible HTML replacement. It runs after the
+    // swap on the live document so a slow font or external loader cannot make
+    // the preview appear stuck on its previous revision.
     const mathJax = window.MathJax;
     if (mathJax && typeof mathJax.typesetPromise === 'function') {
-      // Do not typeset the staging tree and then move it before MathJax has
-      // finished. MathJax v4 may load font chunks asynchronously; typesetting
-      // the live tree after the swap keeps the final nodes attached until the
-      // renderer has completed.
+      const mathCount = document.body.querySelectorAll('.math').length;
+      vscode.postMessage({ type: 'previewMathStarted', detail: 'math=' + mathCount });
       Promise.resolve(mathJax.startup?.promise)
         .then(() => {
           if (typeof mathJax.typesetClear === 'function') {
@@ -1380,8 +1382,15 @@ async function replacePreviewHtml(html) {
           }
           return mathJax.typesetPromise([document.body]);
         })
-        .then(restoreScrollTop)
-        .catch(() => undefined);
+        .then(() => {
+          restoreScrollTop();
+          vscode.postMessage({ type: 'previewMathFinished', detail: 'mjx=' + document.body.querySelectorAll('mjx-container').length });
+        })
+        .catch(error => {
+          vscode.postMessage({ type: 'previewMathFailed', detail: String(error) });
+        });
+    } else {
+      vscode.postMessage({ type: 'previewMathUnavailable' });
     }
     vscode.postMessage({ type: 'previewUpdateFinished' });
   } catch (error) {
