@@ -37,6 +37,8 @@ export class PandocBuildRunner {
   declare htmlPreviewLastSourceRatio: number;
   declare htmlPreviewVerbose: boolean;
   declare htmlPreviewWebviewReady: boolean;
+  declare htmlPreviewUpdateToken: number;
+  declare htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
   /**
    * Creates the Papper build runner used by the editor-title commands.
    *
@@ -58,6 +60,8 @@ export class PandocBuildRunner {
     this.htmlPreviewLastSourceRatio = -1;
     this.htmlPreviewVerbose = verboseHtmlBuilds;
     this.htmlPreviewWebviewReady = false;
+    this.htmlPreviewUpdateToken = 0;
+    this.htmlPreviewPendingUpdate = undefined;
   }
 
   /**
@@ -404,6 +408,13 @@ export class PandocBuildRunner {
       }
       if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed" || message.type === "previewMathStarted" || message.type === "previewMathFinished" || message.type === "previewMathFailed" || message.type === "previewMathUnavailable") {
         this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
+        if (message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed") {
+          const pending = this.htmlPreviewPendingUpdate;
+          if (pending && pending.token === message.detail) {
+            this.htmlPreviewPendingUpdate = undefined;
+            pending.resolve(message.type === "previewUpdateFinished");
+          }
+        }
         return;
       }
       if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !this.htmlPreviewDocumentUri) {
@@ -506,7 +517,21 @@ export class PandocBuildRunner {
     const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
     const updateExistingWebview = this.htmlPreviewWebviewReady;
     if (updateExistingWebview) {
-      await this.htmlPreviewPanel.webview.postMessage({ type: "replacePreviewHtml", html: preparedHtml });
+      const token = `${Date.now()}-${++this.htmlPreviewUpdateToken}`;
+      const confirmation = new Promise<boolean>((resolve) => {
+        this.htmlPreviewPendingUpdate = { token, resolve };
+      });
+      const delivered = await this.htmlPreviewPanel.webview.postMessage({ type: "replacePreviewHtml", html: preparedHtml, token });
+      this.output.appendLine(`[HTML][webview] Incremental update message: ${delivered ? "delivered" : "rejected"} (${token})`);
+      const confirmed = delivered && await waitForWebviewUpdate(confirmation);
+      if (!confirmed) {
+        if (this.htmlPreviewPendingUpdate?.token === token) {
+          this.htmlPreviewPendingUpdate = undefined;
+        }
+        this.output.appendLine(`[HTML][webview] Incremental update timed out; falling back to full HTML reload (${token})`);
+        this.htmlPreviewWebviewReady = false;
+        this.htmlPreviewPanel.webview.html = preparedHtml;
+      }
     } else {
       this.htmlPreviewPanel.webview.html = preparedHtml;
     }
@@ -518,6 +543,18 @@ export class PandocBuildRunner {
       void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
     }
   }
+}
+
+/**
+ * Waits briefly for a WebView to acknowledge an incremental HTML replacement.
+ *
+ * @param confirmation Promise resolved by the panel message handler.
+ */
+async function waitForWebviewUpdate(confirmation: Promise<boolean>) {
+  return Promise.race([
+    confirmation,
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)),
+  ]);
 }
 
 /**
@@ -1322,9 +1359,9 @@ const styleObserver = new MutationObserver(removeVscodeDefaultStyles);
 styleObserver.observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once: true });
 removeVscodeDefaultStyles();
-async function replacePreviewHtml(html) {
+async function replacePreviewHtml(html, token) {
   const previousScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
-  vscode.postMessage({ type: 'previewUpdateStarted' });
+      vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
   let staging = null;
   try {
     const parsed = new DOMParser().parseFromString(html, 'text/html');
@@ -1392,18 +1429,18 @@ async function replacePreviewHtml(html) {
     } else {
       vscode.postMessage({ type: 'previewMathUnavailable' });
     }
-    vscode.postMessage({ type: 'previewUpdateFinished' });
+    vscode.postMessage({ type: 'previewUpdateFinished', detail: token || '' });
   } catch (error) {
     if (staging) staging.remove();
     suppressScroll = false;
-    vscode.postMessage({ type: 'previewUpdateFailed', detail: String(error) });
+    vscode.postMessage({ type: 'previewUpdateFailed', detail: token || String(error) });
     const fallback = new DOMParser().parseFromString(html, 'text/html').body;
     if (fallback) document.body.innerHTML = fallback.innerHTML;
   }
 }
 window.addEventListener('message', event => {
   if (event.data && event.data.type === 'replacePreviewHtml' && typeof event.data.html === 'string') {
-    previewUpdateChain = previewUpdateChain.then(() => replacePreviewHtml(event.data.html));
+    previewUpdateChain = previewUpdateChain.then(() => replacePreviewHtml(event.data.html, event.data.token));
     return;
   }
   if (!event.data || event.data.type !== 'sourceScroll') return;
