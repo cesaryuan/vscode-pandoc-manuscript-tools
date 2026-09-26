@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { EXTENSION_NAME, PANDOC_SELECTOR, IMAGE_PREVIEW_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, BUILD_HTML_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_IMAGE_DIRECTORY_PREVIEW_COMMAND, OPEN_SVG_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
+import { PapperMarkdownPreviewController } from "./papperMarkdownPreview/controller";
 import { FencedDivHighlighter } from "./fencedDivHighlighter";
 import { InlineFoldController } from "./inlineFoldController";
 import { MathJaxRenderer } from "./mathJaxRenderer";
@@ -31,7 +32,8 @@ export function activate(context: vscode.ExtensionContext) {
   const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
   const imageDirectoryPreview = new ImageDirectoryPreview(context.extensionUri, output);
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
-  const buildRunner = new PandocBuildRunner(output, context.extensionMode === vscode.ExtensionMode.Development);
+  const buildRunner = new PandocBuildRunner(output);
+  const markdownPreview = new PapperMarkdownPreviewController(output, context.extensionMode === vscode.ExtensionMode.Development);
   const numberingInlayHints = new NumberingInlayHints(buildRunner, output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);
@@ -71,7 +73,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
   context.subscriptions.push({ dispose: () => imageDirectoryPreview.dispose() });
-  context.subscriptions.push({ dispose: () => buildRunner.dispose() });
+  context.subscriptions.push({ dispose: () => markdownPreview.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
   context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
   context.subscriptions.push(numberingInlayHints);
@@ -86,7 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
     await buildRunner.buildActiveMarkdownDocx();
   }));
   context.subscriptions.push(vscode.commands.registerCommand(BUILD_HTML_COMMAND, async () => {
-    await buildRunner.buildActiveMarkdownHtml();
+    await markdownPreview.buildActiveMarkdownHtml();
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
@@ -104,12 +106,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
     void buildRunner.refreshContext();
+    void markdownPreview.refreshContext();
     fencedDivHighlighter.updateVisibleEditors();
     inlineFoldController.updateVisibleEditors();
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
-    buildRunner.syncHtmlPreviewFromEditor(event.textEditor);
+    markdownPreview.syncFromEditor(event.textEditor);
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
@@ -120,13 +123,14 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
     const activeSelection = event.selections[0];
     if (activeSelection && event.kind !== vscode.TextEditorSelectionChangeKind.Command) {
-      buildRunner.syncHtmlPreviewFromEditor(event.textEditor, activeSelection.active);
+      markdownPreview.syncFromEditor(event.textEditor, activeSelection.active);
     }
     inlineFoldController.updateEditor(event.textEditor);
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
     void buildRunner.refreshContext();
+    void markdownPreview.refreshContext();
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
@@ -153,6 +157,7 @@ export function activate(context: vscode.ExtensionContext) {
       updateDiagnostics(document, index, diagnostics);
       numberingInlayHints.scheduleRefresh(document);
       void buildRunner.refreshContext();
+      void markdownPreview.refreshContext();
     }
   }));
 
@@ -167,7 +172,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
       fencedDivHighlighter.updateVisibleEditors(event.document);
       inlineFoldController.updateVisibleEditors(event.document);
-      buildRunner.scheduleHtmlPreviewRefresh(event.document);
+      markdownPreview.scheduleHtmlPreviewRefresh(event.document);
     }
   }));
 
@@ -190,6 +195,7 @@ export function activate(context: vscode.ExtensionContext) {
     numberingInlayHints.scheduleRefresh(document);
   }
   void buildRunner.refreshContext();
+  void markdownPreview.refreshContext();
   fencedDivHighlighter.updateVisibleEditors();
   inlineFoldController.updateVisibleEditors();
 }
