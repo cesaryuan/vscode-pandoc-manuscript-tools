@@ -5,7 +5,7 @@ import { CAN_BUILD_HTML_CONTEXT } from "../constants";
 import { cacheHtmlMetafileImages } from "../htmlPreviewResourceCache";
 import { findPandocManuscriptProject, isPapperBuildAvailable, pathExists, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "../papperBuildUtils";
 import { isBuildableMarkdownDocument } from "../vscodeUtils";
-import { HtmlPreviewClickNavigation, type HtmlPreviewClickMessage } from "./clickNavigation";
+import { HtmlPreviewClickNavigation, type HtmlPreviewBlockDescriptor, type HtmlPreviewClickMessage } from "./clickNavigation";
 import { HtmlPreviewScrollSync, type HtmlPreviewMessage } from "./scrollSync";
 import { countHtmlElements, createNonce, formatElapsedMs, getExpectedHtmlUri, injectHtmlPreviewBridge, removeTemporaryMarkdown, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
 
@@ -261,7 +261,7 @@ export class PapperMarkdownPreviewController {
     this.htmlPreviewPanel = panel;
     this.htmlPreviewWebviewReady = false;
     this.output.appendLine(`[HTML][scroll] preview panel opened for ${document.uri.fsPath}`);
-    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage & Partial<HtmlPreviewClickMessage>) => {
+    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage & Partial<HtmlPreviewClickMessage> & { blocks?: HtmlPreviewBlockDescriptor[] }) => {
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
         this.output.appendLine("[HTML][scroll] preview WebView ready");
@@ -296,13 +296,18 @@ export class PapperMarkdownPreviewController {
       }
       if (message.type === "previewBlockClick") {
         this.output.appendLine(`[HTML][click] preview block type=${message.blockType || "unknown"} label=${message.label || "none"}`);
+        this.scrollSync.suppressEditorSync();
         void this.clickNavigation.handlePreviewClick(this.htmlPreviewDocumentUri, message as HtmlPreviewClickMessage).catch((error) => {
           this.output.appendLine(`[HTML][click] source reveal failed: ${String(error)}`);
         });
         return;
       }
+      if (message.type === "previewBlocks") {
+        void this.mapPreviewBlocks(panel, message.blocks as HtmlPreviewBlockDescriptor[]);
+        return;
+      }
       if (message.type === "previewScroll") {
-        this.output.appendLine(`[HTML][scroll] preview -> host ratio=${typeof message.ratio === "number" ? message.ratio.toFixed(3) : "invalid"} heading=${message.headingId || message.headingKey || "none"} offset=${typeof message.offsetRatio === "number" ? message.offsetRatio.toFixed(3) : "none"}`);
+        this.output.appendLine(`[HTML][scroll] preview -> host ratio=${typeof message.ratio === "number" ? message.ratio.toFixed(3) : "invalid"} sourceLine=${typeof message.sourceLine === "number" ? message.sourceLine + 1 : "none"} block=${message.blockId || "none"} offset=${typeof message.blockOffsetRatio === "number" ? message.blockOffsetRatio.toFixed(3) : "none"}`);
       }
       this.scrollSync.handlePreviewScroll(this.htmlPreviewDocumentUri, message);
     });
@@ -313,6 +318,21 @@ export class PapperMarkdownPreviewController {
         this.htmlPreviewWebviewReady = false;
       }
     });
+  }
+
+  /** Maps WebView blocks to source lines and returns the mapping to the bridge. */
+  private async mapPreviewBlocks(panel: vscode.WebviewPanel, blocks: HtmlPreviewBlockDescriptor[]) {
+    if (!this.htmlPreviewDocumentUri || !Array.isArray(blocks)) {
+      return;
+    }
+    try {
+      const document = await vscode.workspace.openTextDocument(this.htmlPreviewDocumentUri);
+      const mappings = this.clickNavigation.mapPreviewBlocks(document, blocks);
+      await panel.webview.postMessage({ type: "previewBlockMap", mappings });
+      this.output.appendLine(`[HTML][scroll] preview block map matched=${mappings.length}/${blocks.length}`);
+    } catch (error) {
+      this.output.appendLine(`[HTML][scroll] preview block map failed: ${String(error)}`);
+    }
   }
 
   /**

@@ -112,13 +112,16 @@ let lastScrollTraceAt = 0;
 let pendingSourceScrollTarget = null;
 let pendingSourceScrollTimer = 0;
 let lastSentRatio = -1;
-let lastSentHeadingKey = '';
-let lastSentOffsetRatio = 0;
+let lastSentSourceLine = -1;
+let lastSentBlockId = '';
+let lastSentBlockOffsetRatio = 0;
 let previewUpdateChain = Promise.resolve();
 let previewContent = null;
-let previewHeadings = null;
+let previewBlocks = [];
+let previewBlockMapReady = false;
 let readySent = false;
 let pendingSourceScroll = null;
+let pendingSourceMappingTimer = 0;
 function ensurePreviewContent() {
   if (previewContent && previewContent.isConnected) return previewContent;
   if (!document.body) return null;
@@ -130,14 +133,6 @@ function ensurePreviewContent() {
     document.body.appendChild(previewContent);
   }
   return previewContent;
-}
-// Reuses the rendered heading list until preview HTML is replaced.
-function getPreviewHeadings() {
-  if (!previewHeadings) {
-    const content = ensurePreviewContent();
-    previewHeadings = content ? Array.from(content.querySelectorAll('h1,h2,h3,h4,h5,h6')) : [];
-  }
-  return previewHeadings;
 }
 // Returns the element that owns the document's vertical scroll position.
 function getScrollElement() {
@@ -153,7 +148,7 @@ function getScrollHeight() {
   const scroller = getScrollElement();
   return scroller ? scroller.scrollHeight : document.documentElement.scrollHeight;
 }
-// Returns the viewport height used for heading offsets and ratio calculations.
+// Returns the viewport height used for mapped block offsets and ratio calculations.
 function getViewportHeight() {
   return window.innerHeight || document.documentElement.clientHeight || 1;
 }
@@ -177,73 +172,114 @@ function scrollRatio() {
   const max = Math.max(1, getScrollHeight() - getViewportHeight());
   return Math.max(0, Math.min(1, getScrollTop() / max));
 }
-// Makes Markdown source headings comparable to their rendered text content.
-function normalizeHeadingKey(value) {
-  return String(value || '')
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/\x60+([^\x60]+)\x60+/g, '$1')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\{[^}]*\}/g, ' ')
-    .replace(/\\(.)/g, '$1')
-    .replace(/[*_~]/g, '')
-    .replace(/^\s*\d+(?:\.\d+)*[.)]?\s+/, '')
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[\s\p{P}\p{S}]/gu, '');
-}
-// Finds the rendered heading nearest the preview viewport top for scroll reporting.
-function getVisibleHeadingAnchor() {
-  if (!readySent) return null;
+// Collects rendered blocks once per HTML revision for source-line mapping.
+function collectPreviewBlocks() {
   const content = ensurePreviewContent();
-  if (!content) return null;
+  if (!content) return [];
+  const candidates = [
+    ...Array.from(content.querySelectorAll('h1,h2,h3,h4,h5,h6')),
+    ...Array.from(content.querySelectorAll('figure')),
+    ...Array.from(content.querySelectorAll('table')),
+    ...Array.from(content.querySelectorAll('.math')).filter(element => !element.closest('p,figure,table')),
+    ...Array.from(content.querySelectorAll('p')).filter(element => !element.closest('figure,table'))
+  ];
+  const unique = Array.from(new Set(candidates));
+  unique.sort((left, right) => {
+    const relation = left.compareDocumentPosition(right);
+    return relation & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+  });
+  return unique.map((element, index) => {
+    const blockId = 'pmt-block-' + index;
+    element.setAttribute('data-pmt-block-id', blockId);
+    element.removeAttribute('data-source-line');
+    element.removeAttribute('data-source-end-line');
+    let blockType = 'paragraph';
+    let text = getClickableText(element);
+    const heading = element.matches('h1,h2,h3,h4,h5,h6');
+    const math = element.matches('.math');
+    const figure = element.matches('figure');
+    const table = element.matches('table');
+    if (heading) blockType = 'heading';
+    else if (math) blockType = 'math';
+    else if (figure) blockType = 'image';
+    else if (table) blockType = 'table';
+    const image = figure ? element.querySelector('img') : null;
+    const figureCaption = figure ? element.querySelector('figcaption') : null;
+    const tableCaption = table ? element.querySelector('caption') : null;
+    const alt = image ? image.getAttribute('alt') || '' : '';
+    const caption = figureCaption ? getClickableText(figureCaption) : tableCaption ? getClickableText(tableCaption) : '';
+    if (figure) text = caption || alt;
+    if (table) text = getClickableText(element);
+    return {
+      element,
+      blockId,
+      blockType,
+      label: getClickableLabel(element),
+      text,
+      caption,
+      alt,
+      tex: math ? element.getAttribute('data-pmt-tex') || '' : '',
+      display: math
+    };
+  });
+}
+// Requests one source mapping for the current rendered block order.
+function requestPreviewBlockMapping() {
+  previewBlocks = collectPreviewBlocks();
+  previewBlockMapReady = false;
+  vscode.postMessage({
+    type: 'previewBlocks',
+    blocks: previewBlocks.map(({ element, ...block }) => block)
+  });
+}
+// Releases a source scroll request if a host mapping cannot be produced.
+function deferSourceScrollUntilMapping(message) {
+  pendingSourceScroll = message;
+  if (pendingSourceMappingTimer) window.clearTimeout(pendingSourceMappingTimer);
+  pendingSourceMappingTimer = window.setTimeout(() => {
+    if (pendingSourceScroll === message && !previewBlockMapReady) {
+      pendingSourceScroll = null;
+      applySourceScroll(message);
+    }
+    pendingSourceMappingTimer = 0;
+  }, 1000);
+}
+// Returns the block whose source line is closest to the requested source position.
+function findPreviewBlockForSourceLine(sourceLine) {
+  let containing = null;
   let nearest = null;
   let nearestDistance = Number.POSITIVE_INFINITY;
-  for (const heading of getPreviewHeadings()) {
-    const distance = Math.abs(heading.getBoundingClientRect().top);
+  for (const block of previewBlocks) {
+    const startLine = Number(block.element.getAttribute('data-source-line'));
+    const endLine = Number(block.element.getAttribute('data-source-end-line'));
+    if (!Number.isFinite(startLine)) continue;
+    if (Number.isFinite(endLine) && sourceLine >= startLine && sourceLine <= endLine) {
+      containing = block;
+      break;
+    }
+    const distance = Math.abs(startLine - sourceLine);
     if (distance < nearestDistance) {
-      nearest = heading;
+      nearest = block;
       nearestDistance = distance;
     }
   }
-  if (!nearest || nearestDistance > getViewportHeight() * 1.25) return null;
-  const text = nearest.cloneNode(true);
-  text.querySelectorAll('.header-section-number, .header-section-name').forEach(element => element.remove());
-  const headingKey = normalizeHeadingKey(text.textContent || '');
-  const headingId = nearest.id || '';
-  if (!headingId && !headingKey) return null;
-  return {
-    headingId,
-    headingKey,
-    offsetRatio: Math.max(-1.25, Math.min(1.25, nearest.getBoundingClientRect().top / getViewportHeight()))
-  };
+  return containing || nearest;
 }
-// Resolves a source anchor, preferring Pandoc IDs and disambiguating repeated titles by page position.
-function findPreviewHeadingAnchor(message) {
-  const content = ensurePreviewContent();
-  if (!content) return null;
-  if (message.headingId) {
-    const byId = document.getElementById(message.headingId);
-    if (byId && content.contains(byId) && byId.matches('h1,h2,h3,h4,h5,h6')) return byId;
-  }
-  const key = normalizeHeadingKey(message.headingKey || '');
-  if (!key) return null;
-  const max = Math.max(1, getScrollHeight() - getViewportHeight());
-  const targetRatio = Math.max(0, Math.min(1, Number(message.ratio) || 0));
-  let nearest = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  for (const heading of getPreviewHeadings()) {
-    const text = heading.cloneNode(true);
-    text.querySelectorAll('.header-section-number, .header-section-name').forEach(element => element.remove());
-    if (normalizeHeadingKey(text.textContent || '') !== key) continue;
-    const pageRatio = (getScrollTop() + heading.getBoundingClientRect().top) / max;
-    const distance = Math.abs(pageRatio - targetRatio);
-    if (distance < nearestDistance) {
-      nearest = heading;
-      nearestDistance = distance;
+// Returns the mapped block currently nearest the top of the preview viewport.
+function getVisibleSourceBlock() {
+  let previous = null;
+  let next = null;
+  for (const block of previewBlocks) {
+    if (!block.element.hasAttribute('data-source-line')) continue;
+    const rect = block.element.getBoundingClientRect();
+    if (rect.top <= 0) {
+      previous = block;
+      continue;
     }
+    next = block;
+    break;
   }
-  return nearest;
+  return previous || next;
 }
 // VS Code may inject #_defaultStyles after the preview loads; remove it so it
 // cannot override Papper's generated styles, including after incremental updates.
@@ -337,6 +373,11 @@ function getClickableLabel(element) {
   const labeled = element.closest('[id^="sec:"], [id^="fig:"], [id^="tbl:"], [id^="eq:"]');
   return labeled ? labeled.id : '';
 }
+// Returns the nearest block ID assigned during source mapping.
+function getClickableBlockId(element) {
+  const block = element.closest('[data-pmt-block-id]');
+  return block ? block.getAttribute('data-pmt-block-id') || '' : '';
+}
 // Emits a source-navigation request for a clicked rendered block.
 function handlePreviewClick(event) {
   const target = event.target instanceof Element ? event.target : null;
@@ -345,42 +386,42 @@ function handlePreviewClick(event) {
   if (caption) {
     const owner = caption.closest('figure, table');
     const image = owner ? owner.querySelector('img') : null;
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'caption', label: owner ? getClickableLabel(owner) : '', text: getClickableText(caption), caption: getClickableText(caption), alt: image ? image.getAttribute('alt') || '' : '' });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'caption', blockId: owner ? getClickableBlockId(owner) : '', label: owner ? getClickableLabel(owner) : '', text: getClickableText(caption), caption: getClickableText(caption), alt: image ? image.getAttribute('alt') || '' : '' });
     return;
   }
   const heading = target.closest('h1, h2, h3, h4, h5, h6');
   if (heading) {
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'heading', label: getClickableLabel(heading), text: getClickableText(heading) });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'heading', blockId: getClickableBlockId(heading), label: getClickableLabel(heading), text: getClickableText(heading) });
     return;
   }
   const math = target.closest('[data-pmt-tex], .math');
   if (math) {
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'math', label: getClickableLabel(math), tex: math.getAttribute('data-pmt-tex') || '', text: getClickableText(math), display: math.classList.contains('display') });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'math', blockId: getClickableBlockId(math), label: getClickableLabel(math), tex: math.getAttribute('data-pmt-tex') || '', text: getClickableText(math), display: math.classList.contains('display') });
     return;
   }
   const figure = target.closest('figure');
   if (figure) {
     const image = figure.querySelector('img');
     const figureCaption = figure.querySelector('figcaption');
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', label: getClickableLabel(figure), text: figureCaption ? getClickableText(figureCaption) : image ? image.getAttribute('alt') || '' : '', caption: figureCaption ? getClickableText(figureCaption) : '', alt: image ? image.getAttribute('alt') || '' : '' });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', blockId: getClickableBlockId(figure), label: getClickableLabel(figure), text: figureCaption ? getClickableText(figureCaption) : image ? image.getAttribute('alt') || '' : '', caption: figureCaption ? getClickableText(figureCaption) : '', alt: image ? image.getAttribute('alt') || '' : '' });
     return;
   }
   const table = target.closest('table');
   if (table) {
     const tableCaption = table.querySelector('caption');
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'table', label: getClickableLabel(table), text: getClickableText(table), caption: tableCaption ? getClickableText(tableCaption) : '' });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'table', blockId: getClickableBlockId(table), label: getClickableLabel(table), text: getClickableText(table), caption: tableCaption ? getClickableText(tableCaption) : '' });
     return;
   }
   const image = target.closest('img');
   if (image) {
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', label: getClickableLabel(image), text: image.getAttribute('alt') || '', alt: image.getAttribute('alt') || '' });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', blockId: getClickableBlockId(image), label: getClickableLabel(image), text: image.getAttribute('alt') || '', alt: image.getAttribute('alt') || '' });
     return;
   }
   const paragraph = target.closest('p');
   if (paragraph) {
     const mathInParagraph = paragraph.querySelector('.math, [data-pmt-tex]');
     if (mathInParagraph && target === mathInParagraph) return;
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'paragraph', label: getClickableLabel(paragraph), text: getClickableText(paragraph) });
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'paragraph', blockId: getClickableBlockId(paragraph), label: getClickableLabel(paragraph), text: getClickableText(paragraph) });
   }
 }
 document.addEventListener('click', handlePreviewClick);
@@ -415,14 +456,14 @@ async function replacePreviewHtml(html, token) {
     staging.remove();
     staging = null;
     content.innerHTML = nextContentHtml;
-    previewHeadings = null;
+    requestPreviewBlockMapping();
     removeVscodeDefaultStyles();
     const restoreScrollTop = () => {
       setScrollTop(previousScrollTop);
       lastSentRatio = scrollRatio();
-      const anchor = getVisibleHeadingAnchor();
-      lastSentHeadingKey = anchor ? (anchor.headingId || '') + '|' + (anchor.headingKey || '') : '';
-      lastSentOffsetRatio = anchor ? anchor.offsetRatio : 0;
+      lastSentSourceLine = -1;
+      lastSentBlockId = '';
+      lastSentBlockOffsetRatio = 0;
     };
     requestAnimationFrame(() => {
       restoreScrollTop();
@@ -445,21 +486,23 @@ async function replacePreviewHtml(html, token) {
     if (fallback) {
       document.body.innerHTML = fallback.innerHTML;
       previewContent = null;
-      previewHeadings = null;
+      previewBlocks = [];
+      previewBlockMapReady = false;
     }
   }
 }
-// Applies the latest source position after generated preview headings are available.
+// Applies the latest source position after generated preview block mappings are available.
 function applySourceScroll(message) {
   const max = Math.max(0, getScrollHeight() - getViewportHeight());
-  const anchor = findPreviewHeadingAnchor(message);
   const requestedOffset = Number.isFinite(message.offsetRatio)
     ? Math.max(-1.5, Math.min(1.5, message.offsetRatio))
     : 0;
   let targetTop;
-  if (anchor) {
-    const headingTop = getScrollTop() + anchor.getBoundingClientRect().top;
-    targetTop = headingTop - requestedOffset * getViewportHeight();
+  const sourceLine = Number.isFinite(message.sourceLine) ? Number(message.sourceLine) : null;
+  const block = sourceLine === null ? null : findPreviewBlockForSourceLine(sourceLine);
+  if (block) {
+    const blockTop = getScrollTop() + block.element.getBoundingClientRect().top;
+    targetTop = blockTop - requestedOffset * getViewportHeight();
   } else {
     const ratio = Number.isFinite(message.ratio) ? Math.max(0, Math.min(1, message.ratio)) : 0;
     targetTop = ratio * max - requestedOffset * getViewportHeight();
@@ -479,14 +522,46 @@ window.addEventListener('message', event => {
     previewUpdateChain = previewUpdateChain.then(() => replacePreviewHtml(event.data.html, event.data.token));
     return;
   }
+  if (event.data && event.data.type === 'previewBlockMap') {
+    applyPreviewBlockMap(event.data.mappings);
+    return;
+  }
   if (!event.data || event.data.type !== 'sourceScroll') return;
   vscode.postMessage({ type: 'scrollSyncTrace', detail: 'sourceScroll received ready=' + readySent });
   if (!readySent) {
-    pendingSourceScroll = event.data;
+    deferSourceScrollUntilMapping(event.data);
+    return;
+  }
+  if (!previewBlockMapReady && Number.isFinite(event.data.sourceLine)) {
+    deferSourceScrollUntilMapping(event.data);
     return;
   }
   applySourceScroll(event.data);
 });
+// Applies host-provided source ranges to the rendered block elements.
+function applyPreviewBlockMap(mappings) {
+  const mappingById = new Map((Array.isArray(mappings) ? mappings : []).map(mapping => [mapping.blockId, mapping]));
+  for (const block of previewBlocks) {
+    const mapping = mappingById.get(block.blockId);
+    if (!mapping || !Number.isFinite(mapping.startLine)) {
+      block.element.removeAttribute('data-source-line');
+      block.element.removeAttribute('data-source-end-line');
+      continue;
+    }
+    block.element.setAttribute('data-source-line', String(mapping.startLine));
+    block.element.setAttribute('data-source-end-line', String(Number.isFinite(mapping.endLine) ? mapping.endLine : mapping.startLine));
+  }
+  previewBlockMapReady = true;
+  if (pendingSourceMappingTimer) {
+    window.clearTimeout(pendingSourceMappingTimer);
+    pendingSourceMappingTimer = 0;
+  }
+  if (pendingSourceScroll) {
+    const message = pendingSourceScroll;
+    pendingSourceScroll = null;
+    applySourceScroll(message);
+  }
+}
 // Handles scroll events from either the viewport or a nested document scroller.
 function handlePreviewScrollEvent() {
   if (suppressScroll || scrollFrame) return;
@@ -504,13 +579,16 @@ function handlePreviewScrollEvent() {
     if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
     pendingSourceScrollTimer = 0;
     const ratio = scrollRatio();
-    const anchor = getVisibleHeadingAnchor();
-    const headingKey = anchor ? (anchor.headingId || '') + '|' + (anchor.headingKey || '') : '';
-    if (Math.abs(ratio - lastSentRatio) < 0.01 && headingKey === lastSentHeadingKey && (!anchor || Math.abs(anchor.offsetRatio - lastSentOffsetRatio) < 0.02)) return;
+    const block = getVisibleSourceBlock();
+    const sourceLine = block ? Number(block.element.getAttribute('data-source-line')) : null;
+    const blockId = block ? block.blockId : '';
+    const blockOffsetRatio = block ? Math.max(-1.5, Math.min(1.5, block.element.getBoundingClientRect().top / getViewportHeight())) : 0;
+    if (Math.abs(ratio - lastSentRatio) < 0.01 && sourceLine === lastSentSourceLine && blockId === lastSentBlockId && Math.abs(blockOffsetRatio - lastSentBlockOffsetRatio) < 0.02) return;
     lastSentRatio = ratio;
-    lastSentHeadingKey = headingKey;
-    lastSentOffsetRatio = anchor ? anchor.offsetRatio : 0;
-    vscode.postMessage({ type: 'previewScroll', ratio, ...(anchor || {}) });
+    lastSentSourceLine = sourceLine;
+    lastSentBlockId = blockId;
+    lastSentBlockOffsetRatio = blockOffsetRatio;
+    vscode.postMessage({ type: 'previewScroll', ratio, sourceLine: Number.isFinite(sourceLine) ? sourceLine : undefined, blockId, blockOffsetRatio });
   });
 }
 window.addEventListener('scroll', handlePreviewScrollEvent, { passive: true });
@@ -522,11 +600,15 @@ const sendReady = () => {
   // The standalone Papper page may have rendered KaTeX before this bridge;
   // record annotation TeX immediately so clicks still locate source math.
   if (content) {
-    void renderKaTeX(content).catch(error => vscode.postMessage({ type: 'previewKatexFailed', detail: 'initial=' + String(error) }));
+    const katexRender = renderKaTeX(content).catch(error => vscode.postMessage({ type: 'previewKatexFailed', detail: 'initial=' + String(error) }));
+    requestPreviewBlockMapping();
+    void katexRender.finally(requestPreviewBlockMapping);
+  } else {
+    requestPreviewBlockMapping();
   }
   readySent = true;
   vscode.postMessage({ type: 'ready' });
-  if (pendingSourceScroll) {
+  if (pendingSourceScroll && (previewBlockMapReady || !Number.isFinite(pendingSourceScroll.sourceLine))) {
     const message = pendingSourceScroll;
     pendingSourceScroll = null;
     applySourceScroll(message);
