@@ -113,7 +113,9 @@ export class HtmlPreviewClickNavigation {
       const startLine = target.range.start.line;
       const endLine = target.range.end.line;
       mappings.push({ blockId: block.blockId, startLine, endLine });
-      previousSourceLine = Math.max(previousSourceLine, startLine);
+      // Advance past the complete source block so a later preview node cannot
+      // be matched to a line inside an already mapped multi-line block.
+      previousSourceLine = Math.max(previousSourceLine, endLine);
     }
     this.previewMappings = {
       uri: document.uri.toString(),
@@ -133,7 +135,7 @@ type PreviewMatchContext = {
 /** Finds the source range corresponding to a rendered preview click. */
 function findPreviewSourceTarget(document: vscode.TextDocument, message: HtmlPreviewClickMessage, context?: PreviewMatchContext): SourceTarget | undefined {
   const parsed = context?.parsed || parsePandocDocument(document.getText(), document.uri.toString());
-  const labeledTarget = findLabeledSourceTarget(document, parsed, message.label);
+  const labeledTarget = findLabeledSourceTarget(document, parsed, message.label, context?.minimumLine);
   if (labeledTarget) {
     return labeledTarget;
   }
@@ -151,23 +153,23 @@ function findPreviewSourceTarget(document: vscode.TextDocument, message: HtmlPre
 }
 
 /** Resolves a stable Pandoc label before attempting fuzzy text matching. */
-function findLabeledSourceTarget(document: vscode.TextDocument, parsed: ReturnType<typeof parsePandocDocument>, labelText: string | undefined): SourceTarget | undefined {
+function findLabeledSourceTarget(document: vscode.TextDocument, parsed: ReturnType<typeof parsePandocDocument>, labelText: string | undefined, minimumLine = -1): SourceTarget | undefined {
   const label = normalizeLabel(labelText);
   if (!label) {
     return undefined;
   }
 
-  const heading = parsed.headings.find((entry) => entry.label === label);
+  const heading = parsed.headings.find((entry) => entry.label === label && entry.range.start.line > minimumLine);
   if (heading) {
     return { range: sourceRange(document, heading.range.start.line, heading.range.end.line), reason: `label=${label}` };
   }
 
-  const mathBlock = parsed.mathBlocks.find((entry) => entry.label === label);
+  const mathBlock = parsed.mathBlocks.find((entry) => entry.label === label && entry.line > minimumLine);
   if (mathBlock) {
     return { range: sourceRange(document, mathBlock.line, mathBlock.endLine), reason: `label=${label}` };
   }
 
-  const labelEntry = parsed.labels.find((entry) => entry.label === label);
+  const labelEntry = parsed.labels.find((entry) => entry.label === label && entry.line > minimumLine);
   if (labelEntry) {
     return { range: sourceRange(document, labelEntry.line, labelEntry.line), reason: `label=${label}` };
   }
@@ -177,7 +179,7 @@ function findLabeledSourceTarget(document: vscode.TextDocument, parsed: ReturnTy
   // fallback for source files that use an explicit HTML id attribute.
   const lines = document.getText().split(/\r?\n/);
   const idPattern = new RegExp(`\\bid\\s*=\\s*["']${escapeRegExp(label)}["']`, "i");
-  const idLine = lines.findIndex((line) => idPattern.test(line));
+  const idLine = lines.findIndex((line, lineNumber) => lineNumber > minimumLine && idPattern.test(line));
   return idLine >= 0 ? { range: sourceRange(document, idLine, idLine), reason: `html-id=${label}` } : undefined;
 }
 
@@ -263,12 +265,16 @@ function findBestSourceBlockTarget(document: vscode.TextDocument, blocks: Source
     return { range: sourceRange(document, exact.startLine, exact.endLine), reason: `${exact.kind}-text` };
   }
 
-  const contained = candidates
-    .filter((block) => block.normalized.includes(normalized) || normalized.includes(block.normalized))
-    .sort((left, right) => Math.abs(left.normalized.length - normalized.length) - Math.abs(right.normalized.length - normalized.length))[0];
-  return contained
-    ? { range: sourceRange(document, contained.startLine, contained.endLine), reason: `${contained.kind}-text-contained` }
-    : undefined;
+  // Pandoc can omit citation and formula nodes from the visible preview text.
+  // Accept only a substantial source-prefix match so an incomplete snippet
+  // cannot jump to an unrelated later figure or paragraph.
+  const prefix = candidates
+    .filter((block) => normalized.length >= 80 && block.normalized.length >= normalized.length && block.normalized.startsWith(normalized))
+    .sort((left, right) => left.startLine - right.startLine)[0];
+  if (prefix) {
+    return { range: sourceRange(document, prefix.startLine, prefix.endLine), reason: `${prefix.kind}-text-prefix` };
+  }
+  return undefined;
 }
 
 /** Builds source blocks while keeping formulas, tables, and images out of prose matching. */
@@ -402,6 +408,10 @@ function normalizeVisibleText(value: string): string {
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/\[@[^\]]+\]/g, " ")
     .replace(/@(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+/g, " ")
+    // Pandoc expands cross-reference tokens into visible labels such as
+    // “Figure 14” and “Table 5”; remove those generated labels so source and
+    // preview prose remain comparable without weakening block boundaries.
+    .replace(/\b(?:figure|fig\.?|table|tbl\.?|equation|eq\.?|section|sec\.?|algorithm|alg\.?)\s*\d+(?:\.\d+)*(?:\s*(?:,|and)\s*\d+(?:\.\d+)*)*/gi, " ")
     .replace(/\$\$[\s\S]*?\$\$/g, " ")
     .replace(/\\\([\s\S]*?\\\)/g, " ")
     .replace(/(^|[^$])\$(?!\$)[^$\n]+\$(?!\$)/g, "$1 ")

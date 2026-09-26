@@ -179,9 +179,11 @@ function collectPreviewBlocks() {
   const candidates = [
     ...Array.from(content.querySelectorAll('h1,h2,h3,h4,h5,h6')),
     ...Array.from(content.querySelectorAll('figure')),
-    ...Array.from(content.querySelectorAll('table')),
-    ...Array.from(content.querySelectorAll('.math')).filter(element => !element.closest('p,figure,table')),
-    ...Array.from(content.querySelectorAll('p')).filter(element => !element.closest('figure,table'))
+    ...Array.from(content.querySelectorAll('table')).filter(element => !element.closest('figure')),
+    // Display equations are wrapped in <p> by Pandoc, so keep the equation
+    // block while omitting inline math that belongs to ordinary prose.
+    ...Array.from(content.querySelectorAll('.math')).filter(element => element.classList.contains('display') || !element.closest('p,figure,table')),
+    ...Array.from(content.querySelectorAll('p')).filter(element => !element.closest('figure,table') && !element.querySelector('.math.display') && getClickableText(element).length > 0)
   ];
   const unique = Array.from(new Set(candidates));
   unique.sort((left, right) => {
@@ -204,7 +206,7 @@ function collectPreviewBlocks() {
     else if (figure) blockType = 'image';
     else if (table) blockType = 'table';
     const image = figure ? element.querySelector('img') : null;
-    const figureCaption = figure ? element.querySelector('figcaption') : null;
+    const figureCaption = figure ? getFigureCaption(element) : null;
     const tableCaption = table ? element.querySelector('caption') : null;
     const alt = image ? image.getAttribute('alt') || '' : '';
     const caption = figureCaption ? getClickableText(figureCaption) : tableCaption ? getClickableText(tableCaption) : '';
@@ -219,7 +221,7 @@ function collectPreviewBlocks() {
       caption,
       alt,
       tex: math ? element.getAttribute('data-pmt-tex') || '' : '',
-      display: math
+      display: math && element.classList.contains('display')
     };
   });
 }
@@ -368,10 +370,20 @@ function getClickableText(element) {
   clone.querySelectorAll('.math, .katex, .citation, .header-section-number, .header-section-name, script, style').forEach(child => child.remove());
   return (clone.textContent || '').replace(/\s+/g, ' ').trim();
 }
-// Finds a Pandoc label exposed as an id on the rendered block or its wrapper.
+// Finds a Pandoc label on the block itself; only headings and math may use a
+// semantic wrapper because nested subfigure tables must not inherit figure ids.
 function getClickableLabel(element) {
-  const labeled = element.closest('[id^="sec:"], [id^="fig:"], [id^="tbl:"], [id^="eq:"]');
-  return labeled ? labeled.id : '';
+  const ownLabel = element.id && /^(?:sec|fig|tbl|eq):/.test(element.id) ? element.id : '';
+  if (ownLabel) return ownLabel;
+  if (element.matches('h1,h2,h3,h4,h5,h6') || element.matches('.math')) {
+    const wrapper = element.closest('[id^="sec:"], [id^="eq:"]');
+    return wrapper ? wrapper.id : '';
+  }
+  return '';
+}
+// Returns the caption owned by a figure rather than the first nested subfigure caption.
+function getFigureCaption(figure) {
+  return Array.from(figure.querySelectorAll('figcaption')).find(caption => caption.closest('figure') === figure) || null;
 }
 // Returns the nearest block ID assigned during source mapping.
 function getClickableBlockId(element) {
@@ -402,7 +414,7 @@ function handlePreviewClick(event) {
   const figure = target.closest('figure');
   if (figure) {
     const image = figure.querySelector('img');
-    const figureCaption = figure.querySelector('figcaption');
+    const figureCaption = getFigureCaption(figure);
     vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', blockId: getClickableBlockId(figure), label: getClickableLabel(figure), text: figureCaption ? getClickableText(figureCaption) : image ? image.getAttribute('alt') || '' : '', caption: figureCaption ? getClickableText(figureCaption) : '', alt: image ? image.getAttribute('alt') || '' : '' });
     return;
   }
