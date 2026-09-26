@@ -166,11 +166,34 @@ export class PapperMarkdownPreviewController {
       this.output.appendLine(`[HTML] Pandoc tool PATH entries: ${papperEnvironment.toolPathEntries.length ? papperEnvironment.toolPathEntries.join(path.delimiter) : "none"}`);
 
       const papperStartedAt = Date.now();
-      await runProcess(papperExecutable, args, {
-        cwd: project.rootUri.fsPath,
-        output: this.output,
-        env: papperEnvironment.env,
-      });
+      const slowOutputGapMs = 5000;
+      let lastPapperOutputAt = papperStartedAt;
+      let receivedPapperOutput = false;
+      /** Records long silent periods between Papper subprocess output chunks. */
+      const recordPapperOutput = (stream: "stdout" | "stderr") => {
+        const now = Date.now();
+        const outputGapMs = now - lastPapperOutputAt;
+        if (outputGapMs >= slowOutputGapMs) {
+          const gapStart = receivedPapperOutput ? "previous output" : "process start";
+          this.output.appendLine(`[HTML][timing] Papper subprocess output resumed after ${formatElapsedMs(outputGapMs)} (${gapStart}, ${stream})`);
+        }
+        lastPapperOutputAt = now;
+        receivedPapperOutput = true;
+      };
+      try {
+        await runProcess(papperExecutable, args, {
+          cwd: project.rootUri.fsPath,
+          output: this.output,
+          env: papperEnvironment.env,
+          onOutputChunk: recordPapperOutput,
+        });
+      } finally {
+        const finalOutputGapMs = Date.now() - lastPapperOutputAt;
+        if (finalOutputGapMs >= slowOutputGapMs) {
+          const silenceStart = receivedPapperOutput ? "last output" : "process start";
+          this.output.appendLine(`[HTML][timing] Papper subprocess silent for ${formatElapsedMs(finalOutputGapMs)} before exit (${silenceStart})`);
+        }
+      }
       this.output.appendLine(`[HTML][timing] Papper build (including Pandoc): ${formatElapsedMs(papperStartedAt)}`);
       if (buildId !== this.htmlPreviewBuildId) {
         return;

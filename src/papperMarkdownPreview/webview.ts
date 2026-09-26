@@ -106,6 +106,8 @@ export function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: 
 const vscode = acquireVsCodeApi();
 let suppressScroll = false;
 let scrollFrame = 0;
+let pendingSourceScrollTarget = null;
+let pendingSourceScrollTimer = 0;
 let lastSentRatio = -1;
 let lastSentHeadingKey = '';
 let lastSentOffsetRatio = 0;
@@ -347,20 +349,27 @@ async function replacePreviewHtml(html, token) {
 function applySourceScroll(message) {
   const root = document.documentElement;
   const max = Math.max(0, root.scrollHeight - window.innerHeight);
-  suppressScroll = true;
   const anchor = findPreviewHeadingAnchor(message);
   const requestedOffset = Number.isFinite(message.offsetRatio)
     ? Math.max(-1.5, Math.min(1.5, message.offsetRatio))
     : 0;
+  let targetTop;
   if (anchor) {
     const headingTop = window.scrollY + anchor.getBoundingClientRect().top;
-    const targetTop = headingTop - requestedOffset * window.innerHeight;
-    window.scrollTo({ top: Math.max(0, Math.min(max, targetTop)), behavior: 'auto' });
+    targetTop = headingTop - requestedOffset * window.innerHeight;
   } else {
     const ratio = Number.isFinite(message.ratio) ? Math.max(0, Math.min(1, message.ratio)) : 0;
-    window.scrollTo({ top: Math.max(0, Math.min(max, ratio * max - requestedOffset * window.innerHeight)), behavior: 'auto' });
+    targetTop = ratio * max - requestedOffset * window.innerHeight;
   }
-  window.setTimeout(() => { suppressScroll = false; }, 180);
+  targetTop = Math.max(0, Math.min(max, targetTop));
+  // Ignore only this programmatic position; a time window can swallow real user scrolling.
+  pendingSourceScrollTarget = targetTop;
+  if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
+  pendingSourceScrollTimer = window.setTimeout(() => {
+    pendingSourceScrollTarget = null;
+    pendingSourceScrollTimer = 0;
+  }, 300);
+  window.scrollTo({ top: targetTop, behavior: 'auto' });
 }
 window.addEventListener('message', event => {
   if (event.data && event.data.type === 'replacePreviewHtml' && typeof event.data.html === 'string') {
@@ -379,6 +388,15 @@ window.addEventListener('scroll', () => {
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = 0;
     if (suppressScroll) return;
+    if (pendingSourceScrollTarget !== null && Math.abs(window.scrollY - pendingSourceScrollTarget) < 2) {
+      pendingSourceScrollTarget = null;
+      if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
+      pendingSourceScrollTimer = 0;
+      return;
+    }
+    pendingSourceScrollTarget = null;
+    if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
+    pendingSourceScrollTimer = 0;
     const ratio = scrollRatio();
     const anchor = getVisibleHeadingAnchor();
     const headingKey = anchor ? (anchor.headingId || '') + '|' + (anchor.headingKey || '') : '';
