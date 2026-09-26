@@ -8,9 +8,9 @@
       "preLaunchTask": "bundle",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}/test_project",
+        "E:/research/article/1-3d-mesh",
         "--goto",
-        "${workspaceFolder}/test_project/README.md:1:1"
+        "E:/research/article/1-3d-mesh/manuscript.md:1:1"
       ]
     }
   ]
