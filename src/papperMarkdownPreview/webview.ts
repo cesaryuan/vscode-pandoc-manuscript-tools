@@ -291,20 +291,29 @@ function unwrapMathDelimiters(tex) {
 }
 // Renders raw Pandoc math spans that KaTeX has not already converted.
 async function renderKaTeX(root) {
-  const elements = Array.from(root.querySelectorAll('.math')).filter(element => element.tagName === 'SPAN' && !element.querySelector('.katex'));
+  const elements = Array.from(root.querySelectorAll('.math')).filter(element => element.tagName === 'SPAN');
   if (elements.length === 0) return;
-  vscode.postMessage({ type: 'previewKatexStarted', detail: 'math=' + elements.length });
+  const formulaEntries = elements.map(element => {
+    const annotation = element.querySelector('annotation[encoding="application/x-tex"], annotation');
+    const tex = element.getAttribute('data-pmt-tex') || annotation?.textContent || unwrapMathDelimiters(element.textContent || '');
+    return { element, tex };
+  });
+  // Keep the pre-render TeX because KaTeX replaces the span text with nested
+  // glyph markup, which is not stable enough for source navigation matching.
+  formulaEntries.forEach(({ element, tex }) => element.setAttribute('data-pmt-tex', tex));
+  const renderableEntries = formulaEntries.filter(({ element }) => !element.querySelector('.katex'));
+  if (renderableEntries.length === 0) return;
+  vscode.postMessage({ type: 'previewKatexStarted', detail: 'math=' + renderableEntries.length });
   let katex;
   try {
     katex = await waitForKaTeX();
   } catch (error) {
-    vscode.postMessage({ type: 'previewKatexUnavailable', detail: 'math=' + elements.length + ';error=' + String(error) });
+    vscode.postMessage({ type: 'previewKatexUnavailable', detail: 'math=' + renderableEntries.length + ';error=' + String(error) });
     return;
   }
   let failures = 0;
-  for (const element of elements) {
+  for (const { element, tex } of renderableEntries) {
     try {
-      const tex = unwrapMathDelimiters(element.textContent || '');
       katex.render(tex, element, {
         displayMode: element.classList.contains('display'),
         throwOnError: false
@@ -316,6 +325,65 @@ async function renderKaTeX(root) {
   }
   vscode.postMessage({ type: 'previewKatexFinished', detail: 'katex=' + root.querySelectorAll('.katex').length + ';failures=' + failures });
 }
+// Returns visible text while excluding rendered formulas that have a separate
+// TeX source locator.
+function getClickableText(element) {
+  const clone = element.cloneNode(true);
+  clone.querySelectorAll('.math, .katex, .citation, .header-section-number, .header-section-name, script, style').forEach(child => child.remove());
+  return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+}
+// Finds a Pandoc label exposed as an id on the rendered block or its wrapper.
+function getClickableLabel(element) {
+  const labeled = element.closest('[id^="sec:"], [id^="fig:"], [id^="tbl:"], [id^="eq:"]');
+  return labeled ? labeled.id : '';
+}
+// Emits a source-navigation request for a clicked rendered block.
+function handlePreviewClick(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || target.closest('a, button, input, select, textarea, summary')) return;
+  const caption = target.closest('figcaption, caption');
+  if (caption) {
+    const owner = caption.closest('figure, table');
+    const image = owner ? owner.querySelector('img') : null;
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'caption', label: owner ? getClickableLabel(owner) : '', text: getClickableText(caption), caption: getClickableText(caption), alt: image ? image.getAttribute('alt') || '' : '' });
+    return;
+  }
+  const heading = target.closest('h1, h2, h3, h4, h5, h6');
+  if (heading) {
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'heading', label: getClickableLabel(heading), text: getClickableText(heading) });
+    return;
+  }
+  const math = target.closest('[data-pmt-tex], .math');
+  if (math) {
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'math', label: getClickableLabel(math), tex: math.getAttribute('data-pmt-tex') || '', text: getClickableText(math), display: math.classList.contains('display') });
+    return;
+  }
+  const figure = target.closest('figure');
+  if (figure) {
+    const image = figure.querySelector('img');
+    const figureCaption = figure.querySelector('figcaption');
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', label: getClickableLabel(figure), text: figureCaption ? getClickableText(figureCaption) : image ? image.getAttribute('alt') || '' : '', caption: figureCaption ? getClickableText(figureCaption) : '', alt: image ? image.getAttribute('alt') || '' : '' });
+    return;
+  }
+  const table = target.closest('table');
+  if (table) {
+    const tableCaption = table.querySelector('caption');
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'table', label: getClickableLabel(table), text: getClickableText(table), caption: tableCaption ? getClickableText(tableCaption) : '' });
+    return;
+  }
+  const image = target.closest('img');
+  if (image) {
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', label: getClickableLabel(image), text: image.getAttribute('alt') || '', alt: image.getAttribute('alt') || '' });
+    return;
+  }
+  const paragraph = target.closest('p');
+  if (paragraph) {
+    const mathInParagraph = paragraph.querySelector('.math, [data-pmt-tex]');
+    if (mathInParagraph && target === mathInParagraph) return;
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'paragraph', label: getClickableLabel(paragraph), text: getClickableText(paragraph) });
+  }
+}
+document.addEventListener('click', handlePreviewClick);
 async function replacePreviewHtml(html, token) {
   const previousScrollTop = getScrollTop();
   vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
@@ -450,7 +518,12 @@ window.addEventListener('scroll', handlePreviewScrollEvent, { passive: true });
 document.addEventListener('scroll', handlePreviewScrollEvent, { passive: true, capture: true });
 const sendReady = () => {
   if (readySent) return;
-  ensurePreviewContent();
+  const content = ensurePreviewContent();
+  // The standalone Papper page may have rendered KaTeX before this bridge;
+  // record annotation TeX immediately so clicks still locate source math.
+  if (content) {
+    void renderKaTeX(content).catch(error => vscode.postMessage({ type: 'previewKatexFailed', detail: 'initial=' + String(error) }));
+  }
   readySent = true;
   vscode.postMessage({ type: 'ready' });
   if (pendingSourceScroll) {

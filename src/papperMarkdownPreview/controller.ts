@@ -5,6 +5,7 @@ import { CAN_BUILD_HTML_CONTEXT } from "../constants";
 import { cacheHtmlMetafileImages } from "../htmlPreviewResourceCache";
 import { findPandocManuscriptProject, isPapperBuildAvailable, pathExists, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "../papperBuildUtils";
 import { isBuildableMarkdownDocument } from "../vscodeUtils";
+import { HtmlPreviewClickNavigation, type HtmlPreviewClickMessage } from "./clickNavigation";
 import { HtmlPreviewScrollSync, type HtmlPreviewMessage } from "./scrollSync";
 import { countHtmlElements, createNonce, formatElapsedMs, getExpectedHtmlUri, injectHtmlPreviewBridge, removeTemporaryMarkdown, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
 
@@ -22,11 +23,13 @@ export class PapperMarkdownPreviewController {
   private htmlPreviewUpdateToken = 0;
   private htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
   private readonly scrollSync: HtmlPreviewScrollSync;
+  private readonly clickNavigation: HtmlPreviewClickNavigation;
 
   /** Creates a preview controller that writes build progress to the shared output channel. */
   constructor(private readonly output: vscode.OutputChannel, verboseHtmlBuilds = false) {
     this.htmlPreviewVerbose = verboseHtmlBuilds;
     this.scrollSync = new HtmlPreviewScrollSync(output);
+    this.clickNavigation = new HtmlPreviewClickNavigation(output);
   }
 
   /** Clears the preview refresh timer and closes its WebView panel. */
@@ -258,7 +261,7 @@ export class PapperMarkdownPreviewController {
     this.htmlPreviewPanel = panel;
     this.htmlPreviewWebviewReady = false;
     this.output.appendLine(`[HTML][scroll] preview panel opened for ${document.uri.fsPath}`);
-    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage) => {
+    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage & Partial<HtmlPreviewClickMessage>) => {
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
         this.output.appendLine("[HTML][scroll] preview WebView ready");
@@ -289,6 +292,13 @@ export class PapperMarkdownPreviewController {
       }
       if (message.type === "scrollSyncTrace") {
         this.output.appendLine(`[HTML][scroll] WebView ${message.detail || "trace"}`);
+        return;
+      }
+      if (message.type === "previewBlockClick") {
+        this.output.appendLine(`[HTML][click] preview block type=${message.blockType || "unknown"} label=${message.label || "none"}`);
+        void this.clickNavigation.handlePreviewClick(this.htmlPreviewDocumentUri, message as HtmlPreviewClickMessage).catch((error) => {
+          this.output.appendLine(`[HTML][click] source reveal failed: ${String(error)}`);
+        });
         return;
       }
       if (message.type === "previewScroll") {

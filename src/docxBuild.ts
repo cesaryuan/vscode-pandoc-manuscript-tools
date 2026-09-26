@@ -131,10 +131,16 @@ export class PandocBuildRunner {
     try {
       await fs.writeFile(markdownMirrorPath, document.getText(), "utf8");
       const environment = await preparePapperEnvironment(papperExecutable);
-      await runProcess(papperExecutable, ["build", "json", markdownRelativePath, "--output-file", astPath], {
-        cwd: project.rootUri.fsPath,
-        env: environment.env,
-      });
+      const jsonBuildStartedAt = Date.now();
+      this.output.appendLine(`[Inlay hints][timing] Papper JSON build started: ${path.basename(document.uri.fsPath)} version=${document.version}`);
+      try {
+        await runProcess(papperExecutable, ["build", "json", markdownRelativePath, "--output-file", astPath], {
+          cwd: project.rootUri.fsPath,
+          env: environment.env,
+        });
+      } finally {
+        this.output.appendLine(`[Inlay hints][timing] Papper JSON build ended: ${path.basename(document.uri.fsPath)} version=${document.version} duration=${Date.now() - jsonBuildStartedAt} ms`);
+      }
       return JSON.parse(await fs.readFile(astPath, "utf8")) as unknown;
     } finally {
       await fs.rm(markdownMirrorPath, { force: true }).catch((error) => {
