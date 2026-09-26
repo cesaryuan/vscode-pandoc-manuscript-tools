@@ -169,7 +169,7 @@ export class PapperMarkdownPreviewController {
       const slowOutputGapMs = 5000;
       let lastPapperOutputAt = papperStartedAt;
       let receivedPapperOutput = false;
-      /** Records long silent periods between Papper subprocess output chunks. */
+      /** Locates intermittent slow builds that Papper's untimestamped verbose output cannot explain. */
       const recordPapperOutput = (stream: "stdout" | "stderr") => {
         const now = Date.now();
         const outputGapMs = now - lastPapperOutputAt;
