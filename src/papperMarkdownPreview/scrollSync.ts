@@ -25,6 +25,20 @@ export class HtmlPreviewScrollSync {
   private sourceHeadings: HtmlPreviewSourceHeading[] = [];
   private sourceHeadingsUri: string | undefined;
   private sourceHeadingsVersion = -1;
+  private lastTraceAt = 0;
+
+  /** Creates a scroll synchronizer with the extension output channel for diagnostics. */
+  constructor(private readonly output: vscode.OutputChannel) {}
+
+  /** Writes bounded scroll diagnostics so a rapid wheel event cannot flood Output. */
+  private trace(message: string, force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastTraceAt < 500) {
+      return;
+    }
+    this.lastTraceAt = now;
+    this.output.appendLine(`[HTML][scroll] ${message}`);
+  }
 
   /** Resets source-to-preview deduplication before a fresh WebView document loads. */
   resetSourcePosition() {
@@ -36,13 +50,28 @@ export class HtmlPreviewScrollSync {
   /** Sends the editor's current viewport or cursor position to its matching preview. */
   syncFromEditor(panel: vscode.WebviewPanel | undefined, previewUri: vscode.Uri | undefined, editor: vscode.TextEditor, selectedPosition?: vscode.Position) {
     const hasSelection = selectedPosition !== undefined;
+    this.trace(`editor event direction=to-preview line=${(selectedPosition?.line ?? editor.visibleRanges[0]?.start.line ?? -1) + 1} selected=${hasSelection} panel=${Boolean(panel)} previewUri=${previewUri?.fsPath || "none"}`);
     // A deliberate cursor change must win over feedback suppression from preview scrolling.
-    if (!panel || !previewUri || !isSameUri(previewUri, editor.document.uri) || (!hasSelection && (this.syncing || Date.now() < this.scrollSyncUntil))) {
+    if (!panel) {
+      this.trace("editor event skipped: preview panel is missing");
+      return;
+    }
+    if (!previewUri) {
+      this.trace("editor event skipped: preview document URI is missing");
+      return;
+    }
+    if (!isSameUri(previewUri, editor.document.uri)) {
+      this.trace(`editor event skipped: URI mismatch editor=${editor.document.uri.fsPath} preview=${previewUri.fsPath}`);
+      return;
+    }
+    if (!hasSelection && (this.syncing || Date.now() < this.scrollSyncUntil)) {
+      this.trace(`editor event skipped: feedback suppression active syncing=${this.syncing} until=${this.scrollSyncUntil}`);
       return;
     }
 
     const visibleRange = editor.visibleRanges[0];
     if (!visibleRange) {
+      this.trace("editor event skipped: editor has no visible range");
       return;
     }
     const sourceLine = selectedPosition?.line ?? visibleRange.start.line;
@@ -77,18 +106,25 @@ export class HtmlPreviewScrollSync {
     this.lastSourceRatio = ratio;
     this.lastSourceAnchorKey = anchorKey;
     this.lastSourceOffset = offsetRatio;
-    void panel.webview.postMessage({
+    const message = {
       type: "sourceScroll",
       ratio,
       headingId: heading?.label,
       headingKey: heading?.key,
       offsetRatio,
+    };
+    this.trace(`editor -> preview send line=${sourceLine + 1} ratio=${ratio.toFixed(3)} heading=${heading?.label || heading?.key || "none"} offset=${offsetRatio.toFixed(3)} selected=${hasSelection}`, true);
+    void panel.webview.postMessage(message).then((delivered) => {
+      this.trace(`editor -> preview message ${delivered ? "delivered" : "rejected"}`, true);
+    }, (error) => {
+      this.trace(`editor -> preview message failed: ${String(error)}`, true);
     });
   }
 
   /** Reveals the source heading reported by the preview, with a global ratio fallback. */
   handlePreviewScroll(previewUri: vscode.Uri | undefined, message: HtmlPreviewMessage) {
     if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !Number.isFinite(message.ratio) || !previewUri) {
+      this.trace(`preview event ignored: invalid message type=${message.type || "none"} ratio=${String(message.ratio)} previewUri=${previewUri?.fsPath || "none"}`, true);
       return;
     }
     const now = Date.now();
@@ -98,6 +134,7 @@ export class HtmlPreviewScrollSync {
     this.lastPreviewMessageAt = now;
     const editor = vscode.window.visibleTextEditors.find((candidate) => isSameUri(candidate.document.uri, previewUri));
     if (!editor) {
+      this.trace(`preview -> editor skipped: no visible editor for ${previewUri.fsPath}`, true);
       return;
     }
     const ratio = Math.max(0, Math.min(1, message.ratio));
@@ -116,8 +153,10 @@ export class HtmlPreviewScrollSync {
       : approximateLine;
     const targetLine = Math.max(0, Math.min(editor.document.lineCount - 1, line));
     if (visibleRange && Math.abs(visibleRange.start.line - targetLine) <= 1) {
+      this.trace(`preview -> editor already aligned targetLine=${targetLine + 1}`, true);
       return;
     }
+    this.trace(`preview -> editor reveal line=${targetLine + 1} ratio=${ratio.toFixed(3)} heading=${message.headingId || message.headingKey || "none"} offset=${offsetRatio.toFixed(3)}`, true);
     this.syncing = true;
     this.scrollSyncUntil = now + 220;
     editor.revealRange(new vscode.Range(targetLine, 0, targetLine, 0), vscode.TextEditorRevealType.AtTop);

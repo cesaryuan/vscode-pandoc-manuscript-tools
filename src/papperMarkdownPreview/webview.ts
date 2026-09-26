@@ -102,10 +102,13 @@ export function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, s
 export function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
   const noncePreparedHtml = applyHtmlPreviewKaTeXNonce(html, nonce);
   const csp = buildHtmlPreviewCsp(noncePreparedHtml, nonce, cspSource);
-  const bridge = `<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
+  // String.raw preserves regex backslashes in the embedded browser script.
+  const bridge = String.raw`<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+vscode.postMessage({ type: 'scrollSyncTrace', detail: 'bridge loaded' });
 let suppressScroll = false;
 let scrollFrame = 0;
+let lastScrollTraceAt = 0;
 let pendingSourceScrollTarget = null;
 let pendingSourceScrollTimer = 0;
 let lastSentRatio = -1;
@@ -136,20 +139,53 @@ function getPreviewHeadings() {
   }
   return previewHeadings;
 }
+// Returns the element that owns the document's vertical scroll position.
+function getScrollElement() {
+  return document.scrollingElement || document.documentElement || document.body;
+}
+// Reads scrollTop from the active document scroller, with the viewport as a fallback.
+function getScrollTop() {
+  const scroller = getScrollElement();
+  return scroller ? scroller.scrollTop : window.scrollY || 0;
+}
+// Returns the scrollable document height used by both directions of synchronization.
+function getScrollHeight() {
+  const scroller = getScrollElement();
+  return scroller ? scroller.scrollHeight : document.documentElement.scrollHeight;
+}
+// Returns the viewport height used for heading offsets and ratio calculations.
+function getViewportHeight() {
+  return window.innerHeight || document.documentElement.clientHeight || 1;
+}
+// Sets the active document scroller without assuming that the viewport owns scrolling.
+function setScrollTop(top) {
+  const scroller = getScrollElement();
+  if (scroller && typeof scroller.scrollTo === 'function') {
+    scroller.scrollTo({ top, behavior: 'auto' });
+    return;
+  }
+  window.scrollTo({ top, behavior: 'auto' });
+}
+// Emits at most four WebView scroll diagnostics per second to keep Output usable.
+function traceScroll(message) {
+  const now = Date.now();
+  if (now - lastScrollTraceAt < 250) return;
+  lastScrollTraceAt = now;
+  vscode.postMessage({ type: 'scrollSyncTrace', detail: message });
+}
 function scrollRatio() {
-  const root = document.documentElement;
-  const max = Math.max(1, root.scrollHeight - window.innerHeight);
-  return Math.max(0, Math.min(1, window.scrollY / max));
+  const max = Math.max(1, getScrollHeight() - getViewportHeight());
+  return Math.max(0, Math.min(1, getScrollTop() / max));
 }
 // Makes Markdown source headings comparable to their rendered text content.
 function normalizeHeadingKey(value) {
   return String(value || '')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/\\x60+([^\\x60]+)\\x60+/g, '$1')
+    .replace(/\x60+([^\x60]+)\x60+/g, '$1')
     .replace(/<[^>]*>/g, ' ')
     .replace(/\{[^}]*\}/g, ' ')
-    .replace(/\\\\(.)/g, '$1')
+    .replace(/\\(.)/g, '$1')
     .replace(/[*_~]/g, '')
     .replace(/^\s*\d+(?:\.\d+)*[.)]?\s+/, '')
     .normalize('NFKC')
@@ -170,7 +206,7 @@ function getVisibleHeadingAnchor() {
       nearestDistance = distance;
     }
   }
-  if (!nearest || nearestDistance > window.innerHeight * 1.25) return null;
+  if (!nearest || nearestDistance > getViewportHeight() * 1.25) return null;
   const text = nearest.cloneNode(true);
   text.querySelectorAll('.header-section-number, .header-section-name').forEach(element => element.remove());
   const headingKey = normalizeHeadingKey(text.textContent || '');
@@ -179,7 +215,7 @@ function getVisibleHeadingAnchor() {
   return {
     headingId,
     headingKey,
-    offsetRatio: Math.max(-1.25, Math.min(1.25, nearest.getBoundingClientRect().top / Math.max(1, window.innerHeight)))
+    offsetRatio: Math.max(-1.25, Math.min(1.25, nearest.getBoundingClientRect().top / getViewportHeight()))
   };
 }
 // Resolves a source anchor, preferring Pandoc IDs and disambiguating repeated titles by page position.
@@ -192,7 +228,7 @@ function findPreviewHeadingAnchor(message) {
   }
   const key = normalizeHeadingKey(message.headingKey || '');
   if (!key) return null;
-  const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  const max = Math.max(1, getScrollHeight() - getViewportHeight());
   const targetRatio = Math.max(0, Math.min(1, Number(message.ratio) || 0));
   let nearest = null;
   let nearestDistance = Number.POSITIVE_INFINITY;
@@ -200,7 +236,7 @@ function findPreviewHeadingAnchor(message) {
     const text = heading.cloneNode(true);
     text.querySelectorAll('.header-section-number, .header-section-name').forEach(element => element.remove());
     if (normalizeHeadingKey(text.textContent || '') !== key) continue;
-    const pageRatio = (window.scrollY + heading.getBoundingClientRect().top) / max;
+    const pageRatio = (getScrollTop() + heading.getBoundingClientRect().top) / max;
     const distance = Math.abs(pageRatio - targetRatio);
     if (distance < nearestDistance) {
       nearest = heading;
@@ -281,7 +317,7 @@ async function renderKaTeX(root) {
   vscode.postMessage({ type: 'previewKatexFinished', detail: 'katex=' + root.querySelectorAll('.katex').length + ';failures=' + failures });
 }
 async function replacePreviewHtml(html, token) {
-  const previousScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+  const previousScrollTop = getScrollTop();
   vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
   let staging = null;
   try {
@@ -314,7 +350,7 @@ async function replacePreviewHtml(html, token) {
     previewHeadings = null;
     removeVscodeDefaultStyles();
     const restoreScrollTop = () => {
-      window.scrollTo(0, previousScrollTop);
+      setScrollTop(previousScrollTop);
       lastSentRatio = scrollRatio();
       const anchor = getVisibleHeadingAnchor();
       lastSentHeadingKey = anchor ? (anchor.headingId || '') + '|' + (anchor.headingKey || '') : '';
@@ -347,19 +383,18 @@ async function replacePreviewHtml(html, token) {
 }
 // Applies the latest source position after generated preview headings are available.
 function applySourceScroll(message) {
-  const root = document.documentElement;
-  const max = Math.max(0, root.scrollHeight - window.innerHeight);
+  const max = Math.max(0, getScrollHeight() - getViewportHeight());
   const anchor = findPreviewHeadingAnchor(message);
   const requestedOffset = Number.isFinite(message.offsetRatio)
     ? Math.max(-1.5, Math.min(1.5, message.offsetRatio))
     : 0;
   let targetTop;
   if (anchor) {
-    const headingTop = window.scrollY + anchor.getBoundingClientRect().top;
-    targetTop = headingTop - requestedOffset * window.innerHeight;
+    const headingTop = getScrollTop() + anchor.getBoundingClientRect().top;
+    targetTop = headingTop - requestedOffset * getViewportHeight();
   } else {
     const ratio = Number.isFinite(message.ratio) ? Math.max(0, Math.min(1, message.ratio)) : 0;
-    targetTop = ratio * max - requestedOffset * window.innerHeight;
+    targetTop = ratio * max - requestedOffset * getViewportHeight();
   }
   targetTop = Math.max(0, Math.min(max, targetTop));
   // Ignore only this programmatic position; a time window can swallow real user scrolling.
@@ -369,7 +404,7 @@ function applySourceScroll(message) {
     pendingSourceScrollTarget = null;
     pendingSourceScrollTimer = 0;
   }, 300);
-  window.scrollTo({ top: targetTop, behavior: 'auto' });
+  setScrollTop(targetTop);
 }
 window.addEventListener('message', event => {
   if (event.data && event.data.type === 'replacePreviewHtml' && typeof event.data.html === 'string') {
@@ -377,18 +412,21 @@ window.addEventListener('message', event => {
     return;
   }
   if (!event.data || event.data.type !== 'sourceScroll') return;
+  vscode.postMessage({ type: 'scrollSyncTrace', detail: 'sourceScroll received ready=' + readySent });
   if (!readySent) {
     pendingSourceScroll = event.data;
     return;
   }
   applySourceScroll(event.data);
 });
-window.addEventListener('scroll', () => {
+// Handles scroll events from either the viewport or a nested document scroller.
+function handlePreviewScrollEvent() {
   if (suppressScroll || scrollFrame) return;
+  traceScroll('scroll event observed top=' + Math.round(getScrollTop()));
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = 0;
     if (suppressScroll) return;
-    if (pendingSourceScrollTarget !== null && Math.abs(window.scrollY - pendingSourceScrollTarget) < 2) {
+    if (pendingSourceScrollTarget !== null && Math.abs(getScrollTop() - pendingSourceScrollTarget) < 2) {
       pendingSourceScrollTarget = null;
       if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
       pendingSourceScrollTimer = 0;
@@ -406,7 +444,10 @@ window.addEventListener('scroll', () => {
     lastSentOffsetRatio = anchor ? anchor.offsetRatio : 0;
     vscode.postMessage({ type: 'previewScroll', ratio, ...(anchor || {}) });
   });
-}, { passive: true });
+}
+window.addEventListener('scroll', handlePreviewScrollEvent, { passive: true });
+// Scroll events on the document do not always bubble to window in WebView Chromium.
+document.addEventListener('scroll', handlePreviewScrollEvent, { passive: true, capture: true });
 const sendReady = () => {
   if (readySent) return;
   ensurePreviewContent();

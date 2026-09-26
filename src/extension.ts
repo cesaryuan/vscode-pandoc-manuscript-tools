@@ -12,7 +12,7 @@ import { ImagePreviewSidePanel } from "./imagePreview/sidePreview";
 import { ImageDirectoryPreview } from "./imageDirectoryPreview";
 import { MetafilePreviewCustomEditorProvider } from "./imagePreview/customEditor";
 import { getConfiguration } from "./configuration";
-import { isPandocDocument } from "./vscodeUtils";
+import { isBuildableMarkdownDocument, isPandocDocument } from "./vscodeUtils";
 import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocFoldingRangeProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
 import { NumberingInlayHints } from "./numberingInlayHints";
@@ -112,7 +112,11 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
-    markdownPreview.syncFromEditor(event.textEditor);
+    // Output channels and preview documents also emit visible-range events;
+    // only a saved Markdown source can drive Papper HTML scroll sync.
+    if (isBuildableMarkdownDocument(event.textEditor.document)) {
+      markdownPreview.syncFromEditor(event.textEditor);
+    }
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
@@ -122,7 +126,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
     const activeSelection = event.selections[0];
-    if (activeSelection && event.kind !== vscode.TextEditorSelectionChangeKind.Command) {
+    if (activeSelection && event.kind !== vscode.TextEditorSelectionChangeKind.Command && isBuildableMarkdownDocument(event.textEditor.document)) {
       markdownPreview.syncFromEditor(event.textEditor, activeSelection.active);
     }
     inlineFoldController.updateEditor(event.textEditor);

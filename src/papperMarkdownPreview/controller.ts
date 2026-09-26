@@ -21,11 +21,12 @@ export class PapperMarkdownPreviewController {
   private htmlPreviewWebviewReady = false;
   private htmlPreviewUpdateToken = 0;
   private htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
-  private readonly scrollSync = new HtmlPreviewScrollSync();
+  private readonly scrollSync: HtmlPreviewScrollSync;
 
   /** Creates a preview controller that writes build progress to the shared output channel. */
   constructor(private readonly output: vscode.OutputChannel, verboseHtmlBuilds = false) {
     this.htmlPreviewVerbose = verboseHtmlBuilds;
+    this.scrollSync = new HtmlPreviewScrollSync(output);
   }
 
   /** Clears the preview refresh timer and closes its WebView panel. */
@@ -118,6 +119,9 @@ export class PapperMarkdownPreviewController {
 
   /** Sends the editor viewport or active cursor position to the open preview. */
   syncFromEditor(editor: vscode.TextEditor, selectedPosition?: vscode.Position) {
+    if (!isBuildableMarkdownDocument(editor.document)) {
+      return;
+    }
     this.scrollSync.syncFromEditor(this.htmlPreviewPanel, this.htmlPreviewDocumentUri, editor, selectedPosition);
   }
 
@@ -253,10 +257,17 @@ export class PapperMarkdownPreviewController {
     );
     this.htmlPreviewPanel = panel;
     this.htmlPreviewWebviewReady = false;
+    this.output.appendLine(`[HTML][scroll] preview panel opened for ${document.uri.fsPath}`);
     panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage) => {
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
+        this.output.appendLine("[HTML][scroll] preview WebView ready");
         this.scrollSync.resetSourcePosition();
+        const sourceEditor = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri));
+        if (sourceEditor) {
+          this.output.appendLine("[HTML][scroll] synchronizing editor position after WebView ready");
+          this.scrollSync.syncFromEditor(panel, this.htmlPreviewDocumentUri, sourceEditor);
+        }
         // The host assigns the first complete HTML before the Webview emits
         // `ready`; rebuilding here would duplicate the initial build.
         return;
@@ -275,6 +286,13 @@ export class PapperMarkdownPreviewController {
           }
         }
         return;
+      }
+      if (message.type === "scrollSyncTrace") {
+        this.output.appendLine(`[HTML][scroll] WebView ${message.detail || "trace"}`);
+        return;
+      }
+      if (message.type === "previewScroll") {
+        this.output.appendLine(`[HTML][scroll] preview -> host ratio=${typeof message.ratio === "number" ? message.ratio.toFixed(3) : "invalid"} heading=${message.headingId || message.headingKey || "none"} offset=${typeof message.offsetRatio === "number" ? message.offsetRatio.toFixed(3) : "none"}`);
       }
       this.scrollSync.handlePreviewScroll(this.htmlPreviewDocumentUri, message);
     });
