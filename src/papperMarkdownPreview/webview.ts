@@ -207,10 +207,11 @@ function findPreviewHeadingAnchor(message) {
   }
   return nearest;
 }
-// VS Code marks its injected style as #_defaultStyles; keep generated preview styles intact.
-const removeVscodeDefaultStyles = () => {
+// VS Code may inject #_defaultStyles after the preview loads; remove it so it
+// cannot override Papper's generated styles, including after incremental updates.
+function removeVscodeDefaultStyles() {
   document.querySelectorAll('style#_defaultStyles').forEach(style => style.remove());
-};
+}
 const styleObserver = new MutationObserver(removeVscodeDefaultStyles);
 styleObserver.observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once: true });
