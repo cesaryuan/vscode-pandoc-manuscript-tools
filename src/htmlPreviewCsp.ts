@@ -1,21 +1,41 @@
 /**
- * Builds the preview Content Security Policy and adds only HTTPS origins referenced
- * by the generated HTML, including MathJax script origins used for its web fonts.
+ * Adds the preview nonce to Pandoc's inline KaTeX initializer.
+ *
+ * Pandoc emits this script for `--math-method=katex`; the WebView CSP would
+ * block it unless the generated initializer receives the bridge nonce.
+ *
+ * @param html Generated Papper HTML.
+ * @param nonce Preview script nonce.
+ */
+export function applyHtmlPreviewKaTeXNonce(html: string, nonce: string) {
+  return html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (tag, attributes: string, content: string) => {
+    const hasSource = /(?:^|\s)src\s*=/i.test(attributes);
+    const isKaTeXInitializer = /\bkatex\.render\s*\(/i.test(content)
+      && /getElementsByClassName\s*\(\s*["']math["']\s*\)/i.test(content);
+    if (hasSource || !isKaTeXInitializer) {
+      return tag;
+    }
+    const existingNonce = /(?:^|\s)nonce\s*=\s*(["'])(.*?)\1/i;
+    if (existingNonce.test(attributes)) {
+      const updatedAttributes = attributes.replace(/(\snonce\s*=\s*)(["']).*?\2/i, (_match, prefix: string) => `${prefix}"${nonce}"`);
+      return `<script${updatedAttributes}>${content}</script>`;
+    }
+    return `<script${attributes} nonce="${nonce}">${content}</script>`;
+  });
+}
+
+/**
+ * Builds the preview Content Security Policy from resources referenced by the generated HTML.
  *
  * @param html Generated Papper HTML after local resource rewriting.
  * @param nonce Nonce for the preview scroll bridge script.
  * @param cspSource VS Code Webview resource source.
  */
 export function buildHtmlPreviewCsp(html: string, nonce: string, cspSource: string) {
-  const mathJaxFontOrigins = collectMathJaxFontOrigins(html);
-  const scriptOrigins = [...new Set([...collectExternalScriptOrigins(html), ...mathJaxFontOrigins])].sort();
+  const scriptOrigins = collectExternalScriptOrigins(html);
   const styleOrigins = collectExternalStylesheetOrigins(html);
-  const fontOrigins = [...new Set([...scriptOrigins, ...styleOrigins, ...mathJaxFontOrigins])];
-  // MathJax 4 loads extension and dynamic font chunks through fetch/import()
-  // after the initial script has loaded. Those requests are not covered by
-  // script-src or font-src alone, so the WebView must permit HTTPS connections
-  // for the same external-resource scenario supported by the MPE preview.
-  const externalResourceSources = [...new Set(["https:", ...scriptOrigins, ...styleOrigins, ...mathJaxFontOrigins])];
+  const fontOrigins = [...new Set([...scriptOrigins, ...styleOrigins])];
+  const externalResourceSources = [...new Set(["https:", ...scriptOrigins, ...styleOrigins])];
 
   return [
     "default-src 'none'",
@@ -29,57 +49,6 @@ export function buildHtmlPreviewCsp(html: string, nonce: string, cspSource: stri
     `connect-src ${joinSources([cspSource, "data:", "blob:", ...externalResourceSources])}`,
     `media-src ${joinSources([cspSource, "data:", "blob:"])}`,
   ].join("; ") + ";";
-}
-
-/**
- * Adds the preview nonce to inline MathJax configuration blocks so CSP allows
- * font-path settings inserted by Pandoc before its external MathJax component.
- *
- * @param html Generated HTML.
- * @param nonce Preview script nonce.
- */
-export function applyHtmlPreviewMathJaxNonce(html: string, nonce: string) {
-  return html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (tag, attributes: string, content: string) => {
-    const hasSource = /(?:^|\s)src\s*=/i.test(attributes);
-    const isMathJaxConfiguration = /(?:window|globalThis)\s*\.\s*MathJax\s*=|\bMathJax\s*=/i.test(content);
-    if (hasSource || !isMathJaxConfiguration) {
-      return tag;
-    }
-
-    const existingNonce = /(?:^|\s)nonce\s*=\s*(["'])(.*?)\1/i;
-    if (existingNonce.test(attributes)) {
-      const updatedAttributes = attributes.replace(/(\snonce\s*=\s*)(["']).*?\2/i, (_match, prefix: string) => {
-        return `${prefix}"${nonce}"`;
-      });
-      return `<script${updatedAttributes}>${content}</script>`;
-    }
-
-    return `<script${attributes} nonce="${nonce}">${content}</script>`;
-  });
-}
-
-/**
- * Finds MathJax's configured remote font package origin for its dynamically loaded font scripts.
- *
- * @param html Generated HTML containing the optional MathJax configuration block.
- */
-function collectMathJaxFontOrigins(html: string) {
-  const origins = new Set<string>();
-  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
-    const attributes = match[1];
-    const content = match[2];
-    if (/(?:^|\s)src\s*=/i.test(attributes) || !/\bMathJax\s*=/.test(content)) {
-      continue;
-    }
-
-    for (const fontPath of content.matchAll(/\bfontPath\s*:\s*(["'])(.*?)\1/gi)) {
-      const origin = getHttpsOrigin(fontPath[2]);
-      if (origin) {
-        origins.add(origin);
-      }
-    }
-  }
-  return [...origins].sort();
 }
 
 /**

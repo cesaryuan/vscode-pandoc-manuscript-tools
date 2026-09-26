@@ -6,7 +6,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
-import { applyHtmlPreviewMathJaxNonce, buildHtmlPreviewCsp } from "./htmlPreviewCsp";
+import { applyHtmlPreviewKaTeXNonce, buildHtmlPreviewCsp } from "./htmlPreviewCsp";
 import { cacheHtmlMetafileImages } from "./htmlPreviewResourceCache";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
@@ -454,15 +454,14 @@ export class PandocBuildRunner {
         this.htmlPreviewWebviewReady = true;
         this.htmlPreviewLastSourceRatio = -1;
         // The host assigns the first complete HTML before the Webview emits
-        // `ready`; rebuilding here duplicates that build and can start a
-        // second MathJax queue before the first one settles.
+        // `ready`; rebuilding here would duplicate the initial build.
         return;
       }
-      if (message.type === "previewMathTimeout" || message.type === "previewMathFailed" || message.type === "previewMathUnavailable") {
+      if (message.type === "previewKatexFailed" || message.type === "previewKatexUnavailable") {
         this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
         return;
       }
-      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed" || message.type === "previewMathStarted" || message.type === "previewMathCleared" || message.type === "previewMathTypesetCalled" || message.type === "previewMathFinished") {
+      if (message.type === "previewUpdateStarted" || message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed" || message.type === "previewKatexStarted" || message.type === "previewKatexFinished") {
         this.output.appendLine(`[HTML][webview] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
         if (message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed") {
           const pending = this.htmlPreviewPendingUpdate;
@@ -609,10 +608,9 @@ export class PandocBuildRunner {
 async function waitForWebviewUpdate(confirmation: Promise<boolean>) {
   return Promise.race([
     confirmation,
-    // MathJax v4 may fetch dynamic font chunks before the staged DOM can be
-    // committed. Give the in-place renderer enough time to finish; a timeout
-    // still protects the build queue from an unavailable external resource.
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
+    // KaTeX renders synchronously after its page script loads, so a short bound
+    // is enough to release the build queue if that external script is blocked.
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
   ]);
 }
 
@@ -1428,7 +1426,7 @@ function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, sourceDi
  * @param cspSource Webview CSP source token.
  */
 function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
-  const noncePreparedHtml = applyHtmlPreviewMathJaxNonce(html, nonce);
+  const noncePreparedHtml = applyHtmlPreviewKaTeXNonce(html, nonce);
   const csp = buildHtmlPreviewCsp(noncePreparedHtml, nonce, cspSource);
   const bridge = `<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
@@ -1454,7 +1452,7 @@ function scrollRatio() {
   const max = Math.max(1, root.scrollHeight - window.innerHeight);
   return Math.max(0, Math.min(1, window.scrollY / max));
 }
-// VS Code marks its injected style as #_defaultStyles; keep MathJax's runtime CHTML styles intact.
+// VS Code marks its injected style as #_defaultStyles; keep generated preview styles intact.
 const removeVscodeDefaultStyles = () => {
   document.querySelectorAll('style#_defaultStyles').forEach(style => style.remove());
 };
@@ -1462,6 +1460,68 @@ const styleObserver = new MutationObserver(removeVscodeDefaultStyles);
 styleObserver.observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once: true });
 removeVscodeDefaultStyles();
+// Waits briefly for the KaTeX script declared by the generated HTML.
+function waitForKaTeX() {
+  if (window.katex && typeof window.katex.render === 'function') {
+    return Promise.resolve(window.katex);
+  }
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (window.katex && typeof window.katex.render === 'function') {
+        resolve(window.katex);
+        return;
+      }
+      if (Date.now() - startedAt >= 5000) {
+        reject(new Error('KaTeX did not load within 5 seconds.'));
+        return;
+      }
+      window.setTimeout(check, 25);
+    };
+    check();
+  });
+}
+// Removes Pandoc's outer math delimiters before rendering a raw math span.
+function unwrapMathDelimiters(tex) {
+  const trimmed = tex.trim();
+  const delimiters = [
+    [/^\\\(([\s\S]*)\\\)$/, '$1'],
+    [/^\\\[([\s\S]*)\\\]$/, '$1'],
+    [/^\$\$([\s\S]*)\$\$$/, '$1'],
+    [/^\$([\s\S]*)\$$/, '$1']
+  ];
+  for (const [pattern, replacement] of delimiters) {
+    if (pattern.test(trimmed)) return trimmed.replace(pattern, replacement).trim();
+  }
+  return trimmed;
+}
+// Renders raw Pandoc math spans that KaTeX has not already converted.
+async function renderKaTeX(root) {
+  const elements = Array.from(root.querySelectorAll('.math')).filter(element => element.tagName === 'SPAN' && !element.querySelector('.katex'));
+  if (elements.length === 0) return;
+  vscode.postMessage({ type: 'previewKatexStarted', detail: 'math=' + elements.length });
+  let katex;
+  try {
+    katex = await waitForKaTeX();
+  } catch (error) {
+    vscode.postMessage({ type: 'previewKatexUnavailable', detail: 'math=' + elements.length + ';error=' + String(error) });
+    return;
+  }
+  let failures = 0;
+  for (const element of elements) {
+    try {
+      const tex = unwrapMathDelimiters(element.textContent || '');
+      katex.render(tex, element, {
+        displayMode: element.classList.contains('display'),
+        throwOnError: false
+      });
+    } catch (error) {
+      failures += 1;
+      vscode.postMessage({ type: 'previewKatexFailed', detail: 'error=' + String(error) });
+    }
+  }
+  vscode.postMessage({ type: 'previewKatexFinished', detail: 'katex=' + root.querySelectorAll('.katex').length + ';failures=' + failures });
+}
 async function replacePreviewHtml(html, token) {
   const previousScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
   vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
@@ -1472,9 +1532,8 @@ async function replacePreviewHtml(html, token) {
     if (!nextBody) throw new Error('The generated preview has no body element.');
     suppressScroll = true;
     staging = document.createElement('div');
-    // Keep the next revision in a live but invisible tree. MathJax must finish
-    // against this stable tree before the visible tree is replaced, matching
-    // the hidden-preview pipeline used by Markdown Preview Enhanced.
+    // Keep the next revision in a live but invisible tree so KaTeX can finish
+    // before the visible tree is replaced and raw TeX never flashes.
     staging.style.cssText = 'position:fixed;left:-100000px;top:0;width:100%;visibility:hidden;pointer-events:none;z-index:-1;';
     staging.innerHTML = nextBody.innerHTML;
     document.body.appendChild(staging);
@@ -1487,43 +1546,9 @@ async function replacePreviewHtml(html, token) {
     }
     const content = ensurePreviewContent();
     if (!content) throw new Error('Preview content container is unavailable.');
-    const mathJax = window.MathJax;
-    const mathCount = staging.querySelectorAll('.math, .mathjax-exps').length;
-    if (mathJax && typeof mathJax.typesetPromise === 'function' && mathCount > 0) {
-      vscode.postMessage({ type: 'previewMathStarted', detail: 'math=' + mathCount });
-      if (typeof mathJax.typesetClear === 'function') {
-        // Every revision replaces the whole preview document. Clear the full
-        // MathJax document because the previous rendered nodes may have lived
-        // in an earlier hidden staging tree rather than the current container.
-        mathJax.typesetClear();
-        vscode.postMessage({ type: 'previewMathCleared', detail: token || '' });
-      }
-      if (typeof mathJax.texReset === 'function') {
-        mathJax.texReset();
-      }
-      vscode.postMessage({ type: 'previewMathTypesetCalled', detail: token || '' });
-      // This is diagnostic only. The visible document remains unchanged while
-      // MathJax loads dynamic fonts and renders the staged revision.
-      const mathTypesetWarning = window.setTimeout(() => {
-        vscode.postMessage({ type: 'previewMathTimeout', detail: 'token=' + (token || '') + ';math=' + mathCount });
-      }, 8000);
-      try {
-        await Promise.resolve(mathJax.startup && mathJax.startup.promise);
-        await mathJax.typesetPromise([staging]);
-        window.clearTimeout(mathTypesetWarning);
-        vscode.postMessage({ type: 'previewMathFinished', detail: 'mjx=' + staging.querySelectorAll('mjx-container, .MathJax').length });
-      } catch (error) {
-        window.clearTimeout(mathTypesetWarning);
-        vscode.postMessage({ type: 'previewMathFailed', detail: 'token=' + (token || '') + ';math=' + mathCount + ';error=' + String(error) });
-        throw error;
-      }
-    } else if (mathCount > 0) {
-      vscode.postMessage({ type: 'previewMathUnavailable', detail: 'token=' + (token || '') + ';math=' + mathCount });
-    }
+    await renderKaTeX(staging);
 
-    // Copy the fully typeset staging markup into the stable visible container.
-    // Assigning HTML, rather than moving nodes, prevents MathJax's internal
-    // references to the staging document from being reused as live nodes.
+    // Copy rendered staging markup into the stable visible container.
     const nextContentHtml = staging.innerHTML;
     staging.remove();
     staging = null;
