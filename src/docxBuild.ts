@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { CAN_BUILD_DOCX_CONTEXT, CAN_BUILD_HTML_CONTEXT } from "./constants";
 import { applyHtmlPreviewKaTeXNonce, buildHtmlPreviewCsp } from "./htmlPreviewCsp";
 import { cacheHtmlMetafileImages } from "./htmlPreviewResourceCache";
+import { parsePandocDocument } from "./parser";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
 type PandocManuscriptProject = { rootUri: vscode.Uri };
@@ -18,7 +19,8 @@ type RunProcessOptions = {
   captureStdout?: boolean;
   env?: NodeJS.ProcessEnv;
 };
-type HtmlPreviewMessage = { type?: string; ratio?: number; detail?: string };
+type HtmlPreviewMessage = { type?: string; ratio?: number; detail?: string; headingId?: string; headingKey?: string; offsetRatio?: number };
+type HtmlPreviewSourceHeading = { label?: string; line: number; key: string };
 
 let cachedPapperExecutable: string | undefined;
 let papperResolutionPromise: Promise<string> | undefined;
@@ -36,6 +38,11 @@ export class PandocBuildRunner {
   declare htmlPreviewLastPreviewMessageAt: number;
   declare htmlPreviewScrollSyncUntil: number;
   declare htmlPreviewLastSourceRatio: number;
+  declare htmlPreviewLastSourceAnchorKey: string;
+  declare htmlPreviewLastSourceOffset: number;
+  declare htmlPreviewSourceHeadings: HtmlPreviewSourceHeading[];
+  declare htmlPreviewSourceHeadingsUri: string | undefined;
+  declare htmlPreviewSourceHeadingsVersion: number;
   declare htmlPreviewVerbose: boolean;
   declare htmlPreviewWebviewReady: boolean;
   declare htmlPreviewUpdateToken: number;
@@ -59,6 +66,11 @@ export class PandocBuildRunner {
     this.htmlPreviewLastPreviewMessageAt = 0;
     this.htmlPreviewScrollSyncUntil = 0;
     this.htmlPreviewLastSourceRatio = -1;
+    this.htmlPreviewLastSourceAnchorKey = "";
+    this.htmlPreviewLastSourceOffset = 0;
+    this.htmlPreviewSourceHeadings = [];
+    this.htmlPreviewSourceHeadingsUri = undefined;
+    this.htmlPreviewSourceHeadingsVersion = -1;
     this.htmlPreviewVerbose = verboseHtmlBuilds;
     this.htmlPreviewWebviewReady = false;
     this.htmlPreviewUpdateToken = 0;
@@ -216,26 +228,83 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Synchronizes the source editor's visible line with the HTML preview.
+   * Synchronizes the source editor with the HTML preview using nearby headings.
    *
-   * The generated Papper HTML does not expose Pandoc source-line markers, so
-   * the stable fallback is proportional document-to-page scrolling.
+   * A heading anchor preserves its relative viewport position; proportional
+   * scrolling is used when no nearby heading can be matched.
    *
-   * @param editor Editor whose visible range changed.
-   */
-  syncHtmlPreviewFromEditor(editor: vscode.TextEditor) {
-    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, editor.document.uri) || this.htmlPreviewSyncing || Date.now() < this.htmlPreviewScrollSyncUntil) {
+   * @param editor Editor whose visible range or selection changed.
+   * @param selectedPosition Optional active cursor position that should stay visible in the preview.
+  */
+  syncHtmlPreviewFromEditor(editor: vscode.TextEditor, selectedPosition?: vscode.Position) {
+    const hasSelection = selectedPosition !== undefined;
+    // A deliberate cursor change must win over feedback suppression from preview scrolling.
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, editor.document.uri) || (!hasSelection && (this.htmlPreviewSyncing || Date.now() < this.htmlPreviewScrollSyncUntil))) {
       return;
     }
 
     const visibleRange = editor.visibleRanges[0];
+    if (!visibleRange) {
+      return;
+    }
+    const sourceLine = selectedPosition?.line ?? visibleRange.start.line;
+    const sourcePosition = selectedPosition
+      ? getFractionalDocumentLine(editor.document, selectedPosition)
+      : getFractionalDocumentLine(editor.document, visibleRange.start);
     const denominator = Math.max(1, editor.document.lineCount - 1);
-    const ratio = Math.max(0, Math.min(1, visibleRange.start.line / denominator));
-    if (Math.abs(ratio - this.htmlPreviewLastSourceRatio) < 0.01) {
+    const ratio = Math.max(0, Math.min(1, sourcePosition / denominator));
+    const visibleStart = getFractionalDocumentLine(editor.document, visibleRange.start);
+    const visibleEnd = getFractionalDocumentLine(editor.document, visibleRange.end);
+    const visibleLineCount = Math.max(1, visibleEnd - visibleStart);
+    const headings = this.getHtmlPreviewSourceHeadings(editor.document);
+    const selectionOffsetRatio = !selectedPosition
+      ? 0
+      : Math.max(0, Math.min(1, (sourcePosition - visibleStart) / visibleLineCount));
+    const nearbyHeading = !selectedPosition
+      ? undefined
+      : findNearestSourceHeading(headings, sourceLine, visibleLineCount);
+    const heading = !selectedPosition
+      ? findVisibleSourceHeading(headings, editor.document, visibleRange)
+      : nearbyHeading
+        ? {
+          ...nearbyHeading,
+          offsetRatio: Math.max(-1.25, Math.min(1.25, selectionOffsetRatio + (nearbyHeading.line - sourcePosition) / visibleLineCount)),
+        }
+        : undefined;
+    const anchorKey = heading ? `${heading.line}|${heading.label || ""}|${heading.key}` : "";
+    const offsetRatio = heading?.offsetRatio ?? selectionOffsetRatio;
+    if (!hasSelection && Math.abs(ratio - this.htmlPreviewLastSourceRatio) < 0.01 && anchorKey === this.htmlPreviewLastSourceAnchorKey && Math.abs(offsetRatio - this.htmlPreviewLastSourceOffset) < 0.005) {
       return;
     }
     this.htmlPreviewLastSourceRatio = ratio;
-    void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
+    this.htmlPreviewLastSourceAnchorKey = anchorKey;
+    this.htmlPreviewLastSourceOffset = offsetRatio;
+    void this.htmlPreviewPanel.webview.postMessage({
+      type: "sourceScroll",
+      ratio,
+      headingId: heading?.label,
+      headingKey: heading?.key,
+      offsetRatio,
+    });
+  }
+
+  /**
+   * Returns source headings cached for the current document version.
+   *
+   * @param document Markdown source shown in the preview.
+   */
+  getHtmlPreviewSourceHeadings(document: vscode.TextDocument) {
+    const uri = document.uri.toString();
+    if (this.htmlPreviewSourceHeadingsUri !== uri || this.htmlPreviewSourceHeadingsVersion !== document.version) {
+      this.htmlPreviewSourceHeadings = parsePandocDocument(document.getText(), uri).headings.map((heading) => ({
+        label: heading.label,
+        line: heading.line,
+        key: normalizeHtmlPreviewHeadingKey(heading.title),
+      }));
+      this.htmlPreviewSourceHeadingsUri = uri;
+      this.htmlPreviewSourceHeadingsVersion = document.version;
+    }
+    return this.htmlPreviewSourceHeadings;
   }
 
   /**
@@ -453,6 +522,8 @@ export class PandocBuildRunner {
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
         this.htmlPreviewLastSourceRatio = -1;
+        this.htmlPreviewLastSourceAnchorKey = "";
+        this.htmlPreviewLastSourceOffset = 0;
         // The host assigns the first complete HTML before the Webview emits
         // `ready`; rebuilding here would duplicate the initial build.
         return;
@@ -472,7 +543,7 @@ export class PandocBuildRunner {
         }
         return;
       }
-      if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !this.htmlPreviewDocumentUri) {
+      if (message.type !== "previewScroll" || typeof message.ratio !== "number" || !Number.isFinite(message.ratio) || !this.htmlPreviewDocumentUri) {
         return;
       }
       const now = Date.now();
@@ -484,10 +555,27 @@ export class PandocBuildRunner {
       if (!editor) {
         return;
       }
-      const line = Math.round(Math.max(0, Math.min(1, message.ratio)) * Math.max(0, editor.document.lineCount - 1));
+      const ratio = Math.max(0, Math.min(1, message.ratio));
+      const approximateLine = Math.round(ratio * Math.max(0, editor.document.lineCount - 1));
+      const sourceHeadings = this.getHtmlPreviewSourceHeadings(editor.document);
+      const heading = findSourceHeadingForPreviewAnchor(sourceHeadings, message, approximateLine);
+      const visibleRange = editor.visibleRanges[0];
+      const visibleLineCount = visibleRange
+        ? Math.max(1, getFractionalDocumentLine(editor.document, visibleRange.end) - getFractionalDocumentLine(editor.document, visibleRange.start))
+        : 30;
+      const offsetRatio = typeof message.offsetRatio === "number" && Number.isFinite(message.offsetRatio)
+        ? Math.max(-1.5, Math.min(1.5, message.offsetRatio))
+        : 0;
+      const line = heading
+        ? Math.round(heading.line - offsetRatio * visibleLineCount)
+        : approximateLine;
+      const targetLine = Math.max(0, Math.min(editor.document.lineCount - 1, line));
+      if (visibleRange && Math.abs(visibleRange.start.line - targetLine) <= 1) {
+        return;
+      }
       this.htmlPreviewSyncing = true;
       this.htmlPreviewScrollSyncUntil = now + 220;
-      editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      editor.revealRange(new vscode.Range(targetLine, 0, targetLine, 0), vscode.TextEditorRevealType.AtTop);
       setTimeout(() => {
         this.htmlPreviewSyncing = false;
       }, 80);
@@ -591,11 +679,12 @@ export class PandocBuildRunner {
       this.htmlPreviewPanel.webview.html = preparedHtml;
     }
     this.output.appendLine(`[HTML][timing] WebView HTML injection: ${formatElapsedMs(injectStartedAt)}`);
-    const visibleRange = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri))?.visibleRanges[0];
-    if (!updateExistingWebview && visibleRange) {
-      const ratio = Math.max(0, Math.min(1, visibleRange.start.line / Math.max(1, document.lineCount - 1)));
-      this.htmlPreviewLastSourceRatio = ratio;
-      void this.htmlPreviewPanel.webview.postMessage({ type: "sourceScroll", ratio });
+    const sourceEditor = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri));
+    if (!updateExistingWebview && sourceEditor) {
+      this.htmlPreviewScrollSyncUntil = 0;
+      this.htmlPreviewLastSourceRatio = -1;
+      this.htmlPreviewLastSourceAnchorKey = "";
+      this.syncHtmlPreviewFromEditor(sourceEditor);
     }
   }
 }
@@ -612,6 +701,111 @@ async function waitForWebviewUpdate(confirmation: Promise<boolean>) {
     // is enough to release the build queue if that external script is blocked.
     new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
   ]);
+}
+
+/**
+ * Normalizes Markdown heading text to the plain text exposed by generated HTML.
+ *
+ * @param title Source or rendered heading text.
+ */
+function normalizeHtmlPreviewHeadingKey(title: string) {
+  return title
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/`+([^`]+)`+/g, "$1")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\{[^}]*\}/g, " ")
+    .replace(/\\(.)/g, "$1")
+    .replace(/[*_~]/g, "")
+    .replace(/^\s*\d+(?:\.\d+)*[.)]?\s+/, "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]/gu, "");
+}
+
+/**
+ * Selects a nearby source heading and records its position within the editor viewport.
+ *
+ * @param headings Parsed source headings.
+ * @param document Markdown source document.
+ * @param visibleRange Current visible editor range.
+ */
+function findVisibleSourceHeading(headings: HtmlPreviewSourceHeading[], document: vscode.TextDocument, visibleRange: vscode.Range) {
+  if (headings.length === 0) {
+    return undefined;
+  }
+  const visibleStart = getFractionalDocumentLine(document, visibleRange.start);
+  const visibleEnd = getFractionalDocumentLine(document, visibleRange.end);
+  const visibleLineCount = Math.max(1, visibleEnd - visibleStart);
+  const maximumDistance = Math.max(5, visibleLineCount * 1.25);
+  const nearest = findNearestSourceHeading(headings, visibleRange.start.line, maximumDistance);
+  if (!nearest) {
+    return undefined;
+  }
+  const offsetRatio = Math.max(-1.25, Math.min(1.25, (nearest.line - visibleStart) / visibleLineCount));
+  return { ...nearest, offsetRatio };
+}
+
+/**
+ * Converts a source position into a fractional line coordinate for partially visible lines.
+ *
+ * @param document Markdown source document.
+ * @param position Position reported by VS Code.
+ */
+function getFractionalDocumentLine(document: vscode.TextDocument, position: vscode.Position) {
+  const lineText = document.lineAt(position.line).text;
+  const characterRatio = lineText.length > 0 ? Math.max(0, Math.min(1, position.character / lineText.length)) : 0;
+  return position.line + characterRatio;
+}
+
+/**
+ * Returns the source heading closest to a line when it lies within a useful viewport distance.
+ *
+ * @param headings Parsed source headings.
+ * @param line Source line used as the distance origin.
+ * @param maximumDistance Largest accepted line distance.
+ */
+function findNearestSourceHeading(headings: HtmlPreviewSourceHeading[], line: number, maximumDistance: number) {
+  let low = 0;
+  let high = headings.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (headings[middle].line < line) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  const previous = low > 0 ? headings[low - 1] : undefined;
+  const next = low < headings.length ? headings[low] : undefined;
+  const nearest = previous && next
+    ? Math.abs(previous.line - line) <= Math.abs(next.line - line) ? previous : next
+    : previous || next;
+  return nearest && Math.abs(nearest.line - line) <= maximumDistance ? nearest : undefined;
+}
+
+/**
+ * Matches a preview heading to its source heading, using document position to disambiguate repeated titles.
+ *
+ * @param headings Parsed source headings.
+ * @param message Scroll message received from the preview.
+ * @param approximateLine Global-ratio source position used to choose among duplicate titles.
+ */
+function findSourceHeadingForPreviewAnchor(headings: HtmlPreviewSourceHeading[], message: HtmlPreviewMessage, approximateLine: number) {
+  if (headings.length === 0) {
+    return undefined;
+  }
+  const exactIdMatches = message.headingId ? headings.filter((heading) => heading.label === message.headingId) : [];
+  const headingKey = message.headingKey ? normalizeHtmlPreviewHeadingKey(message.headingKey) : "";
+  const candidates = exactIdMatches.length > 0
+    ? exactIdMatches
+    : headingKey
+      ? headings.filter((heading) => heading.key === headingKey)
+      : [];
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  return candidates.reduce((nearest, candidate) => Math.abs(candidate.line - approximateLine) < Math.abs(nearest.line - approximateLine) ? candidate : nearest);
 }
 
 /**
@@ -1433,8 +1627,13 @@ const vscode = acquireVsCodeApi();
 let suppressScroll = false;
 let scrollFrame = 0;
 let lastSentRatio = -1;
+let lastSentHeadingKey = '';
+let lastSentOffsetRatio = 0;
 let previewUpdateChain = Promise.resolve();
 let previewContent = null;
+let previewHeadings = null;
+let readySent = false;
+let pendingSourceScroll = null;
 function ensurePreviewContent() {
   if (previewContent && previewContent.isConnected) return previewContent;
   if (!document.body) return null;
@@ -1447,10 +1646,86 @@ function ensurePreviewContent() {
   }
   return previewContent;
 }
+// Reuses the rendered heading list until preview HTML is replaced.
+function getPreviewHeadings() {
+  if (!previewHeadings) {
+    const content = ensurePreviewContent();
+    previewHeadings = content ? Array.from(content.querySelectorAll('h1,h2,h3,h4,h5,h6')) : [];
+  }
+  return previewHeadings;
+}
 function scrollRatio() {
   const root = document.documentElement;
   const max = Math.max(1, root.scrollHeight - window.innerHeight);
   return Math.max(0, Math.min(1, window.scrollY / max));
+}
+// Makes Markdown source headings comparable to their rendered text content.
+function normalizeHeadingKey(value) {
+  return String(value || '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/\\x60+([^\\x60]+)\\x60+/g, '$1')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/\\\\(.)/g, '$1')
+    .replace(/[*_~]/g, '')
+    .replace(/^\s*\d+(?:\.\d+)*[.)]?\s+/, '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]/gu, '');
+}
+// Finds the rendered heading nearest the preview viewport top for scroll reporting.
+function getVisibleHeadingAnchor() {
+  if (!readySent) return null;
+  const content = ensurePreviewContent();
+  if (!content) return null;
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const heading of getPreviewHeadings()) {
+    const distance = Math.abs(heading.getBoundingClientRect().top);
+    if (distance < nearestDistance) {
+      nearest = heading;
+      nearestDistance = distance;
+    }
+  }
+  if (!nearest || nearestDistance > window.innerHeight * 1.25) return null;
+  const text = nearest.cloneNode(true);
+  text.querySelectorAll('.header-section-number, .header-section-name').forEach(element => element.remove());
+  const headingKey = normalizeHeadingKey(text.textContent || '');
+  const headingId = nearest.id || '';
+  if (!headingId && !headingKey) return null;
+  return {
+    headingId,
+    headingKey,
+    offsetRatio: Math.max(-1.25, Math.min(1.25, nearest.getBoundingClientRect().top / Math.max(1, window.innerHeight)))
+  };
+}
+// Resolves a source anchor, preferring Pandoc IDs and disambiguating repeated titles by page position.
+function findPreviewHeadingAnchor(message) {
+  const content = ensurePreviewContent();
+  if (!content) return null;
+  if (message.headingId) {
+    const byId = document.getElementById(message.headingId);
+    if (byId && content.contains(byId) && byId.matches('h1,h2,h3,h4,h5,h6')) return byId;
+  }
+  const key = normalizeHeadingKey(message.headingKey || '');
+  if (!key) return null;
+  const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  const targetRatio = Math.max(0, Math.min(1, Number(message.ratio) || 0));
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const heading of getPreviewHeadings()) {
+    const text = heading.cloneNode(true);
+    text.querySelectorAll('.header-section-number, .header-section-name').forEach(element => element.remove());
+    if (normalizeHeadingKey(text.textContent || '') !== key) continue;
+    const pageRatio = (window.scrollY + heading.getBoundingClientRect().top) / max;
+    const distance = Math.abs(pageRatio - targetRatio);
+    if (distance < nearestDistance) {
+      nearest = heading;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 // VS Code marks its injected style as #_defaultStyles; keep generated preview styles intact.
 const removeVscodeDefaultStyles = () => {
@@ -1553,10 +1828,14 @@ async function replacePreviewHtml(html, token) {
     staging.remove();
     staging = null;
     content.innerHTML = nextContentHtml;
+    previewHeadings = null;
     removeVscodeDefaultStyles();
     const restoreScrollTop = () => {
       window.scrollTo(0, previousScrollTop);
       lastSentRatio = scrollRatio();
+      const anchor = getVisibleHeadingAnchor();
+      lastSentHeadingKey = anchor ? (anchor.headingId || '') + '|' + (anchor.headingKey || '') : '';
+      lastSentOffsetRatio = anchor ? anchor.offsetRatio : 0;
     };
     requestAnimationFrame(() => {
       restoreScrollTop();
@@ -1576,8 +1855,31 @@ async function replacePreviewHtml(html, token) {
     suppressScroll = false;
     vscode.postMessage({ type: 'previewUpdateFailed', detail: token || String(error) });
     const fallback = new DOMParser().parseFromString(html, 'text/html').body;
-    if (fallback) document.body.innerHTML = fallback.innerHTML;
+    if (fallback) {
+      document.body.innerHTML = fallback.innerHTML;
+      previewContent = null;
+      previewHeadings = null;
+    }
   }
+}
+// Applies the latest source position after generated preview headings are available.
+function applySourceScroll(message) {
+  const root = document.documentElement;
+  const max = Math.max(0, root.scrollHeight - window.innerHeight);
+  suppressScroll = true;
+  const anchor = findPreviewHeadingAnchor(message);
+  const requestedOffset = Number.isFinite(message.offsetRatio)
+    ? Math.max(-1.5, Math.min(1.5, message.offsetRatio))
+    : 0;
+  if (anchor) {
+    const headingTop = window.scrollY + anchor.getBoundingClientRect().top;
+    const targetTop = headingTop - requestedOffset * window.innerHeight;
+    window.scrollTo({ top: Math.max(0, Math.min(max, targetTop)), behavior: 'auto' });
+  } else {
+    const ratio = Number.isFinite(message.ratio) ? Math.max(0, Math.min(1, message.ratio)) : 0;
+    window.scrollTo({ top: Math.max(0, Math.min(max, ratio * max - requestedOffset * window.innerHeight)), behavior: 'auto' });
+  }
+  window.setTimeout(() => { suppressScroll = false; }, 180);
 }
 window.addEventListener('message', event => {
   if (event.data && event.data.type === 'replacePreviewHtml' && typeof event.data.html === 'string') {
@@ -1585,11 +1887,11 @@ window.addEventListener('message', event => {
     return;
   }
   if (!event.data || event.data.type !== 'sourceScroll') return;
-  const root = document.documentElement;
-  const max = Math.max(0, root.scrollHeight - window.innerHeight);
-  suppressScroll = true;
-  window.scrollTo({ top: Math.max(0, Math.min(1, event.data.ratio || 0)) * max, behavior: 'auto' });
-  window.setTimeout(() => { suppressScroll = false; }, 180);
+  if (!readySent) {
+    pendingSourceScroll = event.data;
+    return;
+  }
+  applySourceScroll(event.data);
 });
 window.addEventListener('scroll', () => {
   if (suppressScroll || scrollFrame) return;
@@ -1597,17 +1899,25 @@ window.addEventListener('scroll', () => {
     scrollFrame = 0;
     if (suppressScroll) return;
     const ratio = scrollRatio();
-    if (Math.abs(ratio - lastSentRatio) < 0.01) return;
+    const anchor = getVisibleHeadingAnchor();
+    const headingKey = anchor ? (anchor.headingId || '') + '|' + (anchor.headingKey || '') : '';
+    if (Math.abs(ratio - lastSentRatio) < 0.01 && headingKey === lastSentHeadingKey && (!anchor || Math.abs(anchor.offsetRatio - lastSentOffsetRatio) < 0.02)) return;
     lastSentRatio = ratio;
-    vscode.postMessage({ type: 'previewScroll', ratio });
+    lastSentHeadingKey = headingKey;
+    lastSentOffsetRatio = anchor ? anchor.offsetRatio : 0;
+    vscode.postMessage({ type: 'previewScroll', ratio, ...(anchor || {}) });
   });
 }, { passive: true });
-let readySent = false;
 const sendReady = () => {
   if (readySent) return;
   ensurePreviewContent();
   readySent = true;
   vscode.postMessage({ type: 'ready' });
+  if (pendingSourceScroll) {
+    const message = pendingSourceScroll;
+    pendingSourceScroll = null;
+    applySourceScroll(message);
+  }
 };
 window.addEventListener('DOMContentLoaded', sendReady, { once: true });
 window.addEventListener('load', sendReady, { once: true });
@@ -1621,9 +1931,3 @@ window.addEventListener('load', sendReady, { once: true });
   }
   return `${bridge}${markedPandocStyles}`;
 }
-
-
-
-
-
-

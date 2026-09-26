@@ -118,6 +118,10 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
+    const activeSelection = event.selections[0];
+    if (activeSelection && event.kind !== vscode.TextEditorSelectionChangeKind.Command) {
+      buildRunner.syncHtmlPreviewFromEditor(event.textEditor, activeSelection.active);
+    }
     inlineFoldController.updateEditor(event.textEditor);
   }));
 
