@@ -87,7 +87,7 @@ Image hovers resolve local Markdown and HTML image references for `.svg`, `.emf`
 
 In an SVG diff, reopen the editor with **SVG Preview**, then click **Highlight changed areas** in the preview toolbar. The button outlines changed SVG elements on each available side; click it again to hide the outlines. The comparison uses the two SVG revisions and ignores XML whitespace, so it does not require VS Code's proposed text diff API. Changes to shared definitions or styles may outline a larger area because their visual effects can extend beyond one element.
 
-The **Synchronize zoom** button in the SVG diff preview links both panes at the current pane's zoom level. Zoom in, zoom out, actual size, fit to window, and Ctrl+mouse wheel then apply the same zoom level to both sides. Click the button again to let each side zoom independently. Panning remains independent.
+The **Synchronize zoom** button in the SVG diff preview links both panes at the current pane's zoom level and scroll position. Zoom in, zoom out, actual size, fit to window, Ctrl+mouse wheel, both scrollbars, and drag-to-pan then move both sides together. Click the button again to let each side zoom and scroll independently.
 
 If installation through the CERNET mirror fails, the extension retries `uv tool install papper` once without a custom index.
 

@@ -29,7 +29,7 @@ export type WebviewPreviewSource = (
 type PreviewHtmlOptions = {
   toolbarActions?: string;
   additionalScript?: string;
-  synchronizedZoomScale?: number;
+  synchronizedView?: { scale: number; scrollX: number; scrollY: number };
 };
 
 export class ImagePreviewSidePanel {
@@ -205,7 +205,7 @@ export function buildPreviewHtml(imagePath: string, previewSource: WebviewPrevie
         <span class="zoomValue" data-zoom-value>100%</span>
       </div>
     </header>
-    <main class="viewport" data-preview-viewport${options.synchronizedZoomScale === undefined ? "" : ` data-synchronized-zoom-scale="${escapeAttribute(String(options.synchronizedZoomScale))}"`}>
+    <main class="viewport" data-preview-viewport${options.synchronizedView === undefined ? "" : ` data-synchronized-zoom-scale="${escapeAttribute(String(options.synchronizedView.scale))}" data-synchronized-scroll-x="${escapeAttribute(String(options.synchronizedView.scrollX))}" data-synchronized-scroll-y="${escapeAttribute(String(options.synchronizedView.scrollY))}"`}>
       <div class="stage" data-preview-stage>
         ${previewMarkup}
       </div>
@@ -876,9 +876,13 @@ function getPreviewScript() {
   let scale = 1;
   let fitMode = false;
   let synchronizedScale = Number(viewport.getAttribute("data-synchronized-zoom-scale"));
+  let synchronizedScrollX = Number(viewport.getAttribute("data-synchronized-scroll-x")) || 0;
+  let synchronizedScrollY = Number(viewport.getAttribute("data-synchronized-scroll-y")) || 0;
   let syncEnabled = Boolean(syncButton && synchronizedScale > 0 && Number.isFinite(synchronizedScale));
   let blobUrl = "";
   let pendingFitFrame = 0;
+  let pendingScrollFrame = 0;
+  let pendingRemoteScroll;
   let isPanning = false;
   let panPointerId = 0;
   let panStartX = 0;
@@ -935,6 +939,37 @@ function getPreviewScript() {
     viewport.classList.toggle("canPan", canPanViewport());
   }
 
+  /** Returns scroll fractions so panes with different sizes align at the same relative position. */
+  function getScrollPosition() {
+    const maxX = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const maxY = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    return {
+      scrollX: maxX ? viewport.scrollLeft / maxX : 0,
+      scrollY: maxY ? viewport.scrollTop / maxY : 0,
+    };
+  }
+
+  /** Applies a position received from the other pane without echoing its scroll event. */
+  function applySynchronizedScroll(scrollX, scrollY) {
+    if (!Number.isFinite(scrollX) || !Number.isFinite(scrollY)) return;
+    synchronizedScrollX = Math.min(1, Math.max(0, scrollX));
+    synchronizedScrollY = Math.min(1, Math.max(0, scrollY));
+    const left = synchronizedScrollX * Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const top = synchronizedScrollY * Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    pendingRemoteScroll = { left, top };
+    viewport.scrollLeft = left;
+    viewport.scrollTop = top;
+  }
+
+  /** Throttles scroll messages so dragging a scrollbar does not flood the host. */
+  function scheduleScrollSync() {
+    if (!syncEnabled || !vscode || pendingScrollFrame) return;
+    pendingScrollFrame = setTimeout(() => {
+      pendingScrollFrame = 0;
+      if (syncEnabled) vscode.postMessage({ type: "svgScrollChanged", ...getScrollPosition() });
+    }, 16);
+  }
+
   /** Applies the current scale to the preview image and stage. */
   function render() {
     const width = Math.max(1, Math.round(naturalWidth * scale));
@@ -973,6 +1008,7 @@ function getPreviewScript() {
       pendingFitFrame = 0;
       if (syncEnabled) {
         setScale(synchronizedScale, false, false);
+        applySynchronizedScroll(synchronizedScrollX, synchronizedScrollY);
       } else {
         setScale(fitScale < 1 ? fitScale : 1, fitScale < 1);
       }
@@ -988,7 +1024,7 @@ function getPreviewScript() {
     }
     render();
     if (broadcast && syncEnabled && vscode) {
-      vscode.postMessage({ type: "svgZoomChanged", scale });
+      vscode.postMessage({ type: "svgZoomChanged", scale, ...getScrollPosition() });
     }
   }
 
@@ -1054,7 +1090,7 @@ function getPreviewScript() {
     const commandButton = event.target.closest("[data-preview-command]");
     if (commandButton) {
       if (vscode) {
-        vscode.postMessage({ command: commandButton.getAttribute("data-preview-command"), scale });
+        vscode.postMessage({ command: commandButton.getAttribute("data-preview-command"), scale, ...getScrollPosition() });
       }
       return;
     }
@@ -1077,7 +1113,11 @@ function getPreviewScript() {
 
   window.addEventListener("message", (event) => {
     const message = event.data;
-    if (!message || message.type !== "svgZoomSync") {
+    if (!message || (message.type !== "svgZoomSync" && message.type !== "svgScrollSync")) {
+      return;
+    }
+    if (message.type === "svgScrollSync") {
+      if (syncEnabled) applySynchronizedScroll(message.scrollX, message.scrollY);
       return;
     }
     syncEnabled = message.enabled === true;
@@ -1093,7 +1133,17 @@ function getPreviewScript() {
         pendingFitFrame = 0;
       }
       setScale(message.scale, false, false);
+      applySynchronizedScroll(message.scrollX, message.scrollY);
     }
+  });
+
+  viewport.addEventListener("scroll", () => {
+    if (pendingRemoteScroll) {
+      const { left, top } = pendingRemoteScroll;
+      pendingRemoteScroll = undefined;
+      if (Math.abs(viewport.scrollLeft - left) <= 1 && Math.abs(viewport.scrollTop - top) <= 1) return;
+    }
+    scheduleScrollSync();
   });
 
   viewport.addEventListener("wheel", (event) => {
@@ -1119,6 +1169,9 @@ function getPreviewScript() {
   window.addEventListener("unload", () => {
     if (pendingFitFrame) {
       cancelAnimationFrame(pendingFitFrame);
+    }
+    if (pendingScrollFrame) {
+      clearTimeout(pendingScrollFrame);
     }
     if (blobUrl) {
       URL.revokeObjectURL(blobUrl);

@@ -17,6 +17,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 const TOGGLE_SVG_ZOOM_SYNC_COMMAND = "pandocManuscriptTools.toggleSvgZoomSync";
 
 type SvgDiffPair = { original: vscode.Uri; modified: vscode.Uri };
+type SvgViewState = { scale: number; scrollX: number; scrollY: number };
 
 export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   declare imagePreviewRenderer;
@@ -24,7 +25,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   private readonly diffPairs = new Map<string, SvgDiffPair>();
   private readonly svgPanels = new Map<string, Set<vscode.WebviewPanel>>();
   private readonly highlightedPairs = new Set<string>();
-  private readonly synchronizedZoomPairs = new Map<string, number>();
+  private readonly synchronizedZoomPairs = new Map<string, SvgViewState>();
   private readonly tabListener: vscode.Disposable;
   /**
    * Creates a read-only custom editor provider for SVG/EMF/WMF previews.
@@ -109,15 +110,17 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       this.svgPanels.set(key, panels);
     }
 
-    const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string; type?: string; scale?: number }) => {
+    const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string; type?: string; scale?: number; scrollX?: number; scrollY?: number }) => {
       if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
         await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
       } else if (message.command === TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND && extension === ".svg") {
         await this.toggleSvgDiffHighlight(document.uri);
       } else if (message.command === TOGGLE_SVG_ZOOM_SYNC_COMMAND && extension === ".svg") {
-        await this.toggleSvgZoomSync(document.uri, message.scale);
+        await this.toggleSvgZoomSync(document.uri, message.scale, message.scrollX, message.scrollY);
       } else if (message.type === "svgZoomChanged" && extension === ".svg") {
-        await this.relaySvgZoom(document.uri, webviewPanel, message.scale);
+        await this.relaySvgZoom(document.uri, webviewPanel, message.scale, message.scrollX, message.scrollY);
+      } else if (message.type === "svgScrollChanged" && extension === ".svg") {
+        await this.relaySvgScroll(document.uri, webviewPanel, message.scrollX, message.scrollY);
       } else if (message.type === "svgZoomReady" && extension === ".svg") {
         await this.restoreSvgZoomSync(document.uri, webviewPanel);
       }
@@ -180,7 +183,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
             + buildPreviewActionButton(TOGGLE_SVG_ZOOM_SYNC_COMMAND, "Synchronize zoom", buildSynchronizedZoomIcon())
           : "",
         additionalScript: extension === ".svg" ? buildSvgDiffHighlightScript() : "",
-        synchronizedZoomScale: extension === ".svg" ? this.getSynchronizedZoomScale(document.uri) : undefined,
+        synchronizedView: extension === ".svg" ? this.getSynchronizedView(document.uri) : undefined,
       });
     } catch (error) {
       this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
@@ -251,13 +254,13 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   }
 
   /** Returns the current shared scale when this SVG belongs to a linked diff. */
-  private getSynchronizedZoomScale(uri: vscode.Uri): number | undefined {
+  private getSynchronizedView(uri: vscode.Uri): SvgViewState | undefined {
     const pair = this.findSvgDiffPair(uri);
     return pair ? this.synchronizedZoomPairs.get(svgDiffPairKey(pair)) : undefined;
   }
 
-  /** Enables or disables shared zoom for both panes of one SVG diff. */
-  private async toggleSvgZoomSync(uri: vscode.Uri, scale: number | undefined): Promise<void> {
+  /** Enables or disables shared zoom and scroll for both panes of one SVG diff. */
+  private async toggleSvgZoomSync(uri: vscode.Uri, scale: number | undefined, scrollX: number | undefined, scrollY: number | undefined): Promise<void> {
     const pair = this.findSvgDiffPair(uri);
     if (!pair) {
       await vscode.window.showInformationMessage("Open this SVG in a diff editor to synchronize zoom.");
@@ -265,35 +268,55 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     }
     const key = svgDiffPairKey(pair);
     const enabled = !this.synchronizedZoomPairs.has(key);
+    let view: SvgViewState | undefined;
     if (enabled) {
-      if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0) {
+      view = normalizeSvgView(scale, scrollX, scrollY);
+      if (!view) {
         return;
       }
-      this.synchronizedZoomPairs.set(key, scale);
+      this.synchronizedZoomPairs.set(key, view);
     } else {
       this.synchronizedZoomPairs.delete(key);
     }
-    await this.postSvgZoomSync(pair, enabled, enabled ? scale : undefined);
+    await this.postSvgZoomSync(pair, enabled, view);
   }
 
-  /** Relays a local zoom change to the other diff pane without feeding it back. */
-  private async relaySvgZoom(uri: vscode.Uri, origin: vscode.WebviewPanel, scale: number | undefined): Promise<void> {
-    if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0) {
+  /** Relays a local zoom and position change without feeding it back. */
+  private async relaySvgZoom(uri: vscode.Uri, origin: vscode.WebviewPanel, scale: number | undefined, scrollX: number | undefined, scrollY: number | undefined): Promise<void> {
+    const view = normalizeSvgView(scale, scrollX, scrollY);
+    if (!view) {
       return;
     }
     const pair = this.findSvgDiffPair(uri);
     if (!pair || !this.synchronizedZoomPairs.has(svgDiffPairKey(pair))) {
       return;
     }
-    this.synchronizedZoomPairs.set(svgDiffPairKey(pair), scale);
-    await this.postSvgZoomSync(pair, true, scale, origin);
+    this.synchronizedZoomPairs.set(svgDiffPairKey(pair), view);
+    await this.postSvgZoomSync(pair, true, view, origin);
+  }
+
+  /** Relays a user scroll on either axis while retaining the shared scale. */
+  private async relaySvgScroll(uri: vscode.Uri, origin: vscode.WebviewPanel, scrollX: number | undefined, scrollY: number | undefined): Promise<void> {
+    if (typeof scrollX !== "number" || !Number.isFinite(scrollX)
+      || typeof scrollY !== "number" || !Number.isFinite(scrollY)) {
+      return;
+    }
+    const pair = this.findSvgDiffPair(uri);
+    const key = pair && svgDiffPairKey(pair);
+    const current = key && this.synchronizedZoomPairs.get(key);
+    if (!pair || !key || !current) {
+      return;
+    }
+    const view = { ...current, scrollX: Math.min(1, Math.max(0, scrollX)), scrollY: Math.min(1, Math.max(0, scrollY)) };
+    this.synchronizedZoomPairs.set(key, view);
+    await this.postSvgScrollSync(pair, view, origin);
   }
 
   /** Restores the shared scale after a late pane load or preview refresh. */
   private async restoreSvgZoomSync(uri: vscode.Uri, panel: vscode.WebviewPanel): Promise<void> {
-    const scale = this.getSynchronizedZoomScale(uri);
-    if (scale !== undefined) {
-      await panel.webview.postMessage({ type: "svgZoomSync", enabled: true, scale });
+    const view = this.getSynchronizedView(uri);
+    if (view) {
+      await panel.webview.postMessage({ type: "svgZoomSync", enabled: true, ...view });
     }
   }
 
@@ -306,13 +329,23 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   }
 
   /** Updates both revision previews and any duplicate pane for the same URI. */
-  private async postSvgZoomSync(pair: SvgDiffPair, enabled: boolean, scale: number | undefined, origin?: vscode.WebviewPanel): Promise<void> {
+  private async postSvgZoomSync(pair: SvgDiffPair, enabled: boolean, view: SvgViewState | undefined, origin?: vscode.WebviewPanel): Promise<void> {
     const panels = [
       ...this.svgPanels.get(pair.original.toString()) || [],
       ...this.svgPanels.get(pair.modified.toString()) || [],
     ];
     await Promise.all(panels.filter((panel) => panel !== origin).map((panel) =>
-      panel.webview.postMessage({ type: "svgZoomSync", enabled, scale })));
+      panel.webview.postMessage({ type: "svgZoomSync", enabled, ...view })));
+  }
+
+  /** Sends one user scroll to every other preview of this diff pair. */
+  private async postSvgScrollSync(pair: SvgDiffPair, view: SvgViewState, origin: vscode.WebviewPanel): Promise<void> {
+    const panels = [
+      ...this.svgPanels.get(pair.original.toString()) || [],
+      ...this.svgPanels.get(pair.modified.toString()) || [],
+    ];
+    await Promise.all(panels.filter((panel) => panel !== origin).map((panel) =>
+      panel.webview.postMessage({ type: "svgScrollSync", scrollX: view.scrollX, scrollY: view.scrollY })));
   }
 
   /** Sends current and counterpart SVG source to every preview of one revision. */
@@ -339,6 +372,20 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
 /** Identifies one ordered SVG revision pair regardless of which pane sent a message. */
 function svgDiffPairKey(pair: SvgDiffPair): string {
   return [pair.original.toString(), pair.modified.toString()].sort().join("\n");
+}
+
+/** Accepts finite zoom and scroll values from a preview webview. */
+function normalizeSvgView(scale: number | undefined, scrollX: number | undefined, scrollY: number | undefined): SvgViewState | undefined {
+  if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0
+    || typeof scrollX !== "number" || !Number.isFinite(scrollX)
+    || typeof scrollY !== "number" || !Number.isFinite(scrollY)) {
+    return undefined;
+  }
+  return {
+    scale: Math.min(100, Math.max(0.01, scale)),
+    scrollX: Math.min(1, Math.max(0, scrollX)),
+    scrollY: Math.min(1, Math.max(0, scrollY)),
+  };
 }
 
 /**

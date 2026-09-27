@@ -11,7 +11,7 @@ export const TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND = "pandocManuscriptTools.toggleSv
 /** Builds the SVG element comparison and overlay script for a preview webview. */
 export function buildSvgDiffHighlightScript(): string {
   return `<style>
-    .stage { position: relative; }
+    .svgPreview { position: relative; }
     .svgDiffOverlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
     .svgDiffRegion {
       position: absolute;
@@ -27,14 +27,14 @@ export function buildSvgDiffHighlightScript(): string {
     .svgDiffStatus { color: var(--vscode-descriptionForeground); font-size: 0.85em; white-space: nowrap; }
   </style><script>
 (() => {
-  const stage = document.querySelector("[data-preview-stage]");
   const frame = document.querySelector('[data-preview-kind="inline-svg"]');
   const button = document.querySelector('[data-preview-command="pandocManuscriptTools.toggleSvgDiffHighlight"]');
-  if (!stage || !frame || !button) return;
+  if (!frame || !button) return;
 
   const overlay = document.createElement("div");
   overlay.className = "svgDiffOverlay";
-  stage.appendChild(overlay);
+  // The boxes share the preview's CSS zoom so they stay attached to SVG shapes.
+  frame.appendChild(overlay);
   const status = document.createElement("span");
   status.className = "svgDiffStatus";
   status.setAttribute("role", "status");
@@ -173,7 +173,9 @@ export function buildSvgDiffHighlightScript(): string {
     updateFrame = 0;
     overlay.replaceChildren();
     if (!enabled) return;
-    const stageRect = stage.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const zoom = frame.offsetWidth > 0 ? frameRect.width / frame.offsetWidth : 1;
+    const padding = 3 / zoom;
     let count = 0;
     for (const path of highlightedPaths.slice(0, 200)) {
       const element = displayedElement(path);
@@ -181,14 +183,15 @@ export function buildSvgDiffHighlightScript(): string {
       let rect = element.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) {
         // Definitions have no box; the root warns that their visual effect can be broad.
-        rect = frame.getBoundingClientRect();
+        rect = frameRect;
       }
       const box = document.createElement("div");
       box.className = "svgDiffRegion";
-      box.style.left = (rect.left - stageRect.left - 3) + "px";
-      box.style.top = (rect.top - stageRect.top - 3) + "px";
-      box.style.width = Math.max(8, rect.width + 6) + "px";
-      box.style.height = Math.max(8, rect.height + 6) + "px";
+      box.style.left = ((rect.left - frameRect.left) / zoom - padding) + "px";
+      box.style.top = ((rect.top - frameRect.top) / zoom - padding) + "px";
+      box.style.width = Math.max(8 / zoom, rect.width / zoom + padding * 2) + "px";
+      box.style.height = Math.max(8 / zoom, rect.height / zoom + padding * 2) + "px";
+      box.style.borderWidth = (2 / zoom) + "px";
       overlay.appendChild(box);
       count += 1;
     }
