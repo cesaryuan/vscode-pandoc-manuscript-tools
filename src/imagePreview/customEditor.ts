@@ -10,10 +10,11 @@ import * as vscode from "vscode";
 import { OPEN_SVG_SOURCE_TEXT_COMMAND } from "../constants";
 import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
 import { convertEmfToSvg, convertWmfToSvg, WEBVIEW_METAFILE_MAX_HEIGHT, WEBVIEW_METAFILE_MAX_WIDTH } from "./libemf2svgRuntime";
-import { buildPanelHtml, buildDiffHighlightIcon, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
+import { buildPanelHtml, buildDiffHighlightIcon, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, buildSynchronizedZoomIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
 import { buildSvgDiffHighlightScript, TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND } from "./svgDiffHighlight";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
+const TOGGLE_SVG_ZOOM_SYNC_COMMAND = "pandocManuscriptTools.toggleSvgZoomSync";
 
 type SvgDiffPair = { original: vscode.Uri; modified: vscode.Uri };
 
@@ -23,6 +24,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   private readonly diffPairs = new Map<string, SvgDiffPair>();
   private readonly svgPanels = new Map<string, Set<vscode.WebviewPanel>>();
   private readonly highlightedPairs = new Set<string>();
+  private readonly synchronizedZoomPairs = new Map<string, number>();
   private readonly tabListener: vscode.Disposable;
   /**
    * Creates a read-only custom editor provider for SVG/EMF/WMF previews.
@@ -51,6 +53,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     this.svgPanels.clear();
     this.diffPairs.clear();
     this.highlightedPairs.clear();
+    this.synchronizedZoomPairs.clear();
   }
 
   /** Remembers the exact two URIs before VS Code reopens a text diff as previews. */
@@ -106,11 +109,17 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       this.svgPanels.set(key, panels);
     }
 
-    const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string }) => {
+    const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string; type?: string; scale?: number }) => {
       if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
         await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
       } else if (message.command === TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND && extension === ".svg") {
         await this.toggleSvgDiffHighlight(document.uri);
+      } else if (message.command === TOGGLE_SVG_ZOOM_SYNC_COMMAND && extension === ".svg") {
+        await this.toggleSvgZoomSync(document.uri, message.scale);
+      } else if (message.type === "svgZoomChanged" && extension === ".svg") {
+        await this.relaySvgZoom(document.uri, webviewPanel, message.scale);
+      } else if (message.type === "svgZoomReady" && extension === ".svg") {
+        await this.restoreSvgZoomSync(document.uri, webviewPanel);
       }
     });
     const watcher = new VisiblePreviewFileWatcher(
@@ -126,6 +135,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       panels?.delete(webviewPanel);
       if (panels?.size === 0) {
         this.svgPanels.delete(document.uri.toString());
+        this.clearUnviewedSvgZoomSync(document.uri);
       }
     });
 
@@ -167,8 +177,10 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
         toolbarActions: extension === ".svg"
           ? buildPreviewActionButton(OPEN_SVG_SOURCE_TEXT_COMMAND, "Source Text", buildSourceTextIcon())
             + buildPreviewActionButton(TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND, "Highlight changed areas", buildDiffHighlightIcon())
+            + buildPreviewActionButton(TOGGLE_SVG_ZOOM_SYNC_COMMAND, "Synchronize zoom", buildSynchronizedZoomIcon())
           : "",
         additionalScript: extension === ".svg" ? buildSvgDiffHighlightScript() : "",
+        synchronizedZoomScale: extension === ".svg" ? this.getSynchronizedZoomScale(document.uri) : undefined,
       });
     } catch (error) {
       this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
@@ -238,6 +250,71 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     ]);
   }
 
+  /** Returns the current shared scale when this SVG belongs to a linked diff. */
+  private getSynchronizedZoomScale(uri: vscode.Uri): number | undefined {
+    const pair = this.findSvgDiffPair(uri);
+    return pair ? this.synchronizedZoomPairs.get(svgDiffPairKey(pair)) : undefined;
+  }
+
+  /** Enables or disables shared zoom for both panes of one SVG diff. */
+  private async toggleSvgZoomSync(uri: vscode.Uri, scale: number | undefined): Promise<void> {
+    const pair = this.findSvgDiffPair(uri);
+    if (!pair) {
+      await vscode.window.showInformationMessage("Open this SVG in a diff editor to synchronize zoom.");
+      return;
+    }
+    const key = svgDiffPairKey(pair);
+    const enabled = !this.synchronizedZoomPairs.has(key);
+    if (enabled) {
+      if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0) {
+        return;
+      }
+      this.synchronizedZoomPairs.set(key, scale);
+    } else {
+      this.synchronizedZoomPairs.delete(key);
+    }
+    await this.postSvgZoomSync(pair, enabled, enabled ? scale : undefined);
+  }
+
+  /** Relays a local zoom change to the other diff pane without feeding it back. */
+  private async relaySvgZoom(uri: vscode.Uri, origin: vscode.WebviewPanel, scale: number | undefined): Promise<void> {
+    if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0) {
+      return;
+    }
+    const pair = this.findSvgDiffPair(uri);
+    if (!pair || !this.synchronizedZoomPairs.has(svgDiffPairKey(pair))) {
+      return;
+    }
+    this.synchronizedZoomPairs.set(svgDiffPairKey(pair), scale);
+    await this.postSvgZoomSync(pair, true, scale, origin);
+  }
+
+  /** Restores the shared scale after a late pane load or preview refresh. */
+  private async restoreSvgZoomSync(uri: vscode.Uri, panel: vscode.WebviewPanel): Promise<void> {
+    const scale = this.getSynchronizedZoomScale(uri);
+    if (scale !== undefined) {
+      await panel.webview.postMessage({ type: "svgZoomSync", enabled: true, scale });
+    }
+  }
+
+  /** Drops linked zoom after both revision previews of a diff have closed. */
+  private clearUnviewedSvgZoomSync(uri: vscode.Uri): void {
+    const pair = this.findSvgDiffPair(uri);
+    if (pair && !this.svgPanels.has(pair.original.toString()) && !this.svgPanels.has(pair.modified.toString())) {
+      this.synchronizedZoomPairs.delete(svgDiffPairKey(pair));
+    }
+  }
+
+  /** Updates both revision previews and any duplicate pane for the same URI. */
+  private async postSvgZoomSync(pair: SvgDiffPair, enabled: boolean, scale: number | undefined, origin?: vscode.WebviewPanel): Promise<void> {
+    const panels = [
+      ...this.svgPanels.get(pair.original.toString()) || [],
+      ...this.svgPanels.get(pair.modified.toString()) || [],
+    ];
+    await Promise.all(panels.filter((panel) => panel !== origin).map((panel) =>
+      panel.webview.postMessage({ type: "svgZoomSync", enabled, scale })));
+  }
+
   /** Sends current and counterpart SVG source to every preview of one revision. */
   private async postSvgDiffHighlight(uri: vscode.Uri, currentSvg: string, otherSvg: string, enabled: boolean): Promise<void> {
     await Promise.all([...this.svgPanels.get(uri.toString()) || []].map((panel) =>
@@ -257,6 +334,11 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     void this.postSvgDiffHighlight(pair.original, "", "", false);
     void this.postSvgDiffHighlight(pair.modified, "", "", false);
   }
+}
+
+/** Identifies one ordered SVG revision pair regardless of which pane sent a message. */
+function svgDiffPairKey(pair: SvgDiffPair): string {
+  return [pair.original.toString(), pair.modified.toString()].sort().join("\n");
 }
 
 /**

@@ -29,6 +29,7 @@ export type WebviewPreviewSource = (
 type PreviewHtmlOptions = {
   toolbarActions?: string;
   additionalScript?: string;
+  synchronizedZoomScale?: number;
 };
 
 export class ImagePreviewSidePanel {
@@ -204,7 +205,7 @@ export function buildPreviewHtml(imagePath: string, previewSource: WebviewPrevie
         <span class="zoomValue" data-zoom-value>100%</span>
       </div>
     </header>
-    <main class="viewport" data-preview-viewport>
+    <main class="viewport" data-preview-viewport${options.synchronizedZoomScale === undefined ? "" : ` data-synchronized-zoom-scale="${escapeAttribute(String(options.synchronizedZoomScale))}"`}>
       <div class="stage" data-preview-stage>
         ${previewMarkup}
       </div>
@@ -318,6 +319,17 @@ export function buildDiffHighlightIcon() {
     <path d="M13 13h7v7h-7z"></path>
     <path d="M14 4h6v6"></path>
     <path d="M4 14v6h6"></path>
+  `);
+}
+
+/** Builds the toolbar icon for linking zoom between SVG diff panes. */
+export function buildSynchronizedZoomIcon() {
+  return buildIconSvg(`
+    <rect x="3" y="5" width="7" height="14" rx="1"></rect>
+    <rect x="14" y="5" width="7" height="14" rx="1"></rect>
+    <path d="M7 12h10"></path>
+    <path d="m8.5 10.5-1.5 1.5 1.5 1.5"></path>
+    <path d="m15.5 10.5 1.5 1.5-1.5 1.5"></path>
   `);
 }
 
@@ -743,6 +755,10 @@ export function buildPanelHtml(body: string, script = ""): string {
       outline: 1px solid var(--vscode-focusBorder);
       outline-offset: 1px;
     }
+    [data-preview-command="pandocManuscriptTools.toggleSvgZoomSync"][aria-pressed="true"] {
+      color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+      background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
+    }
     .toolbarIcon {
       width: 18px;
       height: 18px;
@@ -846,6 +862,7 @@ function getPreviewScript() {
   const stage = document.querySelector("[data-preview-stage]");
   const preview = document.querySelector("[data-preview-image]");
   const zoomValue = document.querySelector("[data-zoom-value]");
+  const syncButton = document.querySelector('[data-preview-command="pandocManuscriptTools.toggleSvgZoomSync"]');
   if (!viewport || !stage || !preview || !zoomValue) {
     return;
   }
@@ -858,6 +875,8 @@ function getPreviewScript() {
   let naturalHeight = 1;
   let scale = 1;
   let fitMode = false;
+  let synchronizedScale = Number(viewport.getAttribute("data-synchronized-zoom-scale"));
+  let syncEnabled = Boolean(syncButton && synchronizedScale > 0 && Number.isFinite(synchronizedScale));
   let blobUrl = "";
   let pendingFitFrame = 0;
   let isPanning = false;
@@ -952,15 +971,25 @@ function getPreviewScript() {
     pendingFitFrame = requestAnimationFrame(() => {
       const fitScale = getFitScale();
       pendingFitFrame = 0;
-      setScale(fitScale < 1 ? fitScale : 1, fitScale < 1);
+      if (syncEnabled) {
+        setScale(synchronizedScale, false, false);
+      } else {
+        setScale(fitScale < 1 ? fitScale : 1, fitScale < 1);
+      }
     });
   }
 
-  /** Sets an absolute zoom scale. */
-  function setScale(value, nextFitMode) {
+  /** Sets an absolute zoom scale and shares local changes while linking is on. */
+  function setScale(value, nextFitMode, broadcast = true) {
     scale = clampScale(value);
     fitMode = nextFitMode;
+    if (syncEnabled) {
+      synchronizedScale = scale;
+    }
     render();
+    if (broadcast && syncEnabled && vscode) {
+      vscode.postMessage({ type: "svgZoomChanged", scale });
+    }
   }
 
   /** Changes the current zoom by a multiplicative factor. */
@@ -1025,7 +1054,7 @@ function getPreviewScript() {
     const commandButton = event.target.closest("[data-preview-command]");
     if (commandButton) {
       if (vscode) {
-        vscode.postMessage({ command: commandButton.getAttribute("data-preview-command") });
+        vscode.postMessage({ command: commandButton.getAttribute("data-preview-command"), scale });
       }
       return;
     }
@@ -1043,6 +1072,27 @@ function getPreviewScript() {
       setScale(1, false);
     } else if (action === "fit") {
       scheduleFit();
+    }
+  });
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (!message || message.type !== "svgZoomSync") {
+      return;
+    }
+    syncEnabled = message.enabled === true;
+    if (syncButton) {
+      syncButton.setAttribute("aria-pressed", String(syncEnabled));
+      syncButton.title = syncEnabled ? "Disable synchronized zoom" : "Synchronize zoom";
+    }
+    if (syncEnabled && Number.isFinite(message.scale) && message.scale > 0) {
+      synchronizedScale = message.scale;
+      // A pending initial fit must not overwrite the shared scale on a late pane.
+      if (pendingFitFrame) {
+        cancelAnimationFrame(pendingFitFrame);
+        pendingFitFrame = 0;
+      }
+      setScale(message.scale, false, false);
     }
   });
 
@@ -1076,6 +1126,14 @@ function getPreviewScript() {
   });
 
   applyBlobSource();
+  if (syncEnabled) {
+    syncButton.setAttribute("aria-pressed", "true");
+    syncButton.title = "Disable synchronized zoom";
+  }
+  if (syncButton && vscode) {
+    // A diff pane can finish loading after linking starts in its counterpart.
+    vscode.postMessage({ type: "svgZoomReady" });
+  }
   if (!(preview instanceof HTMLImageElement)) {
     refreshNaturalSize();
   } else if (preview.complete) {
