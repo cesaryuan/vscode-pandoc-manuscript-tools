@@ -16,6 +16,7 @@ import { isBuildableMarkdownDocument, isPandocDocument } from "./vscodeUtils";
 import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocFoldingRangeProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
 import { NumberingInlayHints } from "./numberingInlayHints";
+import { PapperUpdateChecker } from "./papperUpdateChecker";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -35,6 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
   const buildRunner = new PandocBuildRunner(output);
   const markdownPreview = new PapperMarkdownPreviewController(output);
   const numberingInlayHints = new NumberingInlayHints(buildRunner, output);
+  const papperUpdateChecker = new PapperUpdateChecker(context.globalState);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);
   const customImagePreviewContext = new CustomImagePreviewContext((key, value) => {
@@ -77,6 +79,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
   context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
   context.subscriptions.push(numberingInlayHints);
+  context.subscriptions.push(papperUpdateChecker);
+  papperUpdateChecker.start();
 
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
     await index.refreshWorkspace();

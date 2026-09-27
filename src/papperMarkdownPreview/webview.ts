@@ -23,15 +23,15 @@ export function createNonce() {
 }
 
 /**
- * Removes a temporary Markdown mirror, retrying briefly if Papper still holds it.
+ * Removes a temporary Markdown directory, retrying briefly if Papper still holds it.
  *
- * @param filePath Temporary Markdown path.
+ * @param directoryPath Temporary build directory.
  * @param output Output channel for an unusual cleanup failure.
  */
-export async function removeTemporaryMarkdown(filePath: string, output: vscode.OutputChannel) {
+export async function removeTemporaryMarkdownDirectory(directoryPath: string, output: vscode.OutputChannel) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      await fs.unlink(filePath);
+      await fs.rm(directoryPath, { recursive: true, force: true });
       return;
     } catch (error) {
       if (!isFileNotFoundError(error)) {
@@ -41,7 +41,7 @@ export async function removeTemporaryMarkdown(filePath: string, output: vscode.O
       return;
     }
   }
-  output.appendLine(`[HTML] Could not remove temporary Markdown mirror: ${filePath}`);
+  output.appendLine(`[HTML] Could not remove temporary Markdown directory: ${directoryPath}`);
 }
 
 /**

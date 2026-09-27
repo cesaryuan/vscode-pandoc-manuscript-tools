@@ -97,8 +97,7 @@ export class PandocBuildRunner {
   /**
    * Builds and reads PMT's processed JSON AST for the current editor buffer.
    *
-   * The Markdown mirror stays beside the source so relative resources resolve
-   * as usual; the AST is written under the OS temporary directory. This path
+   * The Markdown mirror and AST share an OS temporary directory. This path
    * only uses an installed Papper executable and never auto-installs a CLI
    * during ordinary editor hint refreshes.
    *
@@ -119,14 +118,9 @@ export class PandocBuildRunner {
       return undefined;
     }
 
-    const buildId = crypto.randomBytes(8).toString("hex");
-    const markdownMirrorPath = path.join(
-      path.dirname(document.uri.fsPath),
-      `.pmt-inlay-${process.pid}-${buildId}-${path.basename(document.uri.fsPath)}`,
-    );
     const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-numbering-"));
+    const markdownMirrorPath = path.join(outputDirectory, path.basename(document.uri.fsPath));
     const astPath = path.join(outputDirectory, "ast.json");
-    const markdownRelativePath = path.relative(project.rootUri.fsPath, markdownMirrorPath);
 
     try {
       await fs.writeFile(markdownMirrorPath, document.getText(), "utf8");
@@ -134,7 +128,7 @@ export class PandocBuildRunner {
       const jsonBuildStartedAt = Date.now();
       this.output.appendLine(`[Inlay hints][timing] Papper JSON build started: ${path.basename(document.uri.fsPath)} version=${document.version}`);
       try {
-        await runProcess(papperExecutable, ["build", "json", markdownRelativePath, "--output-file", astPath], {
+        await runProcess(papperExecutable, ["build", "json", markdownMirrorPath, "--output-file", astPath], {
           cwd: project.rootUri.fsPath,
           env: environment.env,
         });
@@ -143,11 +137,8 @@ export class PandocBuildRunner {
       }
       return JSON.parse(await fs.readFile(astPath, "utf8")) as unknown;
     } finally {
-      await fs.rm(markdownMirrorPath, { force: true }).catch((error) => {
-        this.output.appendLine(`[Inlay hints] Could not remove temporary Markdown mirror: ${String(error)}`);
-      });
       await fs.rm(outputDirectory, { recursive: true, force: true }).catch((error) => {
-        this.output.appendLine(`[Inlay hints] Could not remove temporary AST directory: ${String(error)}`);
+        this.output.appendLine(`[Inlay hints] Could not remove temporary build directory: ${String(error)}`);
       });
     }
   }

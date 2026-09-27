@@ -2,6 +2,7 @@ import * as cp from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
+import { CHINESE_PYPI_MIRROR, shouldUseChinesePypiMirror } from "./papperToolPolicy";
 
 export type PandocManuscriptProject = { rootUri: vscode.Uri };
 export type RunProcessOptions = {
@@ -78,6 +79,56 @@ export async function isPapperBuildAvailable() {
   return Boolean(await findExecutableOnPath("uv"));
 }
 
+/** Describes an available Papper update reported by uv. */
+export type PapperUpdateInfo = { summary: string };
+
+/**
+ * Checks uv's installed-tool list without changing any environment.
+ *
+ * @returns Papper update details, or `undefined` when no update is reported.
+ */
+export async function checkForPapperUpdate(): Promise<PapperUpdateInfo | undefined> {
+  const uvExecutable = await findExecutableOnPath("uv");
+  if (!uvExecutable) {
+    return undefined;
+  }
+
+  try {
+    const toolBinDirectory = await runProcess(uvExecutable, ["tool", "dir", "--bin"], { captureStdout: true });
+    const uvPapperExecutable = toolBinDirectory ? await findExecutableInDirectory("papper", toolBinDirectory) : undefined;
+    if (!uvPapperExecutable) {
+      return undefined;
+    }
+    const pathPapperExecutable = await findExecutableOnPath("papper");
+    if (pathPapperExecutable && !isSameFsPath(pathPapperExecutable, uvPapperExecutable)) {
+      return undefined;
+    }
+
+    const outdated = await runProcess(uvExecutable, ["tool", "list", "--outdated"], { captureStdout: true });
+    const papperLine = outdated
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^(?:[-*]\s*)?papper\b/i.test(line));
+    return papperLine ? { summary: papperLine } : undefined;
+  } catch {
+    // Network failures and older uv versions must not disturb the editor.
+    return undefined;
+  }
+}
+
+/**
+ * Upgrades the installed Papper uv tool after the user has confirmed.
+ */
+export async function upgradePapper() {
+  const uvExecutable = await findExecutableOnPath("uv");
+  if (!uvExecutable) {
+    throw new Error("`uv` is not available to upgrade Papper.");
+  }
+
+  await runProcess(uvExecutable, ["tool", "upgrade", "papper"], {});
+  cachedPapperExecutable = undefined;
+}
+
 /**
  * Finds Papper only when it is already installed, without starting a tool installation.
  */
@@ -150,8 +201,23 @@ async function installPapperTool(output: vscode.OutputChannel) {
     return installedExecutable;
   }
 
-  output.appendLine("[Papper] `papper` is not on PATH; installing it with `uv tool install papper`.");
-  await runProcess(uvExecutable, ["tool", "install", "papper"], { output });
+  const installArgs = ["tool", "install", "papper"];
+  const systemLocale = Intl.DateTimeFormat().resolvedOptions().locale;
+  const useMirror = shouldUseChinesePypiMirror(systemLocale, -new Date().getTimezoneOffset());
+  if (useMirror) {
+    installArgs.push("--default-index", CHINESE_PYPI_MIRROR);
+  }
+  output.appendLine(`[Papper] \`papper\` is not on PATH; installing it with \`uv ${installArgs.join(" ")}\`.`);
+  try {
+    await runProcess(uvExecutable, installArgs, { output });
+  } catch (error) {
+    if (!useMirror) {
+      throw error;
+    }
+    // A mirror outage must not prevent installation from the user's normal index.
+    output.appendLine("[Papper] Mirror installation failed; retrying without a custom index.");
+    await runProcess(uvExecutable, ["tool", "install", "papper"], { output });
+  }
 
   installedExecutable = await findExecutableOnPath("papper");
   if (!installedExecutable) {

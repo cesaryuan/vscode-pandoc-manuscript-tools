@@ -1,4 +1,5 @@
 import * as fs from "fs/promises";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_HTML_CONTEXT } from "../constants";
@@ -7,7 +8,7 @@ import { findPandocManuscriptProject, isPapperBuildAvailable, pathExists, prepar
 import { isBuildableMarkdownDocument } from "../vscodeUtils";
 import { HtmlPreviewClickNavigation, type HtmlPreviewBlockDescriptor, type HtmlPreviewClickMessage } from "./clickNavigation";
 import { HtmlPreviewScrollSync, type HtmlPreviewMessage } from "./scrollSync";
-import { countHtmlElements, createNonce, getExpectedHtmlUri, injectHtmlPreviewBridge, removeTemporaryMarkdown, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
+import { countHtmlElements, createNonce, getExpectedHtmlUri, injectHtmlPreviewBridge, removeTemporaryMarkdownDirectory, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
 
 /** Owns Papper Markdown HTML builds, preview panel lifecycle, and refresh scheduling. */
 export class PapperMarkdownPreviewController {
@@ -51,9 +52,6 @@ export class PapperMarkdownPreviewController {
 
   /**
    * Returns whether the active Markdown file can be rendered by Papper as HTML.
-   *
-   * HTML preview uses the same saved-file and `style.yml` project boundary as
-   * the DOCX command, so non-Papper workspaces do not expose this feature.
    */
   private async canBuildHtmlActiveDocument() {
     const editor = vscode.window.activeTextEditor;
@@ -61,8 +59,7 @@ export class PapperMarkdownPreviewController {
       return false;
     }
 
-    const project = await findPandocManuscriptProject(editor.document.uri);
-    return Boolean(project) && isPapperBuildAvailable();
+    return isPapperBuildAvailable();
   }
 
   /**
@@ -78,12 +75,7 @@ export class PapperMarkdownPreviewController {
       return;
     }
 
-    const project = await findPandocManuscriptProject(editor.document.uri);
-    if (!project) {
-      vscode.window.showWarningMessage("This Markdown file is not inside a Papper project with style.yml.");
-      await this.refreshContext();
-      return;
-    }
+    const project = await resolveHtmlPreviewProject(editor.document.uri);
 
     if (!(await isPapperBuildAvailable())) {
       vscode.window.showErrorMessage("Cannot build HTML preview because `papper` is not on PATH and `uv` is not available to install it.");
@@ -99,8 +91,8 @@ export class PapperMarkdownPreviewController {
   /**
    * Schedules a live HTML preview rebuild for the currently previewed document.
    *
-   * Unsaved text is rendered through a temporary Markdown mirror next to the
-   * source file, so refreshing the preview never changes the user's document.
+   * Unsaved text is rendered through a Markdown mirror in the OS temporary
+   * directory, so refreshing the preview never changes the user's document.
    *
    * @param document Changed Markdown document.
    */
@@ -136,24 +128,18 @@ export class PapperMarkdownPreviewController {
     const buildId = ++this.htmlPreviewBuildId;
     const htmlUri = getExpectedHtmlUri(project.rootUri, document.uri);
     const htmlRelativePath = path.relative(project.rootUri.fsPath, htmlUri.fsPath);
-    const temporaryMarkdownPath = path.join(path.dirname(document.uri.fsPath), `.pmt-preview-${process.pid}-${buildId}-${path.basename(document.uri.fsPath)}`);
-    const temporaryMarkdownRelativePath = path.relative(project.rootUri.fsPath, temporaryMarkdownPath);
-    const args = [
-      "build",
-      "html",
-      temporaryMarkdownRelativePath,
-      "--output-file",
-      htmlRelativePath,
-    ];
+    let temporaryDirectory: string | undefined;
 
     try {
+      temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-preview-"));
+      const temporaryMarkdownPath = path.join(temporaryDirectory, path.basename(document.uri.fsPath));
       await fs.writeFile(temporaryMarkdownPath, document.getText(), "utf8");
 
       const papperExecutable = await resolvePapperExecutable(this.output);
 
       const papperEnvironment = await preparePapperEnvironment(papperExecutable);
 
-      await runProcess(papperExecutable, args, {
+      await runProcess(papperExecutable, ["build", "html", temporaryMarkdownPath, "--output-file", htmlRelativePath], {
         cwd: project.rootUri.fsPath,
         output: this.output,
         env: papperEnvironment.env,
@@ -172,7 +158,9 @@ export class PapperMarkdownPreviewController {
       this.output.appendLine(`[HTML] ${message}`);
       vscode.window.showErrorMessage(message);
     } finally {
-      await removeTemporaryMarkdown(temporaryMarkdownPath, this.output);
+      if (temporaryDirectory) {
+        await removeTemporaryMarkdownDirectory(temporaryDirectory, this.output);
+      }
     }
   }
 
@@ -271,7 +259,7 @@ export class PapperMarkdownPreviewController {
    * Rebuilds the current preview and keeps the side panel alive.
    *
    * @param document Source Markdown document.
-   * @param project Optional already detected Papper project.
+   * @param project Optional already resolved preview root.
    */
   private async refreshHtmlPreview(document: vscode.TextDocument, project?: PandocManuscriptProject) {
     if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, document.uri)) {
@@ -281,10 +269,7 @@ export class PapperMarkdownPreviewController {
       this.htmlPreviewRefreshPending = true;
       return;
     }
-    const resolvedProject = project || await findPandocManuscriptProject(document.uri);
-    if (!resolvedProject) {
-      return;
-    }
+    const resolvedProject = project || await resolveHtmlPreviewProject(document.uri);
     this.htmlPreviewBuildRunning = true;
     try {
       await this.runHtmlBuild(resolvedProject, document);
@@ -354,6 +339,16 @@ export class PapperMarkdownPreviewController {
       this.scrollSync.syncFromEditor(this.htmlPreviewPanel, this.htmlPreviewDocumentUri, sourceEditor);
     }
   }
+}
+
+/** Keeps configured projects intact and gives other saved Markdown a preview root. */
+async function resolveHtmlPreviewProject(markdownUri: vscode.Uri): Promise<PandocManuscriptProject> {
+  const project = await findPandocManuscriptProject(markdownUri);
+  if (project) {
+    return project;
+  }
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(markdownUri);
+  return { rootUri: workspaceFolder?.uri || vscode.Uri.file(path.dirname(markdownUri.fsPath)) };
 }
 
 /** Compares two file URIs using platform-aware filesystem path rules. */
