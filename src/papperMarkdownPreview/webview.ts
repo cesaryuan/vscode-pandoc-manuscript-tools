@@ -117,20 +117,6 @@ let lastSentBlockId = '';
 let lastSentBlockOffsetRatio = 0;
 let previewUpdateChain = Promise.resolve();
 let previewContent = null;
-const MIN_PREVIEW_SCALE = 0.1;
-const MAX_PREVIEW_SCALE = 8;
-const PREVIEW_ZOOM_SENSITIVITY = 0.001;
-let previewScale = 1;
-let targetPreviewScale = 1;
-let previewZoomFrame = 0;
-let previewZoomLastFrameAt = 0;
-let previewZoomAnimating = false;
-let previewZoomAnchorClientX = 0;
-let previewZoomAnchorClientY = 0;
-let previewZoomAnchorOffsetX = 0;
-let previewZoomAnchorOffsetY = 0;
-let previewZoomIndicator = null;
-let previewZoomIndicatorHideTimer = 0;
 let previewBlocks = [];
 let previewBlockMapReady = false;
 let readySent = false;
@@ -146,7 +132,6 @@ function ensurePreviewContent() {
     previewContent.append(...Array.from(document.body.childNodes));
     document.body.appendChild(previewContent);
   }
-  previewContent.style.zoom = String(previewScale);
   return previewContent;
 }
 // Returns the element that owns the document's vertical scroll position.
@@ -158,11 +143,6 @@ function getScrollTop() {
   const scroller = getScrollElement();
   return scroller ? scroller.scrollTop : window.scrollY || 0;
 }
-// Reads the horizontal scroll position from the active document scroller.
-function getScrollLeft() {
-  const scroller = getScrollElement();
-  return scroller ? scroller.scrollLeft : window.scrollX || 0;
-}
 // Returns the scrollable document height used by both directions of synchronization.
 function getScrollHeight() {
   const scroller = getScrollElement();
@@ -172,22 +152,14 @@ function getScrollHeight() {
 function getViewportHeight() {
   return window.innerHeight || document.documentElement.clientHeight || 1;
 }
-// Returns the visible layout width used for the viewport-centered zoom anchor.
-function getViewportWidth() {
-  return document.documentElement.clientWidth || window.innerWidth || 1;
-}
-// Sets both axes on the active document scroller so one-axis changes preserve the other axis.
-function setScrollPosition(left, top) {
+// Sets the active document scroller without assuming that the viewport owns scrolling.
+function setScrollTop(top) {
   const scroller = getScrollElement();
   if (scroller && typeof scroller.scrollTo === 'function') {
-    scroller.scrollTo({ left, top, behavior: 'auto' });
+    scroller.scrollTo({ top, behavior: 'auto' });
     return;
   }
-  window.scrollTo({ left, top, behavior: 'auto' });
-}
-// Sets the active document's vertical scroll position while preserving horizontal position.
-function setScrollTop(top) {
-  setScrollPosition(getScrollLeft(), top);
+  window.scrollTo({ top, behavior: 'auto' });
 }
 // Emits at most four WebView scroll diagnostics per second to keep Output usable.
 function traceScroll(message) {
@@ -419,6 +391,30 @@ function getClickableBlockId(element) {
   return block ? block.getAttribute('data-pmt-block-id') || '' : '';
 }
 // Emits a source-navigation request for a clicked rendered block.
+let pendingPreviewImageClickTimer = 0;
+let pendingPreviewImage = null;
+// Sends the existing source-navigation message for one rendered image.
+function emitPreviewImageClick(image) {
+  const figure = image.closest('figure');
+  if (figure) {
+    const figureCaption = getFigureCaption(figure);
+    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', blockId: getClickableBlockId(figure), label: getClickableLabel(figure), text: figureCaption ? getClickableText(figureCaption) : image.getAttribute('alt') || '', caption: figureCaption ? getClickableText(figureCaption) : '', alt: image.getAttribute('alt') || '' });
+    return;
+  }
+  vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', blockId: getClickableBlockId(image), label: getClickableLabel(image), text: image.getAttribute('alt') || '', alt: image.getAttribute('alt') || '' });
+}
+// Delays image source navigation long enough to distinguish a single click from a double click.
+function schedulePreviewImageClick(image) {
+  if (pendingPreviewImageClickTimer) window.clearTimeout(pendingPreviewImageClickTimer);
+  pendingPreviewImage = image;
+  pendingPreviewImageClickTimer = window.setTimeout(() => {
+    if (pendingPreviewImage === image) {
+      pendingPreviewImage = null;
+      emitPreviewImageClick(image);
+    }
+    pendingPreviewImageClickTimer = 0;
+  }, 220);
+}
 function handlePreviewClick(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target || target.closest('a, button, input, select, textarea, summary')) return;
@@ -439,6 +435,17 @@ function handlePreviewClick(event) {
     vscode.postMessage({ type: 'previewBlockClick', blockType: 'math', blockId: getClickableBlockId(math), label: getClickableLabel(math), tex: math.getAttribute('data-pmt-tex') || '', text: getClickableText(math), display: math.classList.contains('display') });
     return;
   }
+  const image = target.closest('img');
+  if (image) {
+    if (event.detail >= 2) {
+      if (pendingPreviewImageClickTimer) window.clearTimeout(pendingPreviewImageClickTimer);
+      pendingPreviewImageClickTimer = 0;
+      pendingPreviewImage = null;
+      return;
+    }
+    schedulePreviewImageClick(image);
+    return;
+  }
   const figure = target.closest('figure');
   if (figure) {
     const image = figure.querySelector('img');
@@ -452,11 +459,6 @@ function handlePreviewClick(event) {
     vscode.postMessage({ type: 'previewBlockClick', blockType: 'table', blockId: getClickableBlockId(table), label: getClickableLabel(table), text: getClickableText(table), caption: tableCaption ? getClickableText(tableCaption) : '' });
     return;
   }
-  const image = target.closest('img');
-  if (image) {
-    vscode.postMessage({ type: 'previewBlockClick', blockType: 'image', blockId: getClickableBlockId(image), label: getClickableLabel(image), text: image.getAttribute('alt') || '', alt: image.getAttribute('alt') || '' });
-    return;
-  }
   const paragraph = target.closest('p');
   if (paragraph) {
     const mathInParagraph = paragraph.querySelector('.math, [data-pmt-tex]');
@@ -465,89 +467,176 @@ function handlePreviewClick(event) {
   }
 }
 document.addEventListener('click', handlePreviewClick);
-// Creates the transient zoom readout in the Webview's top-right corner.
-function ensurePreviewZoomIndicator() {
-  if (previewZoomIndicator && previewZoomIndicator.isConnected) return previewZoomIndicator;
+const MIN_IMAGE_LIGHTBOX_ZOOM = 0.1;
+const MAX_IMAGE_LIGHTBOX_ZOOM = 8;
+let imageLightbox = null;
+let imageLightboxImage = null;
+let imageLightboxZoomValue = null;
+let imageLightboxZoom = 1;
+let imageLightboxBaseWidth = 0;
+let imageLightboxBaseHeight = 0;
+let imageLightboxPanX = 0;
+let imageLightboxPanY = 0;
+let imageLightboxPointerId = null;
+let imageLightboxPointerStartX = 0;
+let imageLightboxPointerStartY = 0;
+let imageLightboxPanStartX = 0;
+let imageLightboxPanStartY = 0;
+// Creates the image-only lightbox and its lightweight controls once per preview page.
+function ensureImageLightbox() {
+  if (imageLightbox && imageLightbox.isConnected) return imageLightbox;
   if (!document.body) return null;
-  previewZoomIndicator = document.createElement('div');
-  previewZoomIndicator.id = 'pmt-preview-zoom-indicator';
-  previewZoomIndicator.setAttribute('aria-hidden', 'true');
-  previewZoomIndicator.style.cssText = 'position:fixed;top:12px;right:14px;z-index:2147483647;padding:6px 10px;border:1px solid rgba(255,255,255,.24);border-radius:7px;background:rgba(24,24,24,.68);color:rgba(255,255,255,.96);font:600 12px/1.2 var(--vscode-font-family,sans-serif);letter-spacing:.02em;box-shadow:0 2px 10px rgba(0,0,0,.22);backdrop-filter:blur(6px);pointer-events:none;user-select:none;opacity:0;transition:opacity 160ms ease;';
-  document.body.appendChild(previewZoomIndicator);
-  return previewZoomIndicator;
+  imageLightbox = document.createElement('div');
+  imageLightbox.setAttribute('role', 'dialog');
+  imageLightbox.setAttribute('aria-modal', 'true');
+  imageLightbox.setAttribute('aria-label', 'Image preview');
+  imageLightbox.tabIndex = -1;
+  imageLightbox.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.82);display:none;font-family:var(--vscode-font-family,sans-serif);';
+  const viewport = document.createElement('div');
+  viewport.style.cssText = 'position:absolute;inset:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:48px 24px 24px;box-sizing:border-box;';
+  const toolbar = document.createElement('div');
+  toolbar.style.cssText = 'position:absolute;top:12px;right:14px;z-index:1;display:flex;align-items:center;gap:4px;padding:5px 6px;border:1px solid rgba(255,255,255,.24);border-radius:8px;background:rgba(24,24,24,.72);color:rgba(255,255,255,.96);box-shadow:0 2px 12px rgba(0,0,0,.28);backdrop-filter:blur(6px);';
+  const makeButton = (label, text) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.textContent = text;
+    button.style.cssText = 'min-width:28px;height:26px;padding:0 7px;border:0;border-radius:5px;background:transparent;color:inherit;font:600 13px/1 var(--vscode-font-family,sans-serif);cursor:pointer;';
+    button.addEventListener('mouseenter', () => { button.style.background = 'rgba(255,255,255,.14)'; });
+    button.addEventListener('mouseleave', () => { button.style.background = 'transparent'; });
+    return button;
+  };
+  const zoomOut = makeButton('Zoom out', '−');
+  const zoomIn = makeButton('Zoom in', '+');
+  const fit = makeButton('Fit image to window', 'Fit');
+  const close = makeButton('Close image preview', '×');
+  imageLightboxZoomValue = document.createElement('span');
+  imageLightboxZoomValue.style.cssText = 'min-width:42px;padding:0 4px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;';
+  zoomOut.addEventListener('click', () => setImageLightboxZoom(imageLightboxZoom / 1.2));
+  zoomIn.addEventListener('click', () => setImageLightboxZoom(imageLightboxZoom * 1.2));
+  fit.addEventListener('click', fitImageLightbox);
+  close.addEventListener('click', closeImageLightbox);
+  toolbar.append(zoomOut, imageLightboxZoomValue, zoomIn, fit, close);
+  imageLightboxImage = document.createElement('img');
+  imageLightboxImage.draggable = false;
+  imageLightboxImage.style.cssText = 'display:none;position:absolute;max-width:none;max-height:none;user-select:none;-webkit-user-drag:none;';
+  imageLightboxImage.addEventListener('load', fitImageLightbox);
+  imageLightboxImage.addEventListener('pointerdown', beginImageLightboxPan);
+  imageLightboxImage.addEventListener('pointermove', moveImageLightboxPan);
+  imageLightboxImage.addEventListener('pointerup', endImageLightboxPan);
+  imageLightboxImage.addEventListener('pointercancel', endImageLightboxPan);
+  viewport.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    setImageLightboxZoom(imageLightboxZoom * Math.exp(-event.deltaY * 0.0015));
+  }, { passive: false });
+  imageLightbox.addEventListener('click', (event) => {
+    if (event.target === imageLightbox || event.target === viewport) closeImageLightbox();
+  });
+  viewport.appendChild(imageLightboxImage);
+  imageLightbox.append(viewport, toolbar);
+  document.body.appendChild(imageLightbox);
+  return imageLightbox;
 }
-// Renders the current applied zoom percentage in the transient indicator.
-function renderPreviewZoomIndicator() {
-  const indicator = ensurePreviewZoomIndicator();
-  if (indicator) indicator.textContent = Math.round(previewScale * 100) + '%';
-}
-// Shows the zoom readout and fades it after wheel input settles.
-function showPreviewZoomIndicator() {
-  const indicator = ensurePreviewZoomIndicator();
-  if (!indicator) return;
-  indicator.textContent = Math.round(previewScale * 100) + '%';
-  indicator.style.opacity = '1';
-  if (previewZoomIndicatorHideTimer) window.clearTimeout(previewZoomIndicatorHideTimer);
-  previewZoomIndicatorHideTimer = window.setTimeout(() => {
-    if (previewZoomIndicator) previewZoomIndicator.style.opacity = '0';
-    previewZoomIndicatorHideTimer = 0;
-  }, 900);
-}
-// Eases toward the latest requested scale while keeping the viewport-center content point fixed.
-function animatePreviewZoom(timestamp) {
-  previewZoomFrame = 0;
-  const content = ensurePreviewContent();
-  if (!content) {
-    previewScale = targetPreviewScale;
-    previewZoomLastFrameAt = 0;
-    previewZoomAnimating = false;
-    return;
+// Updates the image dimensions and pan transform without scaling a cached compositor bitmap.
+function updateImageLightboxTransform() {
+  if (!imageLightboxImage) return;
+  if (imageLightboxBaseWidth > 0 && imageLightboxBaseHeight > 0) {
+    imageLightboxImage.style.width = imageLightboxBaseWidth * imageLightboxZoom + 'px';
+    imageLightboxImage.style.height = imageLightboxBaseHeight * imageLightboxZoom + 'px';
   }
-  const elapsed = previewZoomLastFrameAt ? Math.max(1, Math.min(48, timestamp - previewZoomLastFrameAt)) : 16;
-  previewZoomLastFrameAt = timestamp;
-  const smoothing = 1 - Math.exp(-elapsed / 75);
-  const difference = targetPreviewScale - previewScale;
-  const nextScale = Math.abs(difference) < 0.001 ? targetPreviewScale : previewScale + difference * smoothing;
-  content.style.zoom = String(nextScale);
-  const nextRect = content.getBoundingClientRect();
-  const currentScrollLeft = getScrollLeft();
-  const currentScrollTop = getScrollTop();
-  const nextScrollLeft = currentScrollLeft + nextRect.left + previewZoomAnchorOffsetX * nextScale - previewZoomAnchorClientX;
-  const nextScrollTop = currentScrollTop + nextRect.top + previewZoomAnchorOffsetY * nextScale - previewZoomAnchorClientY;
-  setScrollPosition(nextScrollLeft, nextScrollTop);
-  previewScale = nextScale;
-  renderPreviewZoomIndicator();
-  if (previewScale === targetPreviewScale) {
-    previewZoomLastFrameAt = 0;
-    previewZoomAnimating = false;
-    requestAnimationFrame(handlePreviewScrollEvent);
-    return;
-  }
-  previewZoomFrame = requestAnimationFrame(animatePreviewZoom);
+  // Translation remains GPU-friendly; the zoom itself is expressed as CSS dimensions
+  // so SVG images can be rasterized again at their new display size.
+  imageLightboxImage.style.transform = 'translate3d(' + imageLightboxPanX + 'px,' + imageLightboxPanY + 'px,0)';
+  if (imageLightboxZoomValue) imageLightboxZoomValue.textContent = Math.round(imageLightboxZoom * 100) + '%';
 }
-// Applies exponential Ctrl+wheel scaling around the center of the visible preview viewport.
-function handlePreviewZoomWheel(event) {
-  if (!event.ctrlKey || event.deltaY === 0) return;
+// Applies a bounded zoom level without changing the surrounding Markdown layout.
+function setImageLightboxZoom(value) {
+  imageLightboxZoom = Math.max(MIN_IMAGE_LIGHTBOX_ZOOM, Math.min(MAX_IMAGE_LIGHTBOX_ZOOM, value));
+  if (imageLightboxZoom <= 1) {
+    imageLightboxPanX = 0;
+    imageLightboxPanY = 0;
+  }
+  updateImageLightboxTransform();
+}
+// Fits the current image inside the lightbox viewport and resets its pan position.
+function fitImageLightbox() {
+  if (!imageLightbox || !imageLightboxImage || !imageLightboxImage.naturalWidth) return;
+  const viewport = imageLightboxImage.parentElement;
+  if (!viewport) return;
+  const availableWidth = Math.max(120, viewport.clientWidth - 48);
+  const availableHeight = Math.max(120, viewport.clientHeight - 72);
+  const fitScale = Math.min(1, availableWidth / imageLightboxImage.naturalWidth, availableHeight / imageLightboxImage.naturalHeight);
+  imageLightboxBaseWidth = Math.max(1, imageLightboxImage.naturalWidth * fitScale);
+  imageLightboxBaseHeight = Math.max(1, imageLightboxImage.naturalHeight * fitScale);
+  imageLightboxPanX = 0;
+  imageLightboxPanY = 0;
+  setImageLightboxZoom(1);
+}
+// Begins dragging only after the image has been enlarged beyond its fitted size.
+function beginImageLightboxPan(event) {
+  if (imageLightboxZoom <= 1 || !imageLightboxImage) return;
+  imageLightboxPointerId = event.pointerId;
+  imageLightboxPointerStartX = event.clientX;
+  imageLightboxPointerStartY = event.clientY;
+  imageLightboxPanStartX = imageLightboxPanX;
+  imageLightboxPanStartY = imageLightboxPanY;
+  imageLightboxImage.setPointerCapture(event.pointerId);
+  imageLightboxImage.style.cursor = 'grabbing';
+}
+// Applies pointer movement to the image without affecting the document's scroll position.
+function moveImageLightboxPan(event) {
+  if (event.pointerId !== imageLightboxPointerId) return;
+  imageLightboxPanX = imageLightboxPanStartX + event.clientX - imageLightboxPointerStartX;
+  imageLightboxPanY = imageLightboxPanStartY + event.clientY - imageLightboxPointerStartY;
+  updateImageLightboxTransform();
+}
+// Ends a lightbox image drag and restores the normal cursor.
+function endImageLightboxPan(event) {
+  if (event.pointerId !== imageLightboxPointerId) return;
+  imageLightboxPointerId = null;
+  imageLightboxImage?.releasePointerCapture?.(event.pointerId);
+  if (imageLightboxImage) imageLightboxImage.style.cursor = '';
+}
+// Opens the image lightbox using the already-resolved Webview image URI.
+function openImageLightbox(image) {
+  if (!image || !image.src) return;
+  const overlay = ensureImageLightbox();
+  if (!overlay || !imageLightboxImage) return;
+  if (pendingPreviewImageClickTimer) window.clearTimeout(pendingPreviewImageClickTimer);
+  pendingPreviewImageClickTimer = 0;
+  pendingPreviewImage = null;
+  imageLightboxImage.onload = fitImageLightbox;
+  imageLightboxImage.alt = image.alt || 'Image preview';
+  imageLightboxImage.src = image.currentSrc || image.src;
+  imageLightboxImage.style.display = 'block';
+  overlay.style.display = 'block';
+  overlay.focus();
+  if (imageLightboxImage.complete) fitImageLightbox();
+}
+// Closes the image-only preview without changing the surrounding Markdown page.
+function closeImageLightbox() {
+  if (!imageLightbox) return;
+  imageLightbox.style.display = 'none';
+  if (imageLightboxImage) {
+    imageLightboxImage.style.display = 'none';
+    imageLightboxImage.removeAttribute('src');
+  }
+  imageLightboxBaseWidth = 0;
+  imageLightboxBaseHeight = 0;
+  imageLightboxPointerId = null;
+}
+document.addEventListener('dblclick', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const image = target?.closest('img');
+  if (!image) return;
   event.preventDefault();
-  const content = ensurePreviewContent();
-  const previousRect = content ? content.getBoundingClientRect() : null;
-  previewZoomAnchorClientX = getViewportWidth() / 2;
-  previewZoomAnchorClientY = getViewportHeight() / 2;
-  previewZoomAnchorOffsetX = previousRect
-    ? Math.max(0, Math.min(content.offsetWidth, (previewZoomAnchorClientX - previousRect.left) / previewScale))
-    : 0;
-  previewZoomAnchorOffsetY = previousRect
-    ? Math.max(0, Math.min(content.offsetHeight, (previewZoomAnchorClientY - previousRect.top) / previewScale))
-    : 0;
-  const deltaPixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? getViewportHeight() : 1);
-  targetPreviewScale = Math.max(MIN_PREVIEW_SCALE, Math.min(MAX_PREVIEW_SCALE, targetPreviewScale * Math.exp(-deltaPixels * PREVIEW_ZOOM_SENSITIVITY)));
-  showPreviewZoomIndicator();
-  if (!previewZoomFrame && Math.abs(targetPreviewScale - previewScale) >= 0.001) {
-    previewZoomAnimating = true;
-    previewZoomFrame = requestAnimationFrame(animatePreviewZoom);
-  }
-}
-document.addEventListener('wheel', handlePreviewZoomWheel, { passive: false });
+  event.stopPropagation();
+  openImageLightbox(image);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && imageLightbox?.style.display === 'block') closeImageLightbox();
+});
 async function replacePreviewHtml(html, token) {
   const previousScrollTop = getScrollTop();
   vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
@@ -687,11 +776,11 @@ function applyPreviewBlockMap(mappings) {
 }
 // Handles scroll events from either the viewport or a nested document scroller.
 function handlePreviewScrollEvent() {
-  if (suppressScroll || previewZoomAnimating || scrollFrame) return;
+  if (suppressScroll || scrollFrame) return;
   traceScroll('scroll event observed top=' + Math.round(getScrollTop()));
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = 0;
-    if (suppressScroll || previewZoomAnimating) return;
+    if (suppressScroll) return;
     if (pendingSourceScrollTarget !== null && Math.abs(getScrollTop() - pendingSourceScrollTarget) < 2) {
       pendingSourceScrollTarget = null;
       if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
