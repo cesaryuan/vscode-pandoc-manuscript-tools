@@ -52,7 +52,7 @@ export function activate(context: vscode.ExtensionContext) {
     void paragraphTranslator.initialize();
   }
 
-  context.subscriptions.push(output, diagnostics, customImagePreviewContext);
+  context.subscriptions.push(output, diagnostics, customImagePreviewContext, metafilePreviewEditorProvider);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(IMAGE_PREVIEW_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
@@ -102,6 +102,7 @@ export function activate(context: vscode.ExtensionContext) {
     await imageDirectoryPreview.open(uri);
   }));
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_PREVIEW_COMMAND, async (uri) => {
+    metafilePreviewEditorProvider.rememberDiffTab(vscode.window.tabGroups.activeTabGroup.activeTab);
     await reopenResourceWithSvgPreview(uri);
   }));
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, async (uri) => {

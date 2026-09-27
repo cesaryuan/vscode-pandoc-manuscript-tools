@@ -10,13 +10,20 @@ import * as vscode from "vscode";
 import { OPEN_SVG_SOURCE_TEXT_COMMAND } from "../constants";
 import { VisiblePreviewFileWatcher } from "./fileRefreshWatcher";
 import { convertEmfToSvg, convertWmfToSvg, WEBVIEW_METAFILE_MAX_HEIGHT, WEBVIEW_METAFILE_MAX_WIDTH } from "./libemf2svgRuntime";
-import { buildPanelHtml, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
+import { buildPanelHtml, buildDiffHighlightIcon, buildPreviewActionButton, buildPreviewHtml, buildSourceTextIcon, createInlineSvgPreviewSource, renderWebviewPreviewSource, type WebviewPreviewSource } from "./sidePreview";
+import { buildSvgDiffHighlightScript, TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND } from "./svgDiffHighlight";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".svg", ".emf", ".wmf"]);
 
-export class MetafilePreviewCustomEditorProvider {
+type SvgDiffPair = { original: vscode.Uri; modified: vscode.Uri };
+
+export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   declare imagePreviewRenderer;
   declare output: import("vscode").OutputChannel;
+  private readonly diffPairs = new Map<string, SvgDiffPair>();
+  private readonly svgPanels = new Map<string, Set<vscode.WebviewPanel>>();
+  private readonly highlightedPairs = new Set<string>();
+  private readonly tabListener: vscode.Disposable;
   /**
    * Creates a read-only custom editor provider for SVG/EMF/WMF previews.
    *
@@ -26,6 +33,37 @@ export class MetafilePreviewCustomEditorProvider {
   constructor(imagePreviewRenderer: import("./index").ImagePreviewRenderer, output: vscode.OutputChannel) {
     this.imagePreviewRenderer = imagePreviewRenderer;
     this.output = output;
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        this.rememberDiffTab(tab);
+      }
+    }
+    this.tabListener = vscode.window.tabGroups.onDidChangeTabs((event) => {
+      for (const tab of [...event.opened, ...event.changed]) {
+        this.rememberDiffTab(tab);
+      }
+    });
+  }
+
+  /** Releases the diff tab listener when the extension deactivates. */
+  dispose(): void {
+    this.tabListener.dispose();
+    this.svgPanels.clear();
+    this.diffPairs.clear();
+    this.highlightedPairs.clear();
+  }
+
+  /** Remembers the exact two URIs before VS Code reopens a text diff as previews. */
+  rememberDiffTab(tab: vscode.Tab | undefined): void {
+    if (!(tab?.input instanceof vscode.TabInputTextDiff)) {
+      return;
+    }
+    const pair = { original: tab.input.original, modified: tab.input.modified };
+    if (path.extname(pair.modified.path).toLowerCase() !== ".svg") {
+      return;
+    }
+    this.diffPairs.set(pair.original.toString(), pair);
+    this.diffPairs.set(pair.modified.toString(), pair);
   }
 
   /**
@@ -61,9 +99,18 @@ export class MetafilePreviewCustomEditorProvider {
       return;
     }
 
+    if (extension === ".svg") {
+      const key = document.uri.toString();
+      const panels = this.svgPanels.get(key) || new Set<vscode.WebviewPanel>();
+      panels.add(webviewPanel);
+      this.svgPanels.set(key, panels);
+    }
+
     const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string }) => {
       if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
         await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
+      } else if (message.command === TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND && extension === ".svg") {
+        await this.toggleSvgDiffHighlight(document.uri);
       }
     });
     const watcher = new VisiblePreviewFileWatcher(
@@ -75,6 +122,11 @@ export class MetafilePreviewCustomEditorProvider {
     webviewPanel.onDidDispose(() => {
       messageListener.dispose();
       watcher.dispose();
+      const panels = this.svgPanels.get(document.uri.toString());
+      panels?.delete(webviewPanel);
+      if (panels?.size === 0) {
+        this.svgPanels.delete(document.uri.toString());
+      }
     });
 
     await this.renderCustomEditorPanel(webviewPanel, document, imagePath, extension, label);
@@ -93,6 +145,9 @@ export class MetafilePreviewCustomEditorProvider {
    * @param label File name shown in status text.
    */
   private async renderCustomEditorPanel(webviewPanel: vscode.WebviewPanel, document: vscode.CustomDocument, imagePath: string, extension: string, label: string) {
+    if (extension === ".svg") {
+      this.clearSvgDiffHighlight(document.uri);
+    }
     webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
 
     try {
@@ -111,12 +166,96 @@ export class MetafilePreviewCustomEditorProvider {
       webviewPanel.webview.html = buildPreviewHtml(imagePath, previewSource, {
         toolbarActions: extension === ".svg"
           ? buildPreviewActionButton(OPEN_SVG_SOURCE_TEXT_COMMAND, "Source Text", buildSourceTextIcon())
+            + buildPreviewActionButton(TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND, "Highlight changed areas", buildDiffHighlightIcon())
           : "",
+        additionalScript: extension === ".svg" ? buildSvgDiffHighlightScript() : "",
       });
     } catch (error) {
       this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
       webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview failed for ${escapeHtml(label)}.</p>`);
     }
+  }
+
+  /** Finds the current SVG diff pair using the public text-diff tab input. */
+  private findSvgDiffPair(uri: vscode.Uri): SvgDiffPair | undefined {
+    this.rememberDiffTab(vscode.window.tabGroups.activeTabGroup.activeTab);
+    const known = this.diffPairs.get(uri.toString());
+    if (known) {
+      return known;
+    }
+
+    // Direct "Reopen With" can bypass our command. Pair one file URI with one
+    // virtual revision of that file only when there is exactly one candidate.
+    const resourcePath = process.platform === "win32" ? path.normalize(uri.fsPath).toLowerCase() : path.normalize(uri.fsPath);
+    const peers = [...this.svgPanels.keys()].filter((key) => {
+      if (key === uri.toString()) {
+        return false;
+      }
+      const peer = vscode.Uri.parse(key);
+      if ((peer.scheme === "file") === (uri.scheme === "file")) {
+        return false;
+      }
+      const peerPath = path.normalize(peer.fsPath);
+      return (process.platform === "win32" ? peerPath.toLowerCase() : peerPath) === resourcePath;
+    });
+    return peers.length === 1 ? { original: vscode.Uri.parse(peers[0]), modified: uri } : undefined;
+  }
+
+  /** Toggles comparison boxes on both sides of one SVG diff preview. */
+  private async toggleSvgDiffHighlight(uri: vscode.Uri): Promise<void> {
+    const pair = this.findSvgDiffPair(uri);
+    if (!pair) {
+      await vscode.window.showInformationMessage("Open this SVG in a diff editor to highlight changed areas.");
+      return;
+    }
+    const pairKey = [pair.original.toString(), pair.modified.toString()].sort().join("\n");
+    const enabled = !this.highlightedPairs.has(pairKey);
+    if (enabled) {
+      try {
+        const [originalBytes, modifiedBytes] = await Promise.all([
+          vscode.workspace.fs.readFile(pair.original),
+          vscode.workspace.fs.readFile(pair.modified),
+        ]);
+        // A newly added/deleted SVG can have an empty diff side. Use an empty
+        // SVG root so the visible side can still be marked as one addition.
+        const originalSvg = Buffer.from(originalBytes).toString("utf8") || "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        const modifiedSvg = Buffer.from(modifiedBytes).toString("utf8") || "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        this.highlightedPairs.add(pairKey);
+        await Promise.all([
+          this.postSvgDiffHighlight(pair.original, originalSvg, modifiedSvg, true),
+          this.postSvgDiffHighlight(pair.modified, modifiedSvg, originalSvg, true),
+        ]);
+      } catch (error) {
+        this.output.appendLine(`SVG diff highlight failed: ${formatError(error)}`);
+        await vscode.window.showWarningMessage("Could not read both SVG revisions for highlighting. See Pandoc Manuscript Tools output.");
+      }
+      return;
+    }
+    this.highlightedPairs.delete(pairKey);
+    await Promise.all([
+      this.postSvgDiffHighlight(pair.original, "", "", false),
+      this.postSvgDiffHighlight(pair.modified, "", "", false),
+    ]);
+  }
+
+  /** Sends current and counterpart SVG source to every preview of one revision. */
+  private async postSvgDiffHighlight(uri: vscode.Uri, currentSvg: string, otherSvg: string, enabled: boolean): Promise<void> {
+    await Promise.all([...this.svgPanels.get(uri.toString()) || []].map((panel) =>
+      panel.webview.postMessage({ type: "svgDiffHighlight", enabled, currentSvg, otherSvg })));
+  }
+
+  /** Clears both overlays before a file refresh replaces either preview DOM. */
+  private clearSvgDiffHighlight(uri: vscode.Uri): void {
+    const pair = this.findSvgDiffPair(uri);
+    if (!pair) {
+      return;
+    }
+    const pairKey = [pair.original.toString(), pair.modified.toString()].sort().join("\n");
+    if (!this.highlightedPairs.delete(pairKey)) {
+      return;
+    }
+    void this.postSvgDiffHighlight(pair.original, "", "", false);
+    void this.postSvgDiffHighlight(pair.modified, "", "", false);
   }
 }
 

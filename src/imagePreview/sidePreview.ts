@@ -28,6 +28,7 @@ export type WebviewPreviewSource = (
 
 type PreviewHtmlOptions = {
   toolbarActions?: string;
+  additionalScript?: string;
 };
 
 export class ImagePreviewSidePanel {
@@ -208,7 +209,7 @@ export function buildPreviewHtml(imagePath: string, previewSource: WebviewPrevie
         ${previewMarkup}
       </div>
     </main>
-  `, getPreviewScript());
+  `, getPreviewScript() + (options.additionalScript || ""));
 }
 
 /**
@@ -307,6 +308,16 @@ export function buildSourceTextIcon() {
     <path d="M14.5 5v3.5H18"></path>
     <path d="m5.5 10.5-2.75 2.5 2.75 2.5"></path>
     <path d="M3 13h3.5"></path>
+  `);
+}
+
+/** Builds the icon for highlighting changed SVG regions. */
+export function buildDiffHighlightIcon() {
+  return buildIconSvg(`
+    <path d="M4 4h7v7H4z"></path>
+    <path d="M13 13h7v7h-7z"></path>
+    <path d="M14 4h6v6"></path>
+    <path d="M4 14v6h6"></path>
   `);
 }
 
