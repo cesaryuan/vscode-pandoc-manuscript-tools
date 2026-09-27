@@ -117,6 +117,20 @@ let lastSentBlockId = '';
 let lastSentBlockOffsetRatio = 0;
 let previewUpdateChain = Promise.resolve();
 let previewContent = null;
+const MIN_PREVIEW_SCALE = 0.1;
+const MAX_PREVIEW_SCALE = 8;
+const PREVIEW_ZOOM_SENSITIVITY = 0.001;
+let previewScale = 1;
+let targetPreviewScale = 1;
+let previewZoomFrame = 0;
+let previewZoomLastFrameAt = 0;
+let previewZoomAnimating = false;
+let previewZoomAnchorClientX = 0;
+let previewZoomAnchorClientY = 0;
+let previewZoomAnchorOffsetX = 0;
+let previewZoomAnchorOffsetY = 0;
+let previewZoomIndicator = null;
+let previewZoomIndicatorHideTimer = 0;
 let previewBlocks = [];
 let previewBlockMapReady = false;
 let readySent = false;
@@ -132,6 +146,7 @@ function ensurePreviewContent() {
     previewContent.append(...Array.from(document.body.childNodes));
     document.body.appendChild(previewContent);
   }
+  previewContent.style.zoom = String(previewScale);
   return previewContent;
 }
 // Returns the element that owns the document's vertical scroll position.
@@ -143,6 +158,11 @@ function getScrollTop() {
   const scroller = getScrollElement();
   return scroller ? scroller.scrollTop : window.scrollY || 0;
 }
+// Reads the horizontal scroll position from the active document scroller.
+function getScrollLeft() {
+  const scroller = getScrollElement();
+  return scroller ? scroller.scrollLeft : window.scrollX || 0;
+}
 // Returns the scrollable document height used by both directions of synchronization.
 function getScrollHeight() {
   const scroller = getScrollElement();
@@ -152,14 +172,22 @@ function getScrollHeight() {
 function getViewportHeight() {
   return window.innerHeight || document.documentElement.clientHeight || 1;
 }
-// Sets the active document scroller without assuming that the viewport owns scrolling.
-function setScrollTop(top) {
+// Returns the visible layout width used for the viewport-centered zoom anchor.
+function getViewportWidth() {
+  return document.documentElement.clientWidth || window.innerWidth || 1;
+}
+// Sets both axes on the active document scroller so one-axis changes preserve the other axis.
+function setScrollPosition(left, top) {
   const scroller = getScrollElement();
   if (scroller && typeof scroller.scrollTo === 'function') {
-    scroller.scrollTo({ top, behavior: 'auto' });
+    scroller.scrollTo({ left, top, behavior: 'auto' });
     return;
   }
-  window.scrollTo({ top, behavior: 'auto' });
+  window.scrollTo({ left, top, behavior: 'auto' });
+}
+// Sets the active document's vertical scroll position while preserving horizontal position.
+function setScrollTop(top) {
+  setScrollPosition(getScrollLeft(), top);
 }
 // Emits at most four WebView scroll diagnostics per second to keep Output usable.
 function traceScroll(message) {
@@ -437,6 +465,89 @@ function handlePreviewClick(event) {
   }
 }
 document.addEventListener('click', handlePreviewClick);
+// Creates the transient zoom readout in the Webview's top-right corner.
+function ensurePreviewZoomIndicator() {
+  if (previewZoomIndicator && previewZoomIndicator.isConnected) return previewZoomIndicator;
+  if (!document.body) return null;
+  previewZoomIndicator = document.createElement('div');
+  previewZoomIndicator.id = 'pmt-preview-zoom-indicator';
+  previewZoomIndicator.setAttribute('aria-hidden', 'true');
+  previewZoomIndicator.style.cssText = 'position:fixed;top:12px;right:14px;z-index:2147483647;padding:6px 10px;border:1px solid rgba(255,255,255,.24);border-radius:7px;background:rgba(24,24,24,.68);color:rgba(255,255,255,.96);font:600 12px/1.2 var(--vscode-font-family,sans-serif);letter-spacing:.02em;box-shadow:0 2px 10px rgba(0,0,0,.22);backdrop-filter:blur(6px);pointer-events:none;user-select:none;opacity:0;transition:opacity 160ms ease;';
+  document.body.appendChild(previewZoomIndicator);
+  return previewZoomIndicator;
+}
+// Renders the current applied zoom percentage in the transient indicator.
+function renderPreviewZoomIndicator() {
+  const indicator = ensurePreviewZoomIndicator();
+  if (indicator) indicator.textContent = Math.round(previewScale * 100) + '%';
+}
+// Shows the zoom readout and fades it after wheel input settles.
+function showPreviewZoomIndicator() {
+  const indicator = ensurePreviewZoomIndicator();
+  if (!indicator) return;
+  indicator.textContent = Math.round(previewScale * 100) + '%';
+  indicator.style.opacity = '1';
+  if (previewZoomIndicatorHideTimer) window.clearTimeout(previewZoomIndicatorHideTimer);
+  previewZoomIndicatorHideTimer = window.setTimeout(() => {
+    if (previewZoomIndicator) previewZoomIndicator.style.opacity = '0';
+    previewZoomIndicatorHideTimer = 0;
+  }, 900);
+}
+// Eases toward the latest requested scale while keeping the viewport-center content point fixed.
+function animatePreviewZoom(timestamp) {
+  previewZoomFrame = 0;
+  const content = ensurePreviewContent();
+  if (!content) {
+    previewScale = targetPreviewScale;
+    previewZoomLastFrameAt = 0;
+    previewZoomAnimating = false;
+    return;
+  }
+  const elapsed = previewZoomLastFrameAt ? Math.max(1, Math.min(48, timestamp - previewZoomLastFrameAt)) : 16;
+  previewZoomLastFrameAt = timestamp;
+  const smoothing = 1 - Math.exp(-elapsed / 75);
+  const difference = targetPreviewScale - previewScale;
+  const nextScale = Math.abs(difference) < 0.001 ? targetPreviewScale : previewScale + difference * smoothing;
+  content.style.zoom = String(nextScale);
+  const nextRect = content.getBoundingClientRect();
+  const currentScrollLeft = getScrollLeft();
+  const currentScrollTop = getScrollTop();
+  const nextScrollLeft = currentScrollLeft + nextRect.left + previewZoomAnchorOffsetX * nextScale - previewZoomAnchorClientX;
+  const nextScrollTop = currentScrollTop + nextRect.top + previewZoomAnchorOffsetY * nextScale - previewZoomAnchorClientY;
+  setScrollPosition(nextScrollLeft, nextScrollTop);
+  previewScale = nextScale;
+  renderPreviewZoomIndicator();
+  if (previewScale === targetPreviewScale) {
+    previewZoomLastFrameAt = 0;
+    previewZoomAnimating = false;
+    requestAnimationFrame(handlePreviewScrollEvent);
+    return;
+  }
+  previewZoomFrame = requestAnimationFrame(animatePreviewZoom);
+}
+// Applies exponential Ctrl+wheel scaling around the center of the visible preview viewport.
+function handlePreviewZoomWheel(event) {
+  if (!event.ctrlKey || event.deltaY === 0) return;
+  event.preventDefault();
+  const content = ensurePreviewContent();
+  const previousRect = content ? content.getBoundingClientRect() : null;
+  previewZoomAnchorClientX = getViewportWidth() / 2;
+  previewZoomAnchorClientY = getViewportHeight() / 2;
+  previewZoomAnchorOffsetX = previousRect
+    ? Math.max(0, Math.min(content.offsetWidth, (previewZoomAnchorClientX - previousRect.left) / previewScale))
+    : 0;
+  previewZoomAnchorOffsetY = previousRect
+    ? Math.max(0, Math.min(content.offsetHeight, (previewZoomAnchorClientY - previousRect.top) / previewScale))
+    : 0;
+  const deltaPixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? getViewportHeight() : 1);
+  targetPreviewScale = Math.max(MIN_PREVIEW_SCALE, Math.min(MAX_PREVIEW_SCALE, targetPreviewScale * Math.exp(-deltaPixels * PREVIEW_ZOOM_SENSITIVITY)));
+  showPreviewZoomIndicator();
+  if (!previewZoomFrame && Math.abs(targetPreviewScale - previewScale) >= 0.001) {
+    previewZoomAnimating = true;
+    previewZoomFrame = requestAnimationFrame(animatePreviewZoom);
+  }
+}
+document.addEventListener('wheel', handlePreviewZoomWheel, { passive: false });
 async function replacePreviewHtml(html, token) {
   const previousScrollTop = getScrollTop();
   vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
@@ -576,11 +687,11 @@ function applyPreviewBlockMap(mappings) {
 }
 // Handles scroll events from either the viewport or a nested document scroller.
 function handlePreviewScrollEvent() {
-  if (suppressScroll || scrollFrame) return;
+  if (suppressScroll || previewZoomAnimating || scrollFrame) return;
   traceScroll('scroll event observed top=' + Math.round(getScrollTop()));
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = 0;
-    if (suppressScroll) return;
+    if (suppressScroll || previewZoomAnimating) return;
     if (pendingSourceScrollTarget !== null && Math.abs(getScrollTop() - pendingSourceScrollTarget) < 2) {
       pendingSourceScrollTarget = null;
       if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);

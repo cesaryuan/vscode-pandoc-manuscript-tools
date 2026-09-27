@@ -82,7 +82,7 @@ export class HtmlPreviewClickNavigation {
       preview: false,
     });
     editor.selection = new vscode.Selection(target.range.start, target.range.end);
-    editor.revealRange(target.range, vscode.TextEditorRevealType.AtTop);
+    editor.revealRange(target.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     this.output.appendLine(`[HTML][click] preview -> editor type=${message.blockType || "unknown"} line=${target.range.start.line + 1} reason=${target.reason}`);
   }
 
