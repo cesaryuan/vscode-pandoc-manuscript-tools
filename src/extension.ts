@@ -33,7 +33,7 @@ export function activate(context: vscode.ExtensionContext) {
   const imageDirectoryPreview = new ImageDirectoryPreview(context.extensionUri, output);
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output);
-  const markdownPreview = new PapperMarkdownPreviewController(output, context.extensionMode === vscode.ExtensionMode.Development);
+  const markdownPreview = new PapperMarkdownPreviewController(output);
   const numberingInlayHints = new NumberingInlayHints(buildRunner, output);
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);

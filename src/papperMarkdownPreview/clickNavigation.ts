@@ -71,7 +71,6 @@ export class HtmlPreviewClickNavigation {
 
     const target = this.resolvePreviewSourceTarget(document, message);
     if (!target) {
-      this.output.appendLine(`[HTML][click] no source match type=${message.blockType || "unknown"} label=${message.label || "none"}`);
       return;
     }
 
@@ -83,7 +82,6 @@ export class HtmlPreviewClickNavigation {
     });
     editor.selection = new vscode.Selection(target.range.start, target.range.end);
     editor.revealRange(target.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-    this.output.appendLine(`[HTML][click] preview -> editor type=${message.blockType || "unknown"} line=${target.range.start.line + 1} reason=${target.reason}`);
   }
 
   /** Resolves a rendered preview block to a Markdown range for clicks and scroll mapping. */

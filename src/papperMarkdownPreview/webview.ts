@@ -5,15 +5,6 @@ import * as vscode from "vscode";
 import { applyHtmlPreviewKaTeXNonce, buildHtmlPreviewCsp } from "../htmlPreviewCsp";
 
 /**
- * Formats an elapsed wall-clock duration for Output channel timing logs.
- *
- * @param startedAt Epoch milliseconds captured before an operation.
- */
-export function formatElapsedMs(startedAt: number) {
-  return `${Math.max(0, Date.now() - startedAt)} ms`;
-}
-
-/**
  * Returns the HTML path produced by Papper for a Markdown input file.
  *
  * @param rootUri Project root URI.
@@ -105,10 +96,8 @@ export function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: 
   // String.raw preserves regex backslashes in the embedded browser script.
   const bridge = String.raw`<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
-vscode.postMessage({ type: 'scrollSyncTrace', detail: 'bridge loaded' });
 let suppressScroll = false;
 let scrollFrame = 0;
-let lastScrollTraceAt = 0;
 let pendingSourceScrollTarget = null;
 let pendingSourceScrollTimer = 0;
 let lastSentRatio = -1;
@@ -160,13 +149,6 @@ function setScrollTop(top) {
     return;
   }
   window.scrollTo({ top, behavior: 'auto' });
-}
-// Emits at most four WebView scroll diagnostics per second to keep Output usable.
-function traceScroll(message) {
-  const now = Date.now();
-  if (now - lastScrollTraceAt < 250) return;
-  lastScrollTraceAt = now;
-  vscode.postMessage({ type: 'scrollSyncTrace', detail: message });
 }
 function scrollRatio() {
   const max = Math.max(1, getScrollHeight() - getViewportHeight());
@@ -341,7 +323,6 @@ async function renderKaTeX(root) {
   formulaEntries.forEach(({ element, tex }) => element.setAttribute('data-pmt-tex', tex));
   const renderableEntries = formulaEntries.filter(({ element }) => !element.querySelector('.katex'));
   if (renderableEntries.length === 0) return;
-  vscode.postMessage({ type: 'previewKatexStarted', detail: 'math=' + renderableEntries.length });
   let katex;
   try {
     katex = await waitForKaTeX();
@@ -361,7 +342,6 @@ async function renderKaTeX(root) {
       vscode.postMessage({ type: 'previewKatexFailed', detail: 'error=' + String(error) });
     }
   }
-  vscode.postMessage({ type: 'previewKatexFinished', detail: 'katex=' + root.querySelectorAll('.katex').length + ';failures=' + failures });
 }
 // Returns visible text while excluding rendered formulas that have a separate
 // TeX source locator.
@@ -640,7 +620,6 @@ document.addEventListener('keydown', (event) => {
 });
 async function replacePreviewHtml(html, token) {
   const previousScrollTop = getScrollTop();
-  vscode.postMessage({ type: 'previewUpdateStarted', detail: token || '' });
   let staging = null;
   try {
     const parsed = new DOMParser().parseFromString(html, 'text/html');
@@ -740,7 +719,6 @@ window.addEventListener('message', event => {
     return;
   }
   if (!event.data || event.data.type !== 'sourceScroll') return;
-  vscode.postMessage({ type: 'scrollSyncTrace', detail: 'sourceScroll received ready=' + readySent });
   if (!readySent) {
     deferSourceScrollUntilMapping(event.data);
     return;
@@ -778,7 +756,6 @@ function applyPreviewBlockMap(mappings) {
 // Handles scroll events from either the viewport or a nested document scroller.
 function handlePreviewScrollEvent() {
   if (suppressScroll || scrollFrame) return;
-  traceScroll('scroll event observed top=' + Math.round(getScrollTop()));
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = 0;
     if (suppressScroll) return;

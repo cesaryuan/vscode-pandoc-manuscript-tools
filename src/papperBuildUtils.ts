@@ -9,8 +9,6 @@ export type RunProcessOptions = {
   output?: vscode.OutputChannel;
   captureStdout?: boolean;
   env?: NodeJS.ProcessEnv;
-  /** Notifies callers when the child process writes to either output stream. */
-  onOutputChunk?: (stream: "stdout" | "stderr") => void;
 };
 
 let cachedPapperExecutable: string | undefined;
@@ -307,7 +305,6 @@ export function runProcess(command: string, args: string[], options: RunProcessO
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
-      options.onOutputChunk?.("stdout");
       const text = chunk.toString();
       if (options.captureStdout) {
         stdout += text;
@@ -315,7 +312,6 @@ export function runProcess(command: string, args: string[], options: RunProcessO
       options.output?.append(text);
     });
     child.stderr.on("data", (chunk) => {
-      options.onOutputChunk?.("stderr");
       const text = chunk.toString();
       stderr = `${stderr}${text}`.slice(-8192);
       options.output?.append(text);
