@@ -491,7 +491,8 @@ function ensureImageLightbox() {
   imageLightbox.setAttribute('aria-modal', 'true');
   imageLightbox.setAttribute('aria-label', 'Image preview');
   imageLightbox.tabIndex = -1;
-  imageLightbox.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.82);display:none;font-family:var(--vscode-font-family,sans-serif);';
+  // Keep a light checkerboard behind transparent SVGs so black labels remain readable.
+  imageLightbox.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background-color:#f3f3f3;background-image:linear-gradient(45deg,#e1e1e1 25%,transparent 25%,transparent 75%,#e1e1e1 75%),linear-gradient(45deg,#e1e1e1 25%,transparent 25%,transparent 75%,#e1e1e1 75%),linear-gradient(45deg,transparent 25%,#e1e1e1 25%,#e1e1e1 75%,transparent 75%),linear-gradient(45deg,transparent 25%,#e1e1e1 25%,#e1e1e1 75%,transparent 75%);background-position:0 0,10px 10px,10px 0,0 10px;background-size:20px 20px;display:none;font-family:var(--vscode-font-family,sans-serif);';
   const viewport = document.createElement('div');
   viewport.style.cssText = 'position:absolute;inset:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:48px 24px 24px;box-sizing:border-box;';
   const toolbar = document.createElement('div');
