@@ -102,8 +102,12 @@ export function activate(context: vscode.ExtensionContext) {
     await imageDirectoryPreview.open(uri);
   }));
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_PREVIEW_COMMAND, async (uri) => {
-    metafilePreviewEditorProvider.rememberDiffTab(vscode.window.tabGroups.activeTabGroup.activeTab);
-    await reopenResourceWithSvgPreview(uri);
+    metafilePreviewEditorProvider.beginSvgDiffPreview(vscode.window.tabGroups.activeTabGroup.activeTab);
+    try {
+      await reopenResourceWithSvgPreview(uri);
+    } finally {
+      metafilePreviewEditorProvider.endSvgDiffPreview();
+    }
   }));
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, async (uri) => {
     await reopenResourceWithDefaultEditor(uri);

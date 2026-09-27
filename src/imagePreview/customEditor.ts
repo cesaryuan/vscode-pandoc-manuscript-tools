@@ -24,6 +24,8 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   declare output: import("vscode").OutputChannel;
   private readonly diffPairs = new Map<string, SvgDiffPair>();
   private readonly svgPanels = new Map<string, Set<vscode.WebviewPanel>>();
+  private readonly svgDiffPanels = new Map<vscode.WebviewPanel, SvgDiffPair>();
+  private pendingDiffPreview: SvgDiffPair | undefined;
   private readonly highlightedPairs = new Set<string>();
   private readonly synchronizedZoomPairs = new Map<string, SvgViewState>();
   private readonly tabListener: vscode.Disposable;
@@ -52,6 +54,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
   dispose(): void {
     this.tabListener.dispose();
     this.svgPanels.clear();
+    this.svgDiffPanels.clear();
     this.diffPairs.clear();
     this.highlightedPairs.clear();
     this.synchronizedZoomPairs.clear();
@@ -68,6 +71,18 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     }
     this.diffPairs.set(pair.original.toString(), pair);
     this.diffPairs.set(pair.modified.toString(), pair);
+  }
+
+  /** Tracks a diff while the preview command reopens its two revisions. */
+  beginSvgDiffPreview(tab: vscode.Tab | undefined): void {
+    this.rememberDiffTab(tab);
+    this.pendingDiffPreview = tab?.input instanceof vscode.TabInputTextDiff
+      ? this.diffPairs.get(tab.input.modified.toString()) : undefined;
+  }
+
+  /** Stops attributing newly opened standalone tabs to the preceding diff. */
+  endSvgDiffPreview(): void {
+    this.pendingDiffPreview = undefined;
   }
 
   /**
@@ -108,21 +123,34 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       const panels = this.svgPanels.get(key) || new Set<vscode.WebviewPanel>();
       panels.add(webviewPanel);
       this.svgPanels.set(key, panels);
+      const pair = this.findSvgDiffPair(document.uri);
+      const activeInput = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+      const activeDiff = activeInput instanceof vscode.TabInputTextDiff
+        && pair && activeInput.original.toString() === pair.original.toString()
+        && activeInput.modified.toString() === pair.modified.toString();
+      if (pair && (activeDiff || this.pendingDiffPreview && svgDiffPairKey(this.pendingDiffPreview) === svgDiffPairKey(pair))) {
+        this.svgDiffPanels.set(webviewPanel, pair);
+      }
+      if (pair) {
+        this.linkSvgDiffPanels(pair);
+      }
     }
 
     const messageListener = webviewPanel.webview.onDidReceiveMessage(async (message: { command?: string; type?: string; scale?: number; scrollX?: number; scrollY?: number }) => {
       if (message.command === OPEN_SVG_SOURCE_TEXT_COMMAND) {
         await vscode.commands.executeCommand(OPEN_SVG_SOURCE_TEXT_COMMAND, document.uri);
-      } else if (message.command === TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND && extension === ".svg") {
+      } else if (message.command === TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND && this.svgDiffPanels.has(webviewPanel)) {
         await this.toggleSvgDiffHighlight(document.uri);
-      } else if (message.command === TOGGLE_SVG_ZOOM_SYNC_COMMAND && extension === ".svg") {
+      } else if (message.command === TOGGLE_SVG_ZOOM_SYNC_COMMAND && this.svgDiffPanels.has(webviewPanel)) {
         await this.toggleSvgZoomSync(document.uri, message.scale, message.scrollX, message.scrollY);
-      } else if (message.type === "svgZoomChanged" && extension === ".svg") {
+      } else if (message.type === "svgZoomChanged" && this.svgDiffPanels.has(webviewPanel)) {
         await this.relaySvgZoom(document.uri, webviewPanel, message.scale, message.scrollX, message.scrollY);
-      } else if (message.type === "svgScrollChanged" && extension === ".svg") {
+      } else if (message.type === "svgScrollChanged" && this.svgDiffPanels.has(webviewPanel)) {
         await this.relaySvgScroll(document.uri, webviewPanel, message.scrollX, message.scrollY);
-      } else if (message.type === "svgZoomReady" && extension === ".svg") {
+      } else if (message.type === "svgZoomReady" && this.svgDiffPanels.has(webviewPanel)) {
         await this.restoreSvgZoomSync(document.uri, webviewPanel);
+      } else if (message.type === "svgDiffToolbarReady" && extension === ".svg") {
+        await webviewPanel.webview.postMessage({ type: "svgDiffToolbar", visible: this.svgDiffPanels.has(webviewPanel) });
       }
     });
     const watcher = new VisiblePreviewFileWatcher(
@@ -134,11 +162,16 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     webviewPanel.onDidDispose(() => {
       messageListener.dispose();
       watcher.dispose();
+      const diffPair = this.svgDiffPanels.get(webviewPanel);
+      this.svgDiffPanels.delete(webviewPanel);
       const panels = this.svgPanels.get(document.uri.toString());
       panels?.delete(webviewPanel);
       if (panels?.size === 0) {
         this.svgPanels.delete(document.uri.toString());
-        this.clearUnviewedSvgZoomSync(document.uri);
+      }
+      if (diffPair && ![...this.svgDiffPanels.values()].some((linked) => svgDiffPairKey(linked) === svgDiffPairKey(diffPair))) {
+        this.synchronizedZoomPairs.delete(svgDiffPairKey(diffPair));
+        this.highlightedPairs.delete(svgDiffPairKey(diffPair));
       }
     });
 
@@ -158,7 +191,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
    * @param label File name shown in status text.
    */
   private async renderCustomEditorPanel(webviewPanel: vscode.WebviewPanel, document: vscode.CustomDocument, imagePath: string, extension: string, label: string) {
-    if (extension === ".svg") {
+    if (extension === ".svg" && this.svgDiffPanels.has(webviewPanel)) {
       this.clearSvgDiffHighlight(document.uri);
     }
     webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Rendering ${escapeHtml(label)}...</p>`);
@@ -179,11 +212,14 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       webviewPanel.webview.html = buildPreviewHtml(imagePath, previewSource, {
         toolbarActions: extension === ".svg"
           ? buildPreviewActionButton(OPEN_SVG_SOURCE_TEXT_COMMAND, "Source Text", buildSourceTextIcon())
-            + buildPreviewActionButton(TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND, "Highlight changed areas", buildDiffHighlightIcon())
-            + buildPreviewActionButton(TOGGLE_SVG_ZOOM_SYNC_COMMAND, "Synchronize zoom", buildSynchronizedZoomIcon())
           : "",
+        diffToolbarActions: extension === ".svg"
+          ? buildPreviewActionButton(TOGGLE_SVG_DIFF_HIGHLIGHT_COMMAND, "Highlight changed areas", buildDiffHighlightIcon())
+            + buildPreviewActionButton(TOGGLE_SVG_ZOOM_SYNC_COMMAND, "Synchronize zoom and scroll", buildSynchronizedZoomIcon())
+          : "",
+        showDiffToolbarActions: this.svgDiffPanels.has(webviewPanel),
         additionalScript: extension === ".svg" ? buildSvgDiffHighlightScript() : "",
-        synchronizedView: extension === ".svg" ? this.getSynchronizedView(document.uri) : undefined,
+        synchronizedView: this.svgDiffPanels.has(webviewPanel) ? this.getSynchronizedView(document.uri) : undefined,
       });
     } catch (error) {
       this.output.appendLine(`Image custom editor preview failed for ${imagePath}: ${formatError(error)}`);
@@ -214,6 +250,23 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       return (process.platform === "win32" ? peerPath.toLowerCase() : peerPath) === resourcePath;
     });
     return peers.length === 1 ? { original: vscode.Uri.parse(peers[0]), modified: uri } : undefined;
+  }
+
+  /** Reveals diff controls after both unique revision panels are available. */
+  private linkSvgDiffPanels(pair: SvgDiffPair): void {
+    const originals = [...this.svgPanels.get(pair.original.toString()) || []];
+    const modified = [...this.svgPanels.get(pair.modified.toString()) || []];
+    if (originals.length !== 1 || modified.length !== 1 || originals[0] === modified[0]) {
+      return;
+    }
+    for (const [panel, uri] of [[originals[0], pair.original], [modified[0], pair.modified]] as const) {
+      if (this.svgDiffPanels.has(panel)) {
+        continue;
+      }
+      this.svgDiffPanels.set(panel, pair);
+      void panel.webview.postMessage({ type: "svgDiffToolbar", visible: true });
+      void this.restoreSvgZoomSync(uri, panel);
+    }
   }
 
   /** Toggles comparison boxes on both sides of one SVG diff preview. */
@@ -320,21 +373,13 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     }
   }
 
-  /** Drops linked zoom after both revision previews of a diff have closed. */
-  private clearUnviewedSvgZoomSync(uri: vscode.Uri): void {
-    const pair = this.findSvgDiffPair(uri);
-    if (pair && !this.svgPanels.has(pair.original.toString()) && !this.svgPanels.has(pair.modified.toString())) {
-      this.synchronizedZoomPairs.delete(svgDiffPairKey(pair));
-    }
-  }
-
   /** Updates both revision previews and any duplicate pane for the same URI. */
   private async postSvgZoomSync(pair: SvgDiffPair, enabled: boolean, view: SvgViewState | undefined, origin?: vscode.WebviewPanel): Promise<void> {
     const panels = [
       ...this.svgPanels.get(pair.original.toString()) || [],
       ...this.svgPanels.get(pair.modified.toString()) || [],
     ];
-    await Promise.all(panels.filter((panel) => panel !== origin).map((panel) =>
+    await Promise.all(panels.filter((panel) => panel !== origin && this.svgDiffPanels.has(panel)).map((panel) =>
       panel.webview.postMessage({ type: "svgZoomSync", enabled, ...view })));
   }
 
@@ -344,13 +389,13 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
       ...this.svgPanels.get(pair.original.toString()) || [],
       ...this.svgPanels.get(pair.modified.toString()) || [],
     ];
-    await Promise.all(panels.filter((panel) => panel !== origin).map((panel) =>
+    await Promise.all(panels.filter((panel) => panel !== origin && this.svgDiffPanels.has(panel)).map((panel) =>
       panel.webview.postMessage({ type: "svgScrollSync", scrollX: view.scrollX, scrollY: view.scrollY })));
   }
 
   /** Sends current and counterpart SVG source to every preview of one revision. */
   private async postSvgDiffHighlight(uri: vscode.Uri, currentSvg: string, otherSvg: string, enabled: boolean): Promise<void> {
-    await Promise.all([...this.svgPanels.get(uri.toString()) || []].map((panel) =>
+    await Promise.all([...this.svgPanels.get(uri.toString()) || []].filter((panel) => this.svgDiffPanels.has(panel)).map((panel) =>
       panel.webview.postMessage({ type: "svgDiffHighlight", enabled, currentSvg, otherSvg })));
   }
 

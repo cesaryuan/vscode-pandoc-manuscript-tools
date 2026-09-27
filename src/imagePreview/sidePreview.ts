@@ -28,6 +28,8 @@ export type WebviewPreviewSource = (
 
 type PreviewHtmlOptions = {
   toolbarActions?: string;
+  diffToolbarActions?: string;
+  showDiffToolbarActions?: boolean;
   additionalScript?: string;
   synchronizedView?: { scale: number; scrollX: number; scrollY: number };
 };
@@ -194,10 +196,16 @@ export function buildPreviewHtml(imagePath: string, previewSource: WebviewPrevie
   const canvasAppearance = getPreviewCanvasAppearance(imagePath);
   const previewMarkup = previewSourceToPreviewMarkup(previewSource, label, canvasAppearance);
   const toolbarActions = options.toolbarActions ? `${options.toolbarActions}${buildToolbarSeparator()}` : "";
+  // Normal SVG tabs share this webview, so diff controls remain hidden until
+  // the custom editor confirms that this particular panel belongs to a diff.
+  const diffToolbarActions = options.diffToolbarActions
+    ? `<span class="toolbarDiffActions" data-svg-diff-actions${options.showDiffToolbarActions ? "" : " hidden"}>${options.diffToolbarActions}</span>`
+    : "";
   return buildPanelHtml(`
     <header>
       <div class="toolbar" role="toolbar">
         ${toolbarActions}
+        ${diffToolbarActions}
         ${buildToolbarButton("out", "Zoom out", buildZoomOutIcon())}
         ${buildToolbarButton("in", "Zoom in", buildZoomInIcon())}
         ${buildToolbarButton("actual", "Actual size", buildActualSizeIcon())}
@@ -728,6 +736,8 @@ export function buildPanelHtml(body: string, script = ""): string {
       background: var(--vscode-editorWidget-background, transparent);
       box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
     }
+    .toolbarDiffActions { display: inline-flex; align-items: center; gap: 4px; }
+    .toolbarDiffActions[hidden] { display: none; }
     button {
       display: inline-flex;
       align-items: center;
@@ -863,6 +873,7 @@ function getPreviewScript() {
   const preview = document.querySelector("[data-preview-image]");
   const zoomValue = document.querySelector("[data-zoom-value]");
   const syncButton = document.querySelector('[data-preview-command="pandocManuscriptTools.toggleSvgZoomSync"]');
+  const diffActions = document.querySelector("[data-svg-diff-actions]");
   if (!viewport || !stage || !preview || !zoomValue) {
     return;
   }
@@ -882,6 +893,7 @@ function getPreviewScript() {
   let blobUrl = "";
   let pendingFitFrame = 0;
   let pendingScrollFrame = 0;
+  let queuedScroll = false;
   let pendingRemoteScroll;
   let isPanning = false;
   let panPointerId = 0;
@@ -957,17 +969,26 @@ function getPreviewScript() {
     const left = synchronizedScrollX * Math.max(0, viewport.scrollWidth - viewport.clientWidth);
     const top = synchronizedScrollY * Math.max(0, viewport.scrollHeight - viewport.clientHeight);
     pendingRemoteScroll = { left, top };
+    queuedScroll = false;
     viewport.scrollLeft = left;
     viewport.scrollTop = top;
   }
 
-  /** Throttles scroll messages so dragging a scrollbar does not flood the host. */
+  /** Sends the first scroll immediately, then keeps at most one update per frame. */
   function scheduleScrollSync() {
-    if (!syncEnabled || !vscode || pendingScrollFrame) return;
-    pendingScrollFrame = setTimeout(() => {
+    if (!syncEnabled || !vscode) return;
+    if (pendingScrollFrame) {
+      queuedScroll = true;
+      return;
+    }
+    vscode.postMessage({ type: "svgScrollChanged", ...getScrollPosition() });
+    pendingScrollFrame = requestAnimationFrame(() => {
       pendingScrollFrame = 0;
-      if (syncEnabled) vscode.postMessage({ type: "svgScrollChanged", ...getScrollPosition() });
-    }, 16);
+      if (queuedScroll) {
+        queuedScroll = false;
+        scheduleScrollSync();
+      }
+    });
   }
 
   /** Applies the current scale to the preview image and stage. */
@@ -1113,6 +1134,10 @@ function getPreviewScript() {
 
   window.addEventListener("message", (event) => {
     const message = event.data;
+    if (message?.type === "svgDiffToolbar" && diffActions) {
+      diffActions.hidden = message.visible !== true;
+      return;
+    }
     if (!message || (message.type !== "svgZoomSync" && message.type !== "svgScrollSync")) {
       return;
     }
@@ -1123,7 +1148,7 @@ function getPreviewScript() {
     syncEnabled = message.enabled === true;
     if (syncButton) {
       syncButton.setAttribute("aria-pressed", String(syncEnabled));
-      syncButton.title = syncEnabled ? "Disable synchronized zoom" : "Synchronize zoom";
+      syncButton.title = syncEnabled ? "Disable synchronized zoom and scroll" : "Synchronize zoom and scroll";
     }
     if (syncEnabled && Number.isFinite(message.scale) && message.scale > 0) {
       synchronizedScale = message.scale;
@@ -1171,7 +1196,7 @@ function getPreviewScript() {
       cancelAnimationFrame(pendingFitFrame);
     }
     if (pendingScrollFrame) {
-      clearTimeout(pendingScrollFrame);
+      cancelAnimationFrame(pendingScrollFrame);
     }
     if (blobUrl) {
       URL.revokeObjectURL(blobUrl);
@@ -1181,11 +1206,14 @@ function getPreviewScript() {
   applyBlobSource();
   if (syncEnabled) {
     syncButton.setAttribute("aria-pressed", "true");
-    syncButton.title = "Disable synchronized zoom";
+    syncButton.title = "Disable synchronized zoom and scroll";
   }
   if (syncButton && vscode) {
     // A diff pane can finish loading after linking starts in its counterpart.
     vscode.postMessage({ type: "svgZoomReady" });
+  }
+  if (diffActions && vscode) {
+    vscode.postMessage({ type: "svgDiffToolbarReady" });
   }
   if (!(preview instanceof HTMLImageElement)) {
     refreshNaturalSize();
