@@ -138,8 +138,25 @@ export class PapperMarkdownPreviewController {
       const papperExecutable = await resolvePapperExecutable(this.output);
 
       const papperEnvironment = await preparePapperEnvironment(papperExecutable);
+      // The Markdown mirror lives in the OS temp directory; keep relative image,
+      // include, and other resource lookups anchored to the source folder first,
+      // then the folder opened in VS Code. Papper treats this as an ordered list.
+      const markdownDirectory = path.dirname(document.uri.fsPath);
+      const workspaceDirectory = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath
+        || project.rootUri.fsPath;
+      const resourcePath = [markdownDirectory, workspaceDirectory]
+        .filter((directory, index, directories) => directories.indexOf(directory) === index)
+        .join(path.delimiter);
 
-      await runProcess(papperExecutable, ["build", "html", temporaryMarkdownPath, "--output-file", htmlRelativePath], {
+      await runProcess(papperExecutable, [
+        "build",
+        "html",
+        temporaryMarkdownPath,
+        "--output-file",
+        htmlRelativePath,
+        "--resource-path",
+        resourcePath,
+      ], {
         cwd: project.rootUri.fsPath,
         output: this.output,
         env: papperEnvironment.env,
