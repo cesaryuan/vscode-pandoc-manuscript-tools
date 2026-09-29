@@ -8,7 +8,7 @@ import { findPandocManuscriptProject, isPapperBuildAvailable, pathExists, prepar
 import { isBuildableMarkdownDocument } from "../vscodeUtils";
 import { HtmlPreviewClickNavigation, type HtmlPreviewBlockDescriptor, type HtmlPreviewClickMessage } from "./clickNavigation";
 import { HtmlPreviewScrollSync, type HtmlPreviewMessage } from "./scrollSync";
-import { countHtmlElements, createNonce, getExpectedHtmlUri, injectHtmlPreviewBridge, removeTemporaryMarkdownDirectory, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
+import { countHtmlElements, createNonce, injectHtmlPreviewBridge, removeTemporaryMarkdownDirectory, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
 
 /** Owns Papper Markdown HTML builds, preview panel lifecycle, and refresh scheduling. */
 export class PapperMarkdownPreviewController {
@@ -126,13 +126,15 @@ export class PapperMarkdownPreviewController {
    */
   private async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const buildId = ++this.htmlPreviewBuildId;
-    const htmlUri = getExpectedHtmlUri(project.rootUri, document.uri);
-    const htmlRelativePath = path.relative(project.rootUri.fsPath, htmlUri.fsPath);
     let temporaryDirectory: string | undefined;
 
     try {
       temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-preview-"));
       const temporaryMarkdownPath = path.join(temporaryDirectory, path.basename(document.uri.fsPath));
+      // Keep the generated preview beside its temporary Markdown mirror so a
+      // default preview never creates or updates the project's output/html tree.
+      const htmlPath = path.join(temporaryDirectory, `${path.parse(document.uri.fsPath).name}.html`);
+      const htmlUri = vscode.Uri.file(htmlPath);
       await fs.writeFile(temporaryMarkdownPath, document.getText(), "utf8");
 
       const papperExecutable = await resolvePapperExecutable(this.output);
@@ -153,7 +155,7 @@ export class PapperMarkdownPreviewController {
         "html",
         temporaryMarkdownPath,
         "--output-file",
-        htmlRelativePath,
+        htmlPath,
         "--resource-path",
         resourcePath,
       ], {

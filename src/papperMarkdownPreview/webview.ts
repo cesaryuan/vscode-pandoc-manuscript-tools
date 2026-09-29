@@ -5,17 +5,6 @@ import * as vscode from "vscode";
 import { applyHtmlPreviewKaTeXNonce, buildHtmlPreviewCsp } from "../htmlPreviewCsp";
 
 /**
- * Returns the HTML path produced by Papper for a Markdown input file.
- *
- * @param rootUri Project root URI.
- * @param markdownUri Markdown file URI.
- */
-export function getExpectedHtmlUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
-  const outputName = `${path.parse(markdownUri.fsPath).name}.html`;
-  return vscode.Uri.file(path.join(rootUri.fsPath, "output", "html", outputName));
-}
-
-/**
  * Creates a nonce for the inline Webview scroll bridge script.
  */
 export function createNonce() {
