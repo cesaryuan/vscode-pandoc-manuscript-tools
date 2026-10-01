@@ -4,7 +4,8 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { CAN_BUILD_HTML_CONTEXT } from "../constants";
 import { cacheHtmlMetafileImages } from "../htmlPreviewResourceCache";
-import { findPandocManuscriptProject, isPapperBuildAvailable, pathExists, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "../papperBuildUtils";
+import { findPandocManuscriptProject, isPapperBuildAvailable, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "../papperBuildUtils";
+import { PapperHtmlServerClient } from "../papperHtmlServer";
 import { isBuildableMarkdownDocument } from "../vscodeUtils";
 import { HtmlPreviewClickNavigation, type HtmlPreviewBlockDescriptor, type HtmlPreviewClickMessage } from "./clickNavigation";
 import { HtmlPreviewScrollSync, type HtmlPreviewMessage } from "./scrollSync";
@@ -24,11 +25,13 @@ export class PapperMarkdownPreviewController {
   private htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
   private readonly scrollSync: HtmlPreviewScrollSync;
   private readonly clickNavigation: HtmlPreviewClickNavigation;
+  private readonly htmlServer: PapperHtmlServerClient;
 
   /** Creates a preview controller that reports preview failures to the shared output channel. */
   constructor(private readonly output: vscode.OutputChannel) {
     this.scrollSync = new HtmlPreviewScrollSync();
     this.clickNavigation = new HtmlPreviewClickNavigation(output);
+    this.htmlServer = new PapperHtmlServerClient(output, this.startHtmlServer.bind(this));
   }
 
   /** Clears the preview refresh timer and closes its WebView panel. */
@@ -38,6 +41,7 @@ export class PapperMarkdownPreviewController {
     }
     this.htmlPreviewPanel?.dispose();
     this.htmlPreviewPanel = undefined;
+    this.htmlServer.dispose();
   }
 
   /** Recomputes whether the active editor can use the Papper HTML preview. */
@@ -91,8 +95,8 @@ export class PapperMarkdownPreviewController {
   /**
    * Schedules a live HTML preview rebuild for the currently previewed document.
    *
-   * Unsaved text is rendered through a Markdown mirror in the OS temporary
-   * directory, so refreshing the preview never changes the user's document.
+   * Unsaved text is sent directly to the project service without changing the
+   * user's document or launching a new CLI process for each refresh.
    *
    * @param document Changed Markdown document.
    */
@@ -119,67 +123,43 @@ export class PapperMarkdownPreviewController {
   }
 
   /**
-   * Runs Papper's HTML target and updates the open side preview panel.
+   * Converts the current buffer through Papper's service and updates the side preview.
    *
    * @param project Detected manuscript project root.
    * @param document Markdown document to build.
    */
   private async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const buildId = ++this.htmlPreviewBuildId;
-    let temporaryDirectory: string | undefined;
-
     try {
-      temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-preview-"));
-      const temporaryMarkdownPath = path.join(temporaryDirectory, path.basename(document.uri.fsPath));
-      // Keep the generated preview beside its temporary Markdown mirror so a
-      // default preview never creates or updates the project's output/html tree.
-      const htmlPath = path.join(temporaryDirectory, `${path.parse(document.uri.fsPath).name}.html`);
-      const htmlUri = vscode.Uri.file(htmlPath);
-      await fs.writeFile(temporaryMarkdownPath, document.getText(), "utf8");
-
-      const papperExecutable = await resolvePapperExecutable(this.output);
-
-      const papperEnvironment = await preparePapperEnvironment(papperExecutable);
-      // The Markdown mirror lives in the OS temp directory; keep relative image,
-      // include, and other resource lookups anchored to the source folder first,
-      // then the folder opened in VS Code. Papper treats this as an ordered list.
-      const markdownDirectory = path.dirname(document.uri.fsPath);
-      const workspaceDirectory = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath
-        || project.rootUri.fsPath;
-      const resourcePath = [markdownDirectory, workspaceDirectory]
-        .filter((directory, index, directories) => directories.indexOf(directory) === index)
-        .join(path.delimiter);
-
-      await runProcess(papperExecutable, [
-        "build",
-        "html",
-        temporaryMarkdownPath,
-        "--output-file",
-        htmlPath,
-        "--resource-path",
-        resourcePath,
-      ], {
-        cwd: project.rootUri.fsPath,
-        output: this.output,
-        env: papperEnvironment.env,
-      });
+      const html = await this.htmlServer.convert(project.rootUri.fsPath, document.uri.fsPath, document.getText());
       if (buildId !== this.htmlPreviewBuildId) {
         return;
       }
-
-      if (!(await pathExists(htmlUri))) {
-        throw new Error(`Build finished, but the expected HTML was not found: ${htmlUri.fsPath}`);
-      }
-
-      await this.updateHtmlPreviewPanel(htmlUri, document, project);
+      await this.updateHtmlPreviewPanel(html, document, project);
     } catch (error) {
       const message = `Failed to build HTML preview: ${String(error.message || error)}`;
       this.output.appendLine(`[HTML] ${message}`);
       vscode.window.showErrorMessage(message);
+    }
+  }
+
+  /** Bootstraps a missing service once with Papper's normal project configuration. */
+  private async startHtmlServer(projectDirectory: string, sourcePath: string, port: number): Promise<void> {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-preview-start-"));
+    try {
+      const executable = await resolvePapperExecutable(this.output);
+      const environment = await preparePapperEnvironment(executable);
+      const bootstrapMarkdown = path.join(temporaryDirectory, path.basename(sourcePath));
+      // Startup also builds HTML. An empty temporary source avoids parsing an
+      // outdated/invalid disk version when the editor contains a corrected buffer;
+      // the subsequent HTTP request supplies the real path, text, and resource context.
+      await fs.writeFile(bootstrapMarkdown, "", "utf8");
+      await runProcess(executable, [
+        "build", "html", bootstrapMarkdown, "--start-server", "--server-port", String(port),
+        "--output-file", path.join(temporaryDirectory, "startup.html"),
+      ], { cwd: projectDirectory, output: this.output, env: environment.env });
     } finally {
-      if (temporaryDirectory) {
-        await removeTemporaryMarkdownDirectory(temporaryDirectory, this.output);
-      }
+      await removeTemporaryMarkdownDirectory(temporaryDirectory, this.output);
     }
   }
 
@@ -305,18 +285,17 @@ export class PapperMarkdownPreviewController {
   }
 
   /**
-   * Reads generated HTML and wraps it with the scroll-sync bridge used by the
+   * Wraps generated HTML with the scroll-sync bridge used by the
    * Webview panel.
    *
-   * @param htmlUri Generated HTML file.
+   * @param html Generated HTML returned by the project service.
    * @param document Source Markdown document.
    * @param project Detected Papper project that bounds image resource access.
    */
-  private async updateHtmlPreviewPanel(htmlUri: vscode.Uri, document: vscode.TextDocument, project: PandocManuscriptProject) {
+  private async updateHtmlPreviewPanel(html: string, document: vscode.TextDocument, project: PandocManuscriptProject) {
     if (!this.htmlPreviewPanel) {
       return;
     }
-    const html = await fs.readFile(htmlUri.fsPath, "utf8");
     const nonce = createNonce();
     const cachedHtml = await cacheHtmlMetafileImages(
       html,
@@ -329,7 +308,7 @@ export class PapperMarkdownPreviewController {
 
     const rewrittenHtml = rewriteHtmlResourceUris(cachedHtml.html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
     if (countHtmlElements(html, "style") !== countHtmlElements(rewrittenHtml, "style")) {
-      this.output.appendLine(`[HTML] Preserving Pandoc styles failed: style element count changed for ${htmlUri.fsPath}`);
+      this.output.appendLine(`[HTML] Preserving Pandoc styles failed: style element count changed for ${document.uri.fsPath}`);
       return;
     }
     const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
