@@ -124,7 +124,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Output channels and preview documents also emit visible-range events;
     // only a saved Markdown source can drive Papper HTML scroll sync.
     if (isBuildableMarkdownDocument(event.textEditor.document)) {
-      markdownPreview.syncFromEditor(event.textEditor);
+      markdownPreview.handleEditorVisibleRangesChange(event.textEditor);
     }
   }));
 
@@ -134,9 +134,8 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
-    const activeSelection = event.selections[0];
-    if (activeSelection && event.kind !== vscode.TextEditorSelectionChangeKind.Command && isBuildableMarkdownDocument(event.textEditor.document)) {
-      markdownPreview.syncFromEditor(event.textEditor, activeSelection.active);
+    if (isBuildableMarkdownDocument(event.textEditor.document)) {
+      markdownPreview.handleEditorSelectionChange(event);
     }
     inlineFoldController.updateEditor(event.textEditor);
   }));
@@ -185,7 +184,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
       fencedDivHighlighter.updateVisibleEditors(event.document);
       inlineFoldController.updateVisibleEditors(event.document);
-      markdownPreview.scheduleHtmlPreviewRefresh(event.document);
+      // Dirty-state/save notifications contain no edits and must not suppress scrolling.
+      if (event.contentChanges.length) {
+        markdownPreview.scheduleHtmlPreviewRefresh(event.document);
+      }
     }
   }));
 

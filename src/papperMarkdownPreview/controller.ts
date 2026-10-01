@@ -9,6 +9,7 @@ import { PapperHtmlServerClient } from "../papperHtmlServer";
 import { isBuildableMarkdownDocument } from "../vscodeUtils";
 import { HtmlPreviewClickNavigation, type HtmlPreviewBlockDescriptor, type HtmlPreviewClickMessage } from "./clickNavigation";
 import { HtmlPreviewScrollSync, type HtmlPreviewMessage } from "./scrollSync";
+import { HtmlPreviewEditorScrollIntent } from "./editorScrollIntent";
 import { countHtmlElements, createNonce, injectHtmlPreviewBridge, removeTemporaryMarkdownDirectory, rewriteHtmlResourceUris, waitForWebviewUpdate } from "./webview";
 
 /** Owns Papper Markdown HTML builds, preview panel lifecycle, and refresh scheduling. */
@@ -24,18 +25,23 @@ export class PapperMarkdownPreviewController {
   private htmlPreviewUpdateToken = 0;
   private htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
   private readonly scrollSync: HtmlPreviewScrollSync;
+  private readonly editorScrollIntent: HtmlPreviewEditorScrollIntent;
   private readonly clickNavigation: HtmlPreviewClickNavigation;
   private readonly htmlServer: PapperHtmlServerClient;
 
   /** Creates a preview controller that reports preview failures to the shared output channel. */
   constructor(private readonly output: vscode.OutputChannel) {
     this.scrollSync = new HtmlPreviewScrollSync();
+    this.editorScrollIntent = new HtmlPreviewEditorScrollIntent((editor, position) => {
+      this.scrollSync.syncFromEditor(this.htmlPreviewPanel, this.htmlPreviewDocumentUri, editor, position);
+    });
     this.clickNavigation = new HtmlPreviewClickNavigation(output);
     this.htmlServer = new PapperHtmlServerClient(output, this.startHtmlServer.bind(this));
   }
 
   /** Clears the preview refresh timer and closes its WebView panel. */
   dispose() {
+    this.editorScrollIntent.dispose();
     if (this.htmlPreviewTimer) {
       clearTimeout(this.htmlPreviewTimer);
     }
@@ -105,6 +111,12 @@ export class PapperMarkdownPreviewController {
       return;
     }
 
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (isSameUri(editor.document.uri, document.uri)) {
+        this.editorScrollIntent.onDocumentChanged(editor);
+      }
+    }
+
     if (this.htmlPreviewTimer) {
       clearTimeout(this.htmlPreviewTimer);
     }
@@ -114,12 +126,22 @@ export class PapperMarkdownPreviewController {
     }, 350);
   }
 
-  /** Sends the editor viewport or active cursor position to the open preview. */
-  syncFromEditor(editor: vscode.TextEditor, selectedPosition?: vscode.Position) {
-    if (!isBuildableMarkdownDocument(editor.document)) {
+  /** Filters viewport events before synchronizing the currently previewed source. */
+  handleEditorVisibleRangesChange(editor: vscode.TextEditor) {
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, editor.document.uri)) {
       return;
     }
-    this.scrollSync.syncFromEditor(this.htmlPreviewPanel, this.htmlPreviewDocumentUri, editor, selectedPosition);
+    this.editorScrollIntent.onVisibleRangesChanged(editor);
+  }
+
+  /** Filters selection events so dragging, typing, and commands cannot scroll the preview. */
+  handleEditorSelectionChange(event: vscode.TextEditorSelectionChangeEvent) {
+    if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, event.textEditor.document.uri)) {
+      return;
+    }
+    const kind = event.kind === vscode.TextEditorSelectionChangeKind.Mouse ? "mouse"
+      : event.kind === vscode.TextEditorSelectionChangeKind.Keyboard ? "keyboard" : undefined;
+    this.editorScrollIntent.onSelectionChanged(event.textEditor, kind);
   }
 
   /**
@@ -170,6 +192,12 @@ export class PapperMarkdownPreviewController {
    * @param project Detected Papper project.
    */
   private openHtmlPreview(document: vscode.TextDocument, project: PandocManuscriptProject) {
+    this.editorScrollIntent.dispose();
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (isSameUri(editor.document.uri, document.uri)) {
+        this.editorScrollIntent.observe(editor);
+      }
+    }
     this.htmlPreviewDocumentUri = document.uri;
     if (this.htmlPreviewPanel) {
       this.htmlPreviewPanel.title = `${path.basename(document.uri.fsPath)} — Papper HTML Preview`;
@@ -233,6 +261,7 @@ export class PapperMarkdownPreviewController {
     });
     panel.onDidDispose(() => {
       if (this.htmlPreviewPanel === panel) {
+        this.editorScrollIntent.dispose();
         this.htmlPreviewPanel = undefined;
         this.htmlPreviewDocumentUri = undefined;
         this.htmlPreviewWebviewReady = false;
