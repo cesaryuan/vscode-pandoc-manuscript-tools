@@ -193,9 +193,20 @@ function followsContinuousScrolling(context: TestContext) {
   fixture.settle(20);
   fixture.viewport(30);
   fixture.settle(20);
-  assert.equal(fixture.requests.length, 1);
+  assert.equal(fixture.requests.length, 3, "Wheel updates must reach the bridge during each input interval");
   fixture.viewport(40);
   fixture.settle(60);
+  assert.equal(fixture.requests.length, 4);
+}
+
+/** Reproduces the wheel lag regression without letting a full 60 ms interval pass. */
+function forwardsScrollingOnNextTurn(context: TestContext) {
+  const fixture = new EditorFixture(context);
+  fixture.viewport(10);
+  fixture.settle(1);
+  assert.equal(fixture.requests.length, 1, "A wheel request must not wait for a fixed throttle interval");
+  fixture.viewport(20);
+  fixture.settle(1);
   assert.equal(fixture.requests.length, 2);
 }
 
@@ -222,4 +233,5 @@ test("later drag/edit events cancel an earlier viewport scroll", cancelsPendingS
 test("command-origin and duplicate cursor events do not synchronize", ignoresNonUserNavigation);
 test("closing the preview cancels pending navigation", cancelsDisposedNavigation);
 test("continuous wheel scrolling synchronizes before scrolling stops", followsContinuousScrolling);
+test("wheel input reaches the bridge on the next event-loop turn", forwardsScrollingOnNextTurn);
 test("holding an arrow key synchronizes before key release", followsRepeatedArrowNavigation);

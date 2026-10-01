@@ -94,8 +94,8 @@ export class HtmlPreviewEditorScrollIntent {
       this.cancel(state);
       return;
     }
-    // Keep the first deadline during continuous wheel input so the preview
-    // follows at regular intervals instead of waiting until scrolling stops.
+    // Defer only to the next event-loop turn so nearby edit/drag events can
+    // cancel the reveal without imposing the old 60 ms wheel-scroll stutter.
     if (!state.pending) {
       this.schedule(editor, state, "viewport");
     }
@@ -112,7 +112,7 @@ export class HtmlPreviewEditorScrollIntent {
       if (version === editor.document.version && sameSelections(selections, editor.selections)) {
         this.sync(editor, kind === "viewport" ? undefined : editor.selection.active);
       }
-    }, kind === "mouse" ? 120 : 60);
+    }, kind === "mouse" ? 120 : kind === "keyboard" ? 60 : 0);
     this.timers.add(timer);
     state.pending = { timer, kind };
   }

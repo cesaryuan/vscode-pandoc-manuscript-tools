@@ -87,6 +87,8 @@ export function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: 
 const vscode = acquireVsCodeApi();
 let suppressScroll = false;
 let scrollFrame = 0;
+let sourceScrollFrame = 0;
+let latestSourceScroll = null;
 let pendingSourceScrollTarget = null;
 let pendingSourceScrollTimer = 0;
 let lastSentRatio = -1;
@@ -217,26 +219,33 @@ function deferSourceScrollUntilMapping(message) {
     pendingSourceMappingTimer = 0;
   }, 1000);
 }
-// Returns the block whose source line is closest to the requested source position.
-function findPreviewBlockForSourceLine(sourceLine) {
-  let containing = null;
-  let nearest = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
+// Interpolates between source/block anchors so wheel scrolling does not snap
+// repeatedly to one paragraph top and then jump to the next paragraph.
+function getPreviewTopForSourcePosition(sourcePosition) {
+  let previous = null;
+  let next = null;
   for (const block of previewBlocks) {
+    // Number(null) is zero: unmapped blocks must not become false line-zero anchors.
+    if (!block.element.hasAttribute('data-source-line')) continue;
     const startLine = Number(block.element.getAttribute('data-source-line'));
-    const endLine = Number(block.element.getAttribute('data-source-end-line'));
     if (!Number.isFinite(startLine)) continue;
-    if (Number.isFinite(endLine) && sourceLine >= startLine && sourceLine <= endLine) {
-      containing = block;
+    if (startLine > sourcePosition) {
+      next = { block, sourcePosition: startLine };
       break;
     }
-    const distance = Math.abs(startLine - sourceLine);
-    if (distance < nearestDistance) {
-      nearest = block;
-      nearestDistance = distance;
-    }
+    previous = { block, sourcePosition: startLine };
   }
-  return containing || nearest;
+  if (!previous && !next) return null;
+  const scrollTop = getScrollTop();
+  const startPosition = previous ? previous.sourcePosition : 0;
+  const startTop = previous ? scrollTop + previous.block.element.getBoundingClientRect().top : 0;
+  const endLine = previous ? Number(previous.block.element.getAttribute('data-source-end-line')) : 0;
+  const endPosition = next ? next.sourcePosition : Math.max(startPosition + 1, endLine + 1);
+  const endTop = next
+    ? scrollTop + next.block.element.getBoundingClientRect().top
+    : scrollTop + previous.block.element.getBoundingClientRect().bottom;
+  const progress = Math.max(0, Math.min(1, (sourcePosition - startPosition) / Math.max(1, endPosition - startPosition)));
+  return startTop + progress * (endTop - startTop);
 }
 // Returns the mapped block currently nearest the top of the preview viewport.
 function getVisibleSourceBlock() {
@@ -672,18 +681,30 @@ async function replacePreviewHtml(html, token) {
     }
   }
 }
-// Applies the latest source position after generated preview block mappings are available.
+// Keeps only the latest source request for each browser frame; a fixed host
+// throttle previously made wheel scrolling advance in visibly separated steps.
 function applySourceScroll(message) {
+  latestSourceScroll = message;
+  if (sourceScrollFrame) return;
+  sourceScrollFrame = requestAnimationFrame(() => {
+    sourceScrollFrame = 0;
+    const latest = latestSourceScroll;
+    latestSourceScroll = null;
+    scrollPreviewToSource(latest);
+  });
+}
+// Applies a continuous mapped source coordinate after block mappings are available.
+function scrollPreviewToSource(message) {
   const max = Math.max(0, getScrollHeight() - getViewportHeight());
   const requestedOffset = Number.isFinite(message.offsetRatio)
     ? Math.max(-1.5, Math.min(1.5, message.offsetRatio))
     : 0;
   let targetTop;
-  const sourceLine = Number.isFinite(message.sourceLine) ? Number(message.sourceLine) : null;
-  const block = sourceLine === null ? null : findPreviewBlockForSourceLine(sourceLine);
-  if (block) {
-    const blockTop = getScrollTop() + block.element.getBoundingClientRect().top;
-    targetTop = blockTop - requestedOffset * getViewportHeight();
+  const sourcePosition = Number.isFinite(message.sourcePosition) ? Number(message.sourcePosition)
+    : Number.isFinite(message.sourceLine) ? Number(message.sourceLine) : null;
+  const mappedTop = sourcePosition === null ? null : getPreviewTopForSourcePosition(sourcePosition);
+  if (mappedTop !== null) {
+    targetTop = mappedTop - requestedOffset * getViewportHeight();
   } else {
     const ratio = Number.isFinite(message.ratio) ? Math.max(0, Math.min(1, message.ratio)) : 0;
     targetTop = ratio * max - requestedOffset * getViewportHeight();
