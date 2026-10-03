@@ -1,3 +1,4 @@
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 const createEmf2SvgModule = require("../../assets/libemf2svg/emf2svg.js");
@@ -11,6 +12,8 @@ export const WEBVIEW_METAFILE_MAX_HEIGHT = 0;
 const POINTER_SIZE = 4;
 const WASM_EMFPLUS_ENABLED = 1; // Some Visio exported EMF files contain EMF+ data
 const WASM_SVG_DELIMITER_ENABLED = 1;
+// Bump when SVG post-processing changes so persisted previews are regenerated.
+const METAFILE_CONVERSION_VERSION = "metafile-svg-v1";
 
 type LibEmf2SvgModule = {
   HEAPU8: Uint8Array;
@@ -29,6 +32,40 @@ type MetafileConversionOptions = {
 };
 
 let modulePromise: Promise<LibEmf2SvgModule> | undefined;
+let fingerprintPromise: Promise<string> | undefined;
+
+/**
+ * Fingerprints bundled JS/WASM contents and conversion behavior for persisted SVG caches.
+ * Memoization matches the converter's process lifetime and avoids re-reading assets per image.
+ *
+ * @param output Output channel for initialization failures.
+ */
+export function getLibemf2svgFingerprint(output: OutputChannelLike): Promise<string> {
+  if (!fingerprintPromise) {
+    fingerprintPromise = computeLibemf2svgFingerprint().catch((error) => {
+      // Failed reads must remain retryable, rather than poisoning subsequent preview requests.
+      fingerprintPromise = undefined;
+      output.appendLine(`Could not fingerprint libemf2svg assets: ${String(error)}`);
+      throw error;
+    });
+  }
+  return fingerprintPromise;
+}
+
+/** Hashes assets from the same directory as the WASM used in source and bundled runs. */
+async function computeLibemf2svgFingerprint(): Promise<string> {
+  const wasmPath = resolveBundledWasmPath();
+  const [javascript, wasm] = await Promise.all([
+    fs.promises.readFile(path.join(path.dirname(wasmPath), "emf2svg.js")),
+    fs.promises.readFile(wasmPath),
+  ]);
+  return crypto.createHash("sha256")
+    .update([METAFILE_CONVERSION_VERSION, WASM_EMFPLUS_ENABLED, WASM_SVG_DELIMITER_ENABLED].join("\0"))
+    .update("\0")
+    .update(crypto.createHash("sha256").update(javascript).digest())
+    .update(crypto.createHash("sha256").update(wasm).digest())
+    .digest("hex");
+}
 
 /**
  * Converts one EMF byte buffer to SVG text through the bundled libemf2svg WASM module.

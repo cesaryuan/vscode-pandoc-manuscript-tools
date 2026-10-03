@@ -4,6 +4,7 @@ import * as path from "path";
 import {
   convertEmfToSvg,
   convertWmfToSvg,
+  getLibemf2svgFingerprint,
   WEBVIEW_METAFILE_MAX_HEIGHT,
   WEBVIEW_METAFILE_MAX_WIDTH,
 } from "./imagePreview/libemf2svgRuntime";
@@ -86,7 +87,7 @@ export async function cacheHtmlMetafileImages(
 
 /**
  * Returns a cached SVG path or converts and atomically writes a fresh one.
- * The cache key includes source stats and conversion dimensions to prevent stale previews.
+ * The cache key includes source stats, converter fingerprint, and dimensions to prevent stale previews.
  *
  * @param sourcePath Local EMF or WMF source path.
  * @param extension Lowercase metafile extension.
@@ -103,6 +104,7 @@ async function getOrCreateCachedMetafileSvg(
   const cacheKey = crypto.createHash("sha256")
     .update([
       CACHE_FORMAT_VERSION,
+      await getLibemf2svgFingerprint(output),
       path.resolve(sourcePath),
       extension,
       sourceStat.size,
