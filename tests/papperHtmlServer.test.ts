@@ -13,6 +13,7 @@ class HtmlServiceFixture {
   readonly servers: http.Server[] = [];
   starts = 0;
   rejectConversions = false;
+  nativeState = false;
 
   /** Places project connection state outside the user's Papper home. */
   constructor(readonly directory: string) {
@@ -72,10 +73,10 @@ class HtmlServiceFixture {
     this.starts++;
     const canonical = process.platform === "win32" ? project.toLowerCase() : project;
     const projectId = crypto.createHash("sha256").update(canonical).digest("hex").slice(0, 20);
-    const state = path.join(this.home, "projects", projectId);
+    const state = path.join(this.home, "projects", projectId, ...(this.nativeState ? ["work", "rust-v1"] : []));
     await fs.mkdir(state, { recursive: true });
-    await fs.writeFile(path.join(state, "pandoc-server-config.json"), JSON.stringify({ project_dir: project }));
-    await fs.writeFile(path.join(state, "pandoc-server.json"), JSON.stringify({
+    await fs.writeFile(path.join(state, this.nativeState ? "server-config.json" : "pandoc-server-config.json"), JSON.stringify({ project_dir: project }));
+    await fs.writeFile(path.join(state, this.nativeState ? "server-state.json" : "pandoc-server.json"), JSON.stringify({
       host: "127.0.0.1", port: (server.address() as import("net").AddressInfo).port,
     }));
   }
@@ -97,8 +98,9 @@ class HtmlServiceFixture {
 }
 
 /** Verifies lazy startup, warm refreshes, cross-session reuse, and source preservation. */
-async function rendersUnsavedBuffers(context: TestContext): Promise<void> {
+async function rendersUnsavedBuffersWithState(context: TestContext, nativeState: boolean): Promise<void> {
   const fixture = await HtmlServiceFixture.create(context);
+  fixture.nativeState = nativeState;
   const { root, source } = await fixture.project("first-project");
   const client = fixture.client(context);
   assert.equal(fixture.starts, 0);
@@ -113,6 +115,29 @@ async function rendersUnsavedBuffers(context: TestContext): Promise<void> {
   assert.match(await anotherClient.convert(root, source, "Reopened preview"), /Reopened preview/);
   assert.equal(fixture.starts, 1, "Warm updates and reopened previews must reuse the running service");
   assert.equal(await fs.readFile(source, "utf8"), "Saved document");
+}
+
+/** Verifies the legacy persisted state layout remains supported. */
+async function rendersUnsavedBuffers(context: TestContext): Promise<void> {
+  await rendersUnsavedBuffersWithState(context, false);
+}
+
+/** Verifies Rust state discovery renders buffers and reuses services across preview sessions. */
+async function rendersNativeUnsavedBuffers(context: TestContext): Promise<void> {
+  await rendersUnsavedBuffersWithState(context, true);
+}
+
+/** Verifies a stopped Rust service cannot hide a live legacy service for the same project. */
+async function reusesLegacyAfterStaleNativeState(context: TestContext): Promise<void> {
+  const fixture = await HtmlServiceFixture.create(context);
+  const { root, source } = await fixture.project("mixed-layout-project");
+  fixture.nativeState = true;
+  await fixture.client(context).convert(root, source, "Native session");
+  await fixture.stop(fixture.servers[0]);
+  fixture.nativeState = false;
+  await fixture.start(root, source, 0);
+  assert.match(await fixture.client(context).convert(root, source, "Legacy session"), /Legacy session/);
+  assert.equal(fixture.starts, 2, "Discovering a healthy legacy service must not start a third worker");
 }
 
 /** Verifies actual service loss recovers while conversion errors leave a healthy service alive. */
@@ -148,5 +173,7 @@ async function isolatesProjects(context: TestContext): Promise<void> {
 }
 
 test("renders unsaved and empty editor buffers using one reusable service", rendersUnsavedBuffers);
+test("renders unsaved buffers and reuses services discovered from Rust state", rendersNativeUnsavedBuffers);
+test("reuses a healthy legacy service when native state is stale", reusesLegacyAfterStaleNativeState);
 test("recovers a stopped service without restarting it for Markdown errors", recoversOnlyTransportFailures);
 test("keeps different project previews on separate services", isolatesProjects);

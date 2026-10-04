@@ -20,7 +20,7 @@ export class PapperHtmlServerClient {
   constructor(
     private readonly output: PreviewOutput,
     private readonly startServer: StartServer,
-    private readonly papperHome = path.join(os.homedir(), ".papper"),
+    private readonly papperHome = process.env.PAPPER_HOME || path.join(os.homedir(), ".papper"),
   ) {}
 
   /** Closes this client's HTTP sockets while leaving reusable Papper services running. */
@@ -73,44 +73,65 @@ export class PapperHtmlServerClient {
 
   /** Checks persisted state, starts a missing service once, and verifies its protocol. */
   private async connect(project: string, sourcePath: string): Promise<ServerConnection> {
-    const existing = await this.readConnection(project);
-    if (existing && await this.isCompatible(existing, project)) {
-      this.output.appendLine(`[HTML][HTTP] Reusing http://${existing.host}:${existing.port} for ${project}`);
-      return existing;
+    const existing = await this.readConnections(project);
+    for (const connection of existing) {
+      if (await this.isCompatible(connection, project)) {
+        this.output.appendLine(`[HTML][HTTP] Reusing http://${connection.host}:${connection.port} for ${project}`);
+        return connection;
+      }
     }
 
     // Reuse a stopped project's port when possible, but never claim a port
     // currently occupied by another project or an unrelated HTTP service.
-    const port = await findAvailablePort(existing?.port);
+    const port = await findAvailablePort(existing[0]?.port);
     this.output.appendLine(`[HTML][HTTP] Starting Papper service for ${project} on port ${port}`);
     await this.startServer(project, sourcePath, port);
     if (this.disposed) {
       throw new Error("Papper HTML preview has been disposed");
     }
-    const started = await this.readConnection(project);
-    if (!started || !await this.isCompatible(started, project)) {
-      throw new Error("Papper did not start a compatible HTML service with editor text support; update Papper and check its pandoc-server.log");
+    // Probe the requested endpoint directly: CLI success can mean a one-shot
+    // build on older Papper versions when the bootstrap source is external.
+    const started = { host: "127.0.0.1", port };
+    if (!await this.isCompatible(started, project)) {
+      const stateDirectory = this.projectStateDirectory(project);
+      throw new Error(`Papper HTML service at http://127.0.0.1:${port} did not pass the project/editor-text check; see the HTTP diagnostics above and ${path.join(stateDirectory, "work", "rust-v1", "server.log")} (Rust) or ${path.join(stateDirectory, "pandoc-server.log")} (legacy). Papper must support --start-server with a Markdown file outside the project`);
     }
     return started;
   }
 
-  /** Reads Papper's canonical-path project state and rejects mismatched configurations. */
-  private async readConnection(project: string): Promise<ServerConnection | undefined> {
+  /** Derives the shared legacy/native project identity from its canonical directory. */
+  private projectStateDirectory(project: string): string {
     const projectId = crypto.createHash("sha256").update(normalizePath(project)).digest("hex").slice(0, 20);
-    const stateDirectory = path.join(this.papperHome, "projects", projectId);
-    try {
-      const state = JSON.parse(await fs.readFile(path.join(stateDirectory, "pandoc-server.json"), "utf8"));
-      const configuration = JSON.parse(await fs.readFile(path.join(stateDirectory, "pandoc-server-config.json"), "utf8"));
-      if (state.host !== "127.0.0.1" || !Number.isInteger(state.port) || state.port < 1 || state.port > 65535
-        || typeof configuration.project_dir !== "string"
-        || normalizePath(await fs.realpath(configuration.project_dir)) !== normalizePath(project)) {
-        return undefined;
+    return path.join(this.papperHome, "projects", projectId);
+  }
+
+  /** Reads both service layouts so stale native state cannot hide a healthy legacy service. */
+  private async readConnections(project: string): Promise<ServerConnection[]> {
+    const stateDirectory = this.projectStateDirectory(project);
+    const layouts = [
+      [path.join(stateDirectory, "work", "rust-v1"), "server-state.json", "server-config.json"],
+      [stateDirectory, "pandoc-server.json", "pandoc-server-config.json"],
+    ];
+    const connections: ServerConnection[] = [];
+    for (const [directory, stateName, configName] of layouts) {
+      try {
+        const state = JSON.parse(await fs.readFile(path.join(directory, stateName), "utf8"));
+        const configuration = JSON.parse(await fs.readFile(path.join(directory, configName), "utf8"));
+        if (state.host !== "127.0.0.1" || !Number.isInteger(state.port) || state.port < 1 || state.port > 65535
+          || typeof configuration.project_dir !== "string"
+          || normalizePath(await fs.realpath(configuration.project_dir)) !== normalizePath(project)) {
+          this.output.appendLine(`[HTML][HTTP] Ignoring invalid or mismatched service state: ${path.join(directory, stateName)}`);
+          continue;
+        }
+        connections.push({ host: state.host, port: state.port });
+      } catch (error) {
+        // Missing, partial, or stale state must leave other layouts available.
+        if (error.code !== "ENOENT") {
+          this.output.appendLine(`[HTML][HTTP] Could not read service state ${path.join(directory, stateName)}: ${String(error.message || error)}`);
+        }
       }
-      return { host: state.host, port: state.port };
-    } catch {
-      // Deleted projects, partial writes, and stale state all use normal startup.
-      return undefined;
     }
+    return connections;
   }
 
   /** Requires buffer support and project identity so an old or foreign service cannot render stale text. */
@@ -118,9 +139,14 @@ export class PapperHtmlServerClient {
     try {
       const response = await this.request(connection, "/version", undefined, 1500);
       const version = JSON.parse(response.body);
-      return version.protocol === "pmt-html-v1" && version.source_text === true
+      const compatible = version.protocol === "pmt-html-v1" && version.source_text === true
         && typeof version.project_dir === "string" && normalizePath(version.project_dir) === normalizePath(project);
-    } catch {
+      if (!compatible) {
+        this.output.appendLine(`[HTML][HTTP] Incompatible /version at http://${connection.host}:${connection.port}: ${response.body.slice(0, 8192)}`);
+      }
+      return compatible;
+    } catch (error) {
+      this.output.appendLine(`[HTML][HTTP] Service check failed at http://${connection.host}:${connection.port}/version: ${String(error.message || error)}`);
       return false;
     }
   }
