@@ -199,7 +199,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
     try {
       const previewSource = await renderCustomEditorPreviewSource(webviewPanel.webview, this.imagePreviewRenderer, document.uri, imagePath, extension, this.output);
       if (!previewSource) {
-        webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Pandoc Manuscript Tools output for details.</p>`);
+        webviewPanel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Papper Tools output for details.</p>`);
         return;
       }
       if (previewSource.localResourceRoots) {
@@ -295,7 +295,7 @@ export class MetafilePreviewCustomEditorProvider implements vscode.Disposable {
         ]);
       } catch (error) {
         this.output.appendLine(`SVG diff highlight failed: ${formatError(error)}`);
-        await vscode.window.showWarningMessage("Could not read both SVG revisions for highlighting. See Pandoc Manuscript Tools output.");
+        await vscode.window.showWarningMessage("Could not read both SVG revisions for highlighting. See Papper Tools output.");
       }
       return;
     }

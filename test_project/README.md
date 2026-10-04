@@ -1,4 +1,4 @@
-# Pandoc Manuscript Tools F5 Test Document {#sec:test-document}
+# Papper Tools F5 Test Document {#sec:test-document}
 
 This file is the smoke-test manuscript opened from the Extension Development Host. It intentionally contains many small Markdown and Pandoc-crossref patterns so each extension feature can be tested in one place.
 

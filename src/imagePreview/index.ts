@@ -292,7 +292,7 @@ const HOVER_NESTED_RASTER_DIMENSIONS = [100, 80, 64, 48, 32, 24, 16, 12, 8, 4, 2
 function buildImagePreviewUnavailableHover(target: string) {
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown(`**Image preview** \`${formatImageTargetLabel(target)}\`\n\n`);
-  markdown.appendMarkdown("$(warning) Preview could not render. See the Pandoc Manuscript Tools output for details.");
+  markdown.appendMarkdown("$(warning) Preview could not render. See the Papper Tools output for details.");
   return markdown;
 }
 

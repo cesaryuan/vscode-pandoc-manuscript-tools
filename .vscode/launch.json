@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Pandoc Crossref Helper",
+      "name": "Run Papper Tools",
       "type": "extensionHost",
       "request": "launch",
       "preLaunchTask": "bundle",

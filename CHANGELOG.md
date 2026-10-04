@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Pandoc Manuscript Tools are documented in this file.
+All notable changes to Papper Tools are documented in this file.
 
 ## 0.3.0 - 2026-07-06
 

@@ -170,7 +170,7 @@ export class ImagePreviewSidePanel {
     try {
       const previewSource = await renderWebviewPreviewSource(panel.webview, this.imagePreviewRenderer, imageUri, imageUri.fsPath, extension);
       if (!previewSource) {
-        panel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Pandoc Manuscript Tools output for details.</p>`);
+        panel.webview.html = buildPanelHtml(`<p class="muted">Preview could not render ${escapeHtml(label)}. See the Papper Tools output for details.</p>`);
         return;
       }
       if (previewSource.localResourceRoots) {

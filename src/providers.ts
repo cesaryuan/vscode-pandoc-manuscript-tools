@@ -1607,7 +1607,7 @@ function escapeMarkdownCodeSpan(value: string) {
  * @param markdown Hover markdown being built.
  */
 function appendMathJaxUnavailableMessage(markdown: vscode.MarkdownString) {
-  markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Pandoc Manuscript Tools output for the TeX source and error details.\n\n");
+  markdown.appendMarkdown("\n\n$(warning) MathJax preview could not render. See the Papper Tools output for the TeX source and error details.\n\n");
 }
 
 

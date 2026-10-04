@@ -48,7 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
   });
 
-  output.appendLine("Activated Pandoc Manuscript Tools.");
+  output.appendLine("Activated Papper Tools.");
   customImagePreviewContext.enable();
   if (getConfiguration().get("enableParagraphHoverTranslation", false)) {
     void paragraphTranslator.initialize();
@@ -87,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.rebuildIndex", async () => {
     await index.refreshWorkspace();
     updateDiagnosticsForOpenDocuments(index, diagnostics);
-    vscode.window.showInformationMessage("Pandoc Manuscript Tools index rebuilt.");
+    vscode.window.showInformationMessage("Papper Tools index rebuilt.");
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand(BUILD_DOCX_COMMAND, async (uri: vscode.Uri | undefined) => {
