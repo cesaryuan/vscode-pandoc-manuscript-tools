@@ -88,11 +88,11 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage("Pandoc Manuscript Tools index rebuilt.");
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand(BUILD_DOCX_COMMAND, async () => {
-    await buildRunner.buildActiveMarkdownDocx();
+  context.subscriptions.push(vscode.commands.registerCommand(BUILD_DOCX_COMMAND, async (uri: vscode.Uri | undefined) => {
+    await buildRunner.buildActiveMarkdownDocx(uri);
   }));
-  context.subscriptions.push(vscode.commands.registerCommand(BUILD_HTML_COMMAND, async () => {
-    await markdownPreview.buildActiveMarkdownHtml();
+  context.subscriptions.push(vscode.commands.registerCommand(BUILD_HTML_COMMAND, async (uri: vscode.Uri | undefined) => {
+    await markdownPreview.buildActiveMarkdownHtml(uri);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
@@ -203,6 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument((document) => {
     numberingInlayHints.closeDocument(document);
+    void buildRunner.refreshContext();
   }));
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));

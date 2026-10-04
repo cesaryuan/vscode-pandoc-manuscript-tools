@@ -4,7 +4,7 @@ import * as crypto from "crypto";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { CAN_BUILD_DOCX_CONTEXT } from "./constants";
+import { DOCX_BUILD_RESOURCES_CONTEXT } from "./constants";
 import { findExistingPapperExecutable, findPandocManuscriptProject, isPapperBuildAvailable, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "./papperBuildUtils";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
@@ -20,50 +20,43 @@ export class PandocBuildRunner {
     this.contextRefreshId = 0;
   }
 
-  /** Recomputes whether the active editor should show the Papper DOCX button. */
+  /** Finds open manuscript resources so each editor's DOCX action survives focus changes. */
   async refreshContext() {
     const refreshId = this.contextRefreshId + 1;
     this.contextRefreshId = refreshId;
-    const canBuild = await this.canBuildActiveDocument();
+    const resources: string[] = [];
+    if (await isPapperBuildAvailable()) {
+      // A global active-editor flag hid buttons in other groups; track eligible files instead.
+      const documents = vscode.workspace.textDocuments.filter(isBuildableMarkdownDocument);
+      const projects = await Promise.all(documents.map(document => findPandocManuscriptProject(document.uri)));
+      for (let index = 0; index < documents.length; index += 1) {
+        if (projects[index]) {
+          resources.push(documents[index].uri.toString());
+        }
+      }
+    }
     if (refreshId !== this.contextRefreshId) {
       return;
     }
-    await vscode.commands.executeCommand("setContext", CAN_BUILD_DOCX_CONTEXT, canBuild);
+    await vscode.commands.executeCommand("setContext", DOCX_BUILD_RESOURCES_CONTEXT, resources);
   }
 
   /**
-   * Returns whether the current editor is a buildable manuscript Markdown file.
-   *
-   */
-  async canBuildActiveDocument() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
-      return false;
-    }
-
-    const project = await findPandocManuscriptProject(editor.document.uri);
-    if (!project) {
-      return false;
-    }
-
-    return isPapperBuildAvailable();
-  }
-
-  /**
-   * Builds the active Markdown file as DOCX and opens the result externally.
+   * Builds the title action's Markdown file, or the active file for palette commands.
    *
    * The button is hidden unless these checks pass, but command-palette calls can
    * still reach this path, so the user gets a precise reason instead of silence.
    *
    */
-  async buildActiveMarkdownDocx() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
+  async buildActiveMarkdownDocx(uri?: vscode.Uri) {
+    // An inactive editor title action must save/build its own resource, not the focused file.
+    const document = uri ? await vscode.workspace.openTextDocument(uri) : vscode.window.activeTextEditor?.document;
+    if (!document || !isBuildableMarkdownDocument(document)) {
       vscode.window.showWarningMessage("Open a saved Markdown file before building DOCX.");
       return;
     }
 
-    const project = await findPandocManuscriptProject(editor.document.uri);
+    const project = await findPandocManuscriptProject(document.uri);
     if (!project) {
       vscode.window.showWarningMessage("This Markdown file is not inside a Pandoc manuscript template project.");
       await this.refreshContext();
@@ -76,7 +69,7 @@ export class PandocBuildRunner {
       return;
     }
 
-    const docxUri = getExpectedDocxUri(project.rootUri, editor.document.uri);
+    const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
     if (await isFileLockedForOverwrite(docxUri)) {
       const message = getCloseDocxBeforeBuildMessage(path.basename(docxUri.fsPath));
       this.output.appendLine(`[DOCX] Target DOCX is already open or not writable: ${docxUri.fsPath}`);
@@ -84,13 +77,13 @@ export class PandocBuildRunner {
       return;
     }
 
-    const saved = await editor.document.save();
+    const saved = await document.save();
     if (!saved) {
       vscode.window.showWarningMessage("The Markdown file must be saved before building DOCX.");
       return;
     }
 
-    await this.runDocxBuild(project, editor.document);
+    await this.runDocxBuild(project, document);
     await this.refreshContext();
   }
 

@@ -99,12 +99,12 @@
       "editor/title": [
         {
           "command": "pandocManuscriptTools.buildDocxAndOpen",
-          "when": "resourceLangId == markdown && pandocManuscriptTools.canBuildDocx",
+          "when": "resourceLangId == markdown && resourceScheme == file && resource in pandocManuscriptTools.docxBuildResources",
           "group": "navigation"
         },
         {
           "command": "pandocManuscriptTools.buildHtmlAndOpen",
-          "when": "resourceLangId == markdown && pandocManuscriptTools.canBuildHtml",
+          "when": "resourceLangId == markdown && resourceScheme == file && pandocManuscriptTools.canBuildHtml",
           "group": "navigation"
         },
         {
@@ -133,11 +133,11 @@
       "commandPalette": [
         {
           "command": "pandocManuscriptTools.buildDocxAndOpen",
-          "when": "pandocManuscriptTools.canBuildDocx"
+          "when": "resourceLangId == markdown && resourceScheme == file && resource in pandocManuscriptTools.docxBuildResources"
         },
         {
           "command": "pandocManuscriptTools.buildHtmlAndOpen",
-          "when": "pandocManuscriptTools.canBuildHtml"
+          "when": "resourceLangId == markdown && resourceScheme == file && pandocManuscriptTools.canBuildHtml"
         },
         {
           "command": "pandocManuscriptTools.openImagePreviewToSide",

@@ -50,10 +50,11 @@ export class PapperMarkdownPreviewController {
     this.htmlServer.dispose();
   }
 
-  /** Recomputes whether the active editor can use the Papper HTML preview. */
+  /** Checks tool availability independently of focus; menus filter their own resource. */
   async refreshContext() {
     const refreshId = ++this.contextRefreshId;
-    const canBuildHtml = await this.canBuildHtmlActiveDocument();
+    // Focusing a Webview clears activeTextEditor and previously hid source-editor buttons.
+    const canBuildHtml = await isPapperBuildAvailable();
     if (refreshId !== this.contextRefreshId) {
       return;
     }
@@ -61,31 +62,20 @@ export class PapperMarkdownPreviewController {
   }
 
   /**
-   * Returns whether the active Markdown file can be rendered by Papper as HTML.
-   */
-  private async canBuildHtmlActiveDocument() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
-      return false;
-    }
-
-    return isPapperBuildAvailable();
-  }
-
-  /**
-   * Opens the active Markdown file in the Papper HTML side preview.
+   * Opens the title action's Markdown file, or the active file for palette commands.
    *
    * The preview is built from the current editor buffer, including unsaved
    * changes, and keeps the generated standalone HTML inside a Webview panel.
    */
-  async buildActiveMarkdownHtml() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !isBuildableMarkdownDocument(editor.document)) {
+  async buildActiveMarkdownHtml(uri?: vscode.Uri) {
+    // Inactive editor title actions pass their resource; activeTextEditor may be another file.
+    const document = uri ? await vscode.workspace.openTextDocument(uri) : vscode.window.activeTextEditor?.document;
+    if (!document || !isBuildableMarkdownDocument(document)) {
       vscode.window.showWarningMessage("Open a Markdown file before starting HTML preview.");
       return;
     }
 
-    const project = await resolveHtmlPreviewProject(editor.document.uri);
+    const project = await resolveHtmlPreviewProject(document.uri);
 
     if (!(await isPapperBuildAvailable())) {
       vscode.window.showErrorMessage("Cannot build HTML preview because `papper` is not on PATH and `uv` is not available to install it.");
@@ -93,8 +83,8 @@ export class PapperMarkdownPreviewController {
       return;
     }
 
-    this.openHtmlPreview(editor.document, project);
-    await this.refreshHtmlPreview(editor.document, project);
+    this.openHtmlPreview(document, project);
+    await this.refreshHtmlPreview(document, project);
     await this.refreshContext();
   }
 
