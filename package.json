@@ -45,6 +45,7 @@
     "onCommand:pandocManuscriptTools.rebuildIndex",
     "onCommand:pandocManuscriptTools.buildDocxAndOpen",
     "onCommand:pandocManuscriptTools.buildHtmlAndOpen",
+    "onCommand:pandocManuscriptTools.installOrUpdatePapper",
     "onCommand:pandocManuscriptTools.openImagePreviewToSide",
     "onCommand:pandocManuscriptTools.openImageDirectoryPreview",
     "onCustomEditor:pandocManuscriptTools.metafilePreviewEditor",
@@ -73,6 +74,10 @@
         "command": "pandocManuscriptTools.buildHtmlAndOpen",
         "title": "Pandoc Manuscript Tools: Preview Markdown (Papper HTML)",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "pandocManuscriptTools.installOrUpdatePapper",
+        "title": "Pandoc Manuscript Tools: Install or Update Papper"
       },
       {
         "command": "pandocManuscriptTools.openImagePreviewToSide",
@@ -138,6 +143,9 @@
         {
           "command": "pandocManuscriptTools.buildHtmlAndOpen",
           "when": "resourceLangId == markdown && resourceScheme == file && pandocManuscriptTools.canBuildHtml"
+        },
+        {
+          "command": "pandocManuscriptTools.installOrUpdatePapper"
         },
         {
           "command": "pandocManuscriptTools.openImagePreviewToSide",

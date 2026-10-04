@@ -53,6 +53,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 - `Pandoc Manuscript Tools: Rebuild Index`
 - `Pandoc Manuscript Tools: Build DOCX and Open in Word`
+- `Pandoc Manuscript Tools: Install or Update Papper`
 - `View Images` (Explorer folder context menu)
 
 ## Settings
@@ -91,6 +92,8 @@ In an SVG diff, reopen the editor with **SVG Preview**, then click **Highlight c
 The **Synchronize zoom** button in the SVG diff preview links both panes at the current pane's zoom level and scroll position. Zoom in, zoom out, actual size, fit to window, Ctrl+mouse wheel, both scrollbars, and drag-to-pan then move both sides together. Click the button again to let each side zoom and scroll independently.
 
 If installation through the CERNET mirror fails, the extension retries `uv tool install papper` once without a custom index.
+
+Run **Pandoc Manuscript Tools: Install or Update Papper** from the Command Palette (`Ctrl+Shift+P`) to install Papper with uv when it is missing or update the uv-managed Papper installation. The command is available without an open Markdown file and requires `uv` on PATH. Progress appears in a notification and the **Pandoc Manuscript Tools** output channel. On Simplified Chinese systems in UTC+8, the command first uses the CERNET PyPI mirror and falls back to the normal index if the mirror fails. If the active Papper executable is managed by another package manager, the command asks you to update it with that manager.
 
 The DOCX build button is shown only when the active saved Markdown file belongs to a workspace folder with a `style.yml` Papper manuscript configuration. DOCX builds and HTML service startup use `papper` directly when it is available on PATH. If it is missing, the extension reuses an existing uv tool installation or runs `uv tool install papper` once, then invokes the installed executable directly. When the system locale is Simplified Chinese and the timezone is UTC+8, that first install uses the CERNET PyPI mirror. The extension checks uv-managed Papper for updates after activation and then daily; if it is outdated, it asks before running `uv tool upgrade papper`. Papper installed through another package manager is left to that manager. The DOCX command runs `papper build docx <markdown-file>` from the detected project root and opens the generated file from `output/docx/`.
 

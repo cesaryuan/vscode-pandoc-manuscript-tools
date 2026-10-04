@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { EXTENSION_NAME, PANDOC_SELECTOR, IMAGE_PREVIEW_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, BUILD_HTML_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_IMAGE_DIRECTORY_PREVIEW_COMMAND, OPEN_SVG_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
+import { EXTENSION_NAME, PANDOC_SELECTOR, IMAGE_PREVIEW_SELECTOR, MATH_HOVER_SELECTOR, BUILD_DOCX_COMMAND, BUILD_HTML_COMMAND, INSTALL_OR_UPDATE_PAPPER_COMMAND, OPEN_IMAGE_PREVIEW_COMMAND, OPEN_IMAGE_DIRECTORY_PREVIEW_COMMAND, OPEN_SVG_PREVIEW_COMMAND, OPEN_SVG_SOURCE_TEXT_COMMAND, METAFILE_PREVIEW_EDITOR_VIEW_TYPE, SVG_PREVIEW_EDITOR_VIEW_TYPE } from "./constants";
 import { PandocWorkspaceIndex } from "./workspaceIndex";
 import { PandocBuildRunner } from "./docxBuild";
 import { PapperMarkdownPreviewController } from "./papperMarkdownPreview/controller";
@@ -17,6 +17,7 @@ import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider,
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
 import { NumberingInlayHints } from "./numberingInlayHints";
 import { PapperUpdateChecker } from "./papperUpdateChecker";
+import { installOrUpdatePapper } from "./papperBuildUtils";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -37,6 +38,7 @@ export function activate(context: vscode.ExtensionContext) {
   const markdownPreview = new PapperMarkdownPreviewController(output);
   const numberingInlayHints = new NumberingInlayHints(buildRunner, output);
   const papperUpdateChecker = new PapperUpdateChecker(context.globalState);
+  let papperMaintenanceRunning = false;
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
   const inlineFoldController = new InlineFoldController(index, output);
   const customImagePreviewContext = new CustomImagePreviewContext((key, value) => {
@@ -93,6 +95,33 @@ export function activate(context: vscode.ExtensionContext) {
   }));
   context.subscriptions.push(vscode.commands.registerCommand(BUILD_HTML_COMMAND, async (uri: vscode.Uri | undefined) => {
     await markdownPreview.buildActiveMarkdownHtml(uri);
+  }));
+  /** Installs or updates Papper and refreshes features without reopening the Markdown editor. */
+  context.subscriptions.push(vscode.commands.registerCommand(INSTALL_OR_UPDATE_PAPPER_COMMAND, async () => {
+    output.show(true);
+    if (papperMaintenanceRunning) {
+      void vscode.window.showInformationMessage("Papper 正在安装或更新，请稍候");
+      return;
+    }
+    papperMaintenanceRunning = true;
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "正在安装或更新 Papper" },
+        /** Streams uv progress to the shared extension output channel. */
+        async () => {
+          await installOrUpdatePapper(output);
+        },
+      );
+      await buildRunner.refreshContext();
+      await markdownPreview.refreshContext();
+      numberingInlayHints.refreshOpenDocuments();
+      void vscode.window.showInformationMessage("Papper 已安装或更新。");
+    } catch (error) {
+      output.appendLine(`[Papper] Installation or update failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`Papper 安装或更新失败: ${String(error)}`);
+    } finally {
+      papperMaintenanceRunning = false;
+    }
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_IMAGE_PREVIEW_COMMAND, async (uri) => {
