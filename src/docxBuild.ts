@@ -4,7 +4,6 @@ import * as crypto from "crypto";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { DOCX_BUILD_RESOURCES_CONTEXT } from "./constants";
 import { findExistingPapperExecutable, findPandocManuscriptProject, isPapperBuildAvailable, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "./papperBuildUtils";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 
@@ -12,40 +11,16 @@ type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
 
 export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
-  declare contextRefreshId: number;
 
   /** Creates the Papper build runner used by DOCX and inlay-hint commands. */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
-    this.contextRefreshId = 0;
-  }
-
-  /** Finds open manuscript resources so each editor's DOCX action survives focus changes. */
-  async refreshContext() {
-    const refreshId = this.contextRefreshId + 1;
-    this.contextRefreshId = refreshId;
-    const resources: string[] = [];
-    if (await isPapperBuildAvailable()) {
-      // A global active-editor flag hid buttons in other groups; track eligible files instead.
-      const documents = vscode.workspace.textDocuments.filter(isBuildableMarkdownDocument);
-      const projects = await Promise.all(documents.map(document => findPandocManuscriptProject(document.uri)));
-      for (let index = 0; index < documents.length; index += 1) {
-        if (projects[index]) {
-          resources.push(documents[index].uri.toString());
-        }
-      }
-    }
-    if (refreshId !== this.contextRefreshId) {
-      return;
-    }
-    await vscode.commands.executeCommand("setContext", DOCX_BUILD_RESOURCES_CONTEXT, resources);
   }
 
   /**
    * Builds the title action's Markdown file, or the active file for palette commands.
    *
-   * The button is hidden unless these checks pass, but command-palette calls can
-   * still reach this path, so the user gets a precise reason instead of silence.
+   * Any saved Markdown is eligible; tool availability is checked on invocation.
    *
    */
   async buildActiveMarkdownDocx(uri?: vscode.Uri) {
@@ -56,24 +31,8 @@ export class PandocBuildRunner {
       return;
     }
 
-    const project = await findPandocManuscriptProject(document.uri);
-    if (!project) {
-      vscode.window.showWarningMessage("This Markdown file is not inside a Pandoc manuscript template project.");
-      await this.refreshContext();
-      return;
-    }
-
     if (!(await isPapperBuildAvailable())) {
       vscode.window.showErrorMessage("Cannot build DOCX because `papper` is not on PATH and `uv` is not available to install it.");
-      await this.refreshContext();
-      return;
-    }
-
-    const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
-    if (await isFileLockedForOverwrite(docxUri)) {
-      const message = getCloseDocxBeforeBuildMessage(path.basename(docxUri.fsPath));
-      this.output.appendLine(`[DOCX] Target DOCX is already open or not writable: ${docxUri.fsPath}`);
-      await vscode.window.showWarningMessage(message, { modal: true });
       return;
     }
 
@@ -83,8 +42,9 @@ export class PandocBuildRunner {
       return;
     }
 
+    const project = await findPandocManuscriptProject(document.uri)
+      || { rootUri: vscode.Uri.file(path.dirname(document.uri.fsPath)) };
     await this.runDocxBuild(project, document);
-    await this.refreshContext();
   }
 
   /**
@@ -137,30 +97,34 @@ export class PandocBuildRunner {
   }
 
   /**
-   * Runs `papper build docx <current-file>` and opens the output DOCX.
+   * Builds a unique temporary DOCX and leaves it available for Word to open/edit.
    *
-   * @param project Detected manuscript project root.
+   * @param project Detected manuscript project root or the source directory.
    * @param document Markdown document to build.
    */
   async runDocxBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const markdownRelativePath = path.relative(project.rootUri.fsPath, document.uri.fsPath);
-    const docxUri = getExpectedDocxUri(project.rootUri, document.uri);
-    const args = ["build", "docx", markdownRelativePath];
 
     this.output.show(true);
     this.output.appendLine("");
     this.output.appendLine(`[DOCX] Building ${markdownRelativePath}`);
     this.output.appendLine(`[DOCX] Working directory: ${project.rootUri.fsPath}`);
-    this.output.appendLine(`[DOCX] Command: papper ${args.join(" ")}`);
 
     try {
       const papperExecutable = await resolvePapperExecutable(this.output);
+      // Unique destinations avoid overwriting a previous build still open in Word.
+      const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-docx-"));
+      const docxUri = vscode.Uri.file(path.join(outputDirectory, `${path.parse(document.uri.fsPath).name}.docx`));
+      const args = ["build", "docx", markdownRelativePath, "--output-file", docxUri.fsPath];
+      this.output.appendLine(`[DOCX] Output file: ${docxUri.fsPath}`);
+      this.output.appendLine(`[DOCX] Command: papper ${args.map(argument => JSON.stringify(argument)).join(" ")}`);
       this.output.appendLine(`[DOCX] Resolved executable: ${papperExecutable}`);
       await runProcess(papperExecutable, args, { cwd: project.rootUri.fsPath, output: this.output });
       if (!(await pathExists(docxUri))) {
         throw new Error(`Build finished, but the expected DOCX was not found: ${docxUri.fsPath}`);
       }
 
+      // Word opens asynchronously; keep the temporary file after the command returns.
       const opened = await openDocxInLocalWord(docxUri, this.output);
       if (!opened) {
         throw new Error(`VS Code could not open the DOCX in local Word: ${docxUri.fsPath}`);
@@ -188,62 +152,6 @@ async function pathExists(uri: vscode.Uri) {
   } catch {
     return false;
   }
-}
-
-/**
- * Checks whether an existing output file is likely locked by Word.
- *
- * The build overwrites and post-processes the DOCX in place. On Windows, Word
- * usually denies a read/write open while the document is open, so this catches
- * the common failure before Pandoc spends time rebuilding the manuscript.
- *
- * @param uri Target DOCX URI.
- */
-async function isFileLockedForOverwrite(uri: vscode.Uri) {
-  if (!(await pathExists(uri))) {
-    return false;
-  }
-
-  let handle;
-  try {
-    handle = await fs.open(uri.fsPath, "r+");
-    return false;
-  } catch (error) {
-    return isFileLockError(error);
-  } finally {
-    if (handle) {
-      await handle.close();
-    }
-  }
-}
-
-/**
- * Returns whether a filesystem error indicates a file lock or write denial.
- *
- * @param error Filesystem error.
- */
-function isFileLockError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && ["EBUSY", "EPERM", "EACCES"].includes(String(error.code)));
-}
-
-/**
- * Returns the modal warning text for a locked DOCX output file.
- *
- * @param fileName DOCX filename.
- */
-function getCloseDocxBeforeBuildMessage(fileName: string) {
-  if (isChineseVscodeLanguage()) {
-    return `目标 Word 文件 ${fileName} 已经打开或无法写入。请先在 Word 中关闭它，然后再重新编译。`;
-  }
-  return `The target Word file ${fileName} is already open or not writable. Close it in Word, then try building again.`;
-}
-
-/**
- * Checks whether VS Code is currently using a Chinese UI locale.
- *
- */
-function isChineseVscodeLanguage() {
-  return vscode.env.language.toLowerCase().startsWith("zh");
 }
 
 /**
@@ -551,15 +459,4 @@ function escapeXml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-/**
- * Returns the DOCX path produced by Papper for a Markdown input file.
- *
- * @param rootUri Project root URI.
- * @param markdownUri Markdown file URI.
- */
-function getExpectedDocxUri(rootUri: vscode.Uri, markdownUri: vscode.Uri) {
-  const outputName = `${path.parse(markdownUri.fsPath).name}.docx`;
-  return vscode.Uri.file(path.join(rootUri.fsPath, "output", "docx", outputName));
 }

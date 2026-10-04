@@ -3,7 +3,6 @@ export const PANDOC_SELECTOR = [{ language: "markdown" }, { language: "mdx" }];
 export const IMAGE_PREVIEW_SELECTOR = [...PANDOC_SELECTOR, { language: "html" }, { language: "xml" }, { language: "svg" }];
 export const MATH_HOVER_SELECTOR = [...PANDOC_SELECTOR, { language: "latex" }];
 export const BUILD_DOCX_COMMAND = "pandocManuscriptTools.buildDocxAndOpen";
-export const DOCX_BUILD_RESOURCES_CONTEXT = "pandocManuscriptTools.docxBuildResources";
 export const BUILD_HTML_COMMAND = "pandocManuscriptTools.buildHtmlAndOpen";
 export const INSTALL_OR_UPDATE_PAPPER_COMMAND = "pandocManuscriptTools.installOrUpdatePapper";
 export const CAN_BUILD_HTML_CONTEXT = "pandocManuscriptTools.canBuildHtml";

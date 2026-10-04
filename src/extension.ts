@@ -112,7 +112,6 @@ export function activate(context: vscode.ExtensionContext) {
           await installOrUpdatePapper(output);
         },
       );
-      await buildRunner.refreshContext();
       await markdownPreview.refreshContext();
       numberingInlayHints.refreshOpenDocuments();
       void vscode.window.showInformationMessage("Papper 已安装或更新。");
@@ -143,7 +142,6 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
-    void buildRunner.refreshContext();
     void markdownPreview.refreshContext();
     fencedDivHighlighter.updateVisibleEditors();
     inlineFoldController.updateVisibleEditors();
@@ -170,7 +168,6 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
-    void buildRunner.refreshContext();
     void markdownPreview.refreshContext();
   }));
 
@@ -197,7 +194,6 @@ export function activate(context: vscode.ExtensionContext) {
       await index.prepareDocument(document);
       updateDiagnostics(document, index, diagnostics);
       numberingInlayHints.scheduleRefresh(document);
-      void buildRunner.refreshContext();
       void markdownPreview.refreshContext();
     }
   }));
@@ -232,14 +228,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument((document) => {
     numberingInlayHints.closeDocument(document);
-    void buildRunner.refreshContext();
   }));
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
   for (const document of vscode.workspace.textDocuments) {
     numberingInlayHints.scheduleRefresh(document);
   }
-  void buildRunner.refreshContext();
   void markdownPreview.refreshContext();
   fencedDivHighlighter.updateVisibleEditors();
   inlineFoldController.updateVisibleEditors();

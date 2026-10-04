@@ -42,8 +42,8 @@ export async function findPandocManuscriptProject(markdownUri: vscode.Uri): Prom
 /**
  * Returns manuscript project metadata when a directory has the required layout.
  *
- * `style.yml` marks the main manuscript directory in current templates. The
- * older Pandoc defaults path is no longer required for showing the DOCX button.
+ * `style.yml` marks the main manuscript directory in current templates, so
+ * builds can retain project configuration even for sources in subdirectories.
  *
  * @param rootUri Candidate project root.
  */

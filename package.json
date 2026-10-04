@@ -104,7 +104,7 @@
       "editor/title": [
         {
           "command": "pandocManuscriptTools.buildDocxAndOpen",
-          "when": "resourceLangId == markdown && resourceScheme == file && resource in pandocManuscriptTools.docxBuildResources",
+          "when": "resourceLangId == markdown && resourceScheme == file",
           "group": "navigation"
         },
         {
@@ -138,7 +138,7 @@
       "commandPalette": [
         {
           "command": "pandocManuscriptTools.buildDocxAndOpen",
-          "when": "resourceLangId == markdown && resourceScheme == file && resource in pandocManuscriptTools.docxBuildResources"
+          "when": "resourceLangId == markdown && resourceScheme == file"
         },
         {
           "command": "pandocManuscriptTools.buildHtmlAndOpen",
