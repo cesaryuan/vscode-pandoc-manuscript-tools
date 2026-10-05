@@ -3,3 +3,4 @@ node_modules/
 dist/
 assets/mathjax-newcm-font/
 test_project/images/
+experiments/
