@@ -10,6 +10,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Hover cards for labels, references, display math blocks, and inline math spans with MathJax-rendered SVG previews. Math hovers work in Markdown, MDX, and LaTeX (`.tex`) editors.
 - Hover previews for local SVG, EMF, and WMF image references in Markdown/MDX. SVG previews inline local `<image href>` assets before rendering, and EMF/WMF previews are shown through SVG preview sources.
 - Optional paragraph translation hovers that show whether Google Translate or Microsoft Translator handled the current translation.
+- English comment paragraph translations across code languages, using comment delimiters from built-in or installed language extensions and a small local scan around the mouse. Python triple-quoted text is also supported.
 - Optional paragraph-level hover previews for Markdown paragraphs that contain inline math.
 - A Pandoc-aware Outline provider that treats `$$ {#eq:label}` as a valid display-math closing delimiter.
 - Pandoc-aware heading folding and full section ranges so heading folds and Sticky Scroll remain usable after labeled display math.
@@ -68,7 +69,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.foldRevisionCharSpanAttributes`: fold `{...}` only when the span's `custom-style` value is exactly `Revision Char`.
 - `pandocManuscriptTools.enableInlineMathParagraphHover`: show a paragraph-level hover preview for Markdown paragraphs that contain inline math.
 - `pandocManuscriptTools.inlineMathParagraphHoverMaxCharacters`: maximum paragraph length, in characters, that can show an inline-math paragraph hover preview.
-- `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English paragraph hovers, using Google Translate when available and Microsoft Translator as a fallback.
+- `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English Markdown paragraphs and code comments, using Google Translate when available and Microsoft Translator as a fallback.
 - `pandocManuscriptTools.paragraphHoverTranslationMaxCharacters`: maximum English paragraph length, in characters, that can request a paragraph hover translation.
 - `pandocManuscriptTools.paragraphHoverTranslationTargetLanguage`: target language code for paragraph hover translations, for example `zh` or `zh-TW`.
 - `pandocManuscriptTools.imageDirectoryPreviewScanDepth`: maximum subfolder depth for Image Directory Preview. `-1` (default) scans all nested folders, `0` scans only the selected folder, and a positive integer scans that many subfolder levels.
@@ -80,6 +81,10 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 This extension is intentionally a small language-service layer rather than a full Markdown parser. It scans the Pandoc-crossref syntax used by this manuscript template and avoids code fences and YAML front matter to reduce false positives.
 
 The math hover uses MathJax's Node component loader to convert TeX into SVG and embeds the SVG as a hover image. Raw TeX is shown only as a fallback when rendering fails. Display math and inline math are rendered separately, and inline math is not treated as a cross-reference source. Paragraph-level inline math hovers are disabled by default because they produce larger hover cards. Paragraph translations may make network requests; the extension probes Google Translate on startup, falls back to Microsoft Translator if Google is unavailable, and shows the engine used for each translated hover. If the preview is unavailable, run `npm install` in this folder and reload the Extension Development Host.
+
+Code comment translation reads at most 30 lines before and after the hovered line. It loads and caches only the language extension's comment-delimiter configuration, without loading full grammars, parsing the entire document, or querying LSP/semantic tokens. Continuous standalone line comments are joined; blank lines or empty comments split paragraphs. Block comments are split by blank content lines, and documentation `*` prefixes are removed. Trailing comments translate only when the mouse is over the comment. Python triple-quoted strings and comment-shaped text inside ordinary strings are intentionally eligible. Short comments such as `Cache the result` are accepted. The existing translation toggle, target language, and character limit apply to both Markdown paragraphs and code comments.
+
+This local scan is deliberately approximate. Block openers outside the scan window, nested block comments, and embedded languages can need more context than the scan provides. Paragraphs cut off by the window are suppressed rather than partially translated. Language support follows the comment configuration exposed by installed extensions; languages without such configuration may not have comment translations. Markdown/MDX keep their existing paragraph translation hovers.
 
 Number inlay hints come from the AST generated by Papper's JSON build, so they follow the manuscript's active `pandoc-crossref` settings. Section hints use the processed heading number; figure and table hints require a source label so the AST can be mapped back to the Markdown line. A new AST is built from the current editor buffer after a short debounce, and hints from older document versions are hidden while the refreshed build is pending.
 

@@ -7,6 +7,7 @@ import { FencedDivHighlighter } from "./fencedDivHighlighter";
 import { InlineFoldController } from "./inlineFoldController";
 import { MathJaxRenderer } from "./mathJaxRenderer";
 import { ParagraphTranslator } from "./paragraphTranslator";
+import { CommentHoverProvider } from "./commentTranslation/commentHoverProvider";
 import { ImagePreviewRenderer } from "./imagePreview";
 import { ImagePreviewSidePanel } from "./imagePreview/sidePreview";
 import { ImageDirectoryPreview } from "./imageDirectoryPreview";
@@ -30,6 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
   const paragraphTranslator = new ParagraphTranslator(output);
+  const commentHoverProvider = new CommentHoverProvider(paragraphTranslator, output);
   const imagePreviewRenderer = new ImagePreviewRenderer(output);
   const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
   const imageDirectoryPreview = new ImageDirectoryPreview(context.extensionUri, output);
@@ -54,11 +56,12 @@ export function activate(context: vscode.ExtensionContext) {
     void paragraphTranslator.initialize();
   }
 
-  context.subscriptions.push(output, diagnostics, customImagePreviewContext, metafilePreviewEditorProvider);
+  context.subscriptions.push(output, diagnostics, customImagePreviewContext, metafilePreviewEditorProvider, commentHoverProvider);
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(PANDOC_SELECTOR, new PandocDefinitionProvider(index)));
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(IMAGE_PREVIEW_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, output)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider({ language: "*" }, commentHoverProvider));
   context.subscriptions.push(vscode.window.registerCustomEditorProvider(METAFILE_PREVIEW_EDITOR_VIEW_TYPE, metafilePreviewEditorProvider, {
     webviewOptions: {
       retainContextWhenHidden: true,
