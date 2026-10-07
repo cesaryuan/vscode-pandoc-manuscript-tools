@@ -110,7 +110,9 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
     updateHtmlDivLabelContainers(line, lineLabels, divLabelStack);
     addAllLabels(lineLabels, labels, labelMap);
     addAllReferences(scanReferences(line, uriText), references, referenceMap);
-    inlineMath.push(...scanInlineMath(line, uriText));
+    const singleLineMath = scanSingleLineDisplayMath(line, uriText, lineLabels);
+    mathBlocks.push(...singleLineMath);
+    inlineMath.push(...scanInlineMath(line, uriText, singleLineMath.map((entry) => ({ start: entry.range.start.character, end: entry.range.end.character }))));
     spans.push(...scanPandocSpans(line, uriText));
     lineExcerptFolds.push(...scanLineExcerptFolds(line, uriText));
 
@@ -657,6 +659,48 @@ function createMathBlock(uriText: string, startLine: ParsedLine, endLine: Parsed
 }
 
 /**
+ * Finds same-line `$$...$$` formulas that standalone delimiter scanning misses.
+ *
+ * Ignore literal code and escaped delimiters; keep each hover range local to its
+ * formula and optional trailing label so surrounding prose stays independent.
+ *
+ * @param line Parsed line.
+ * @param uriText URI string for resulting entries.
+ * @param lineLabels Labels already scanned on this line.
+ */
+function scanSingleLineDisplayMath(line: ParsedLine, uriText: string, lineLabels: LabelEntry[]): MathBlockEntry[] {
+  const entries: MathBlockEntry[] = [];
+  const codeSpanRanges = collectMarkdownCodeSpanRanges(line.text);
+  let searchStart = 0;
+
+  while (searchStart < line.text.length) {
+    const openIndex = findNextDelimiter(line.text, "$$", searchStart, codeSpanRanges);
+    if (openIndex < 0) {
+      break;
+    }
+    const closeIndex = findNextDelimiter(line.text, "$$", openIndex + 2, codeSpanRanges);
+    if (closeIndex < 0) {
+      break;
+    }
+
+    const formulaEnd = closeIndex + 2;
+    const closingLabel = lineLabels.find((entry) => entry.prefix === "eq"
+      && entry.fullRange.start.character >= formulaEnd
+      && /^\s*$/.test(line.text.slice(formulaEnd, entry.fullRange.start.character)));
+    const endCharacter = closingLabel ? closingLabel.fullRange.end.character : formulaEnd;
+    const block = createMathBlock(uriText, line, line, [line.text.slice(openIndex + 2, closeIndex)], closingLabel ? [closingLabel] : []);
+    if (block.tex) {
+      block.range = createRange(line.number, openIndex, line.number, endCharacter);
+      block.selectionRange = closingLabel ? closingLabel.range : block.range;
+      entries.push(block);
+    }
+    searchStart = endCharacter;
+  }
+
+  return entries;
+}
+
+/**
  * Finds inline TeX math on one line.
  *
  * Inline formulas are intentionally independent from cross-reference parsing:
@@ -664,12 +708,13 @@ function createMathBlock(uriText: string, startLine: ParsedLine, endLine: Parsed
  *
  * @param line Parsed line.
  * @param uriText URI string for resulting entries.
+ * @param displayMathRanges Display formulas that must not also become inline previews.
  */
-function scanInlineMath(line: ParsedLine, uriText: string): InlineMathEntry[] {
+function scanInlineMath(line: ParsedLine, uriText: string, displayMathRanges: CodeSpanRange[] = []): InlineMathEntry[] {
   const entries: InlineMathEntry[] = [];
-  const codeSpanRanges = collectMarkdownCodeSpanRanges(line.text);
-  scanDelimitedInlineMath(line, uriText, "$", "$", entries, codeSpanRanges);
-  scanDelimitedInlineMath(line, uriText, "\\(", "\\)", entries, codeSpanRanges);
+  const ignoredRanges = [...collectMarkdownCodeSpanRanges(line.text), ...displayMathRanges];
+  scanDelimitedInlineMath(line, uriText, "$", "$", entries, ignoredRanges);
+  scanDelimitedInlineMath(line, uriText, "\\(", "\\)", entries, ignoredRanges);
   return entries;
 }
 
@@ -810,7 +855,7 @@ function countBacktickRunEnd(text: string, start: number): number {
  * @param openDelimiter Opening delimiter.
  * @param closeDelimiter Closing delimiter.
  * @param entries Target entries.
- * @param ignoredRanges Inline code ranges that must not preview as math.
+ * @param ignoredRanges Code and display formula ranges that must not preview as inline math.
  */
 function scanDelimitedInlineMath(line: ParsedLine, uriText: string, openDelimiter: string, closeDelimiter: string, entries: InlineMathEntry[], ignoredRanges: CodeSpanRange[]): void {
   let searchStart = 0;
@@ -859,12 +904,12 @@ function scanDelimitedInlineMath(line: ParsedLine, uriText: string, openDelimite
 }
 
 /**
- * Finds the next unescaped inline math delimiter.
+ * Finds the next unescaped math delimiter outside ignored ranges.
  *
  * @param text Line text.
  * @param delimiter Delimiter to find.
  * @param start Search start index.
- * @param ignoredRanges Ranges where delimiters are literal code.
+ * @param ignoredRanges Ranges where delimiters must be ignored.
  */
 function findNextDelimiter(text: string, delimiter: string, start: number, ignoredRanges: CodeSpanRange[] | undefined = []) {
   let index = text.indexOf(delimiter, start);

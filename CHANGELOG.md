@@ -9,6 +9,10 @@ All notable changes to Papper Tools are documented in this file.
 - Translate nearby English code comment paragraphs using built-in and installed language extensions' comment delimiters, without querying language servers or parsing whole documents.
 - Support standalone and trailing line comments, block comment paragraphs, and Python triple-quoted text, including short English comments.
 
+### Fixed
+
+- Show display-math hover previews for same-line `$$...$$` formulas, including trailing equation labels, while ignoring literal code and escaped delimiters.
+
 ## 0.3.0 - 2026-07-06
 
 ### Added
