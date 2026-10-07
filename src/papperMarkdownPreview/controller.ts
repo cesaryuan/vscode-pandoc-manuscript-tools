@@ -146,7 +146,9 @@ export class PapperMarkdownPreviewController {
     const buildId = ++this.htmlPreviewBuildId;
     const sourceVersion = document.version;
     try {
+      const started = performance.now();
       const html = await this.htmlServer.convert(project.rootUri.fsPath, document.uri.fsPath, document.getText());
+      this.output.appendLine(`[HTML][performance] convert=${(performance.now() - started).toFixed(1)} ms`);
       if (buildId !== this.htmlPreviewBuildId || document.version !== sourceVersion) {
         return;
       }
@@ -230,6 +232,10 @@ export class PapperMarkdownPreviewController {
       }
       if (message.type === "previewKatexFailed" || message.type === "previewKatexUnavailable") {
         this.output.appendLine(`[HTML] ${message.type}${message.detail ? `: ${message.detail}` : ""}`);
+        return;
+      }
+      if (message.type === "previewPerformance") {
+        this.output.appendLine(`[HTML][performance] ${message.detail || ""}`);
         return;
       }
       if (message.type === "previewUpdateFinished" || message.type === "previewUpdateFailed") {
@@ -327,6 +333,7 @@ export class PapperMarkdownPreviewController {
       return;
     }
     const nonce = createNonce();
+    const started = performance.now();
     const cachedHtml = await cacheHtmlMetafileImages(
       html,
       path.dirname(document.uri.fsPath),
@@ -342,6 +349,7 @@ export class PapperMarkdownPreviewController {
       return;
     }
     const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    this.output.appendLine(`[HTML][performance] resourcePrep=${(performance.now() - started).toFixed(1)} ms;metafilesConverted=${cachedHtml.converted};metafilesReused=${cachedHtml.reused}`);
     if (document.version !== sourceVersion) return;
     this.htmlPreviewSourceVersion = sourceVersion;
     const updateExistingWebview = this.htmlPreviewWebviewReady;

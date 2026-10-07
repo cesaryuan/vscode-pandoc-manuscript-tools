@@ -1,27 +1,24 @@
 /**
- * Adds the preview nonce to Pandoc's inline KaTeX initializer.
+ * Removes Pandoc's synchronous KaTeX initializer so the preview can render in batches.
  *
- * Pandoc emits this script for `--math-method=katex`; the WebView CSP would
- * block it unless the generated initializer receives the bridge nonce.
+ * Keep the external KaTeX loader and its equation alignment option. Leaving
+ * the generated loop enabled would bypass the bridge's cooperative renderer.
  *
  * @param html Generated Papper HTML.
- * @param nonce Preview script nonce.
  */
-export function applyHtmlPreviewKaTeXNonce(html: string, nonce: string) {
-  return html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (tag, attributes: string, content: string) => {
+export function prepareHtmlPreviewKaTeX(html: string): { html: string; fleqn: boolean } {
+  let fleqn = false;
+  const prepared = html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (tag, attributes: string, content: string) => {
     const hasSource = /(?:^|\s)src\s*=/i.test(attributes);
     const isKaTeXInitializer = /\bkatex\.render\s*\(/i.test(content)
       && /getElementsByClassName\s*\(\s*["']math["']\s*\)/i.test(content);
     if (hasSource || !isKaTeXInitializer) {
       return tag;
     }
-    const existingNonce = /(?:^|\s)nonce\s*=\s*(["'])(.*?)\1/i;
-    if (existingNonce.test(attributes)) {
-      const updatedAttributes = attributes.replace(/(\snonce\s*=\s*)(["']).*?\2/i, (_match, prefix: string) => `${prefix}"${nonce}"`);
-      return `<script${updatedAttributes}>${content}</script>`;
-    }
-    return `<script${attributes} nonce="${nonce}">${content}</script>`;
+    fleqn = /\bfleqn\s*:\s*true\b/.test(content);
+    return "";
   });
+  return { html: prepared, fleqn };
 }
 
 /**

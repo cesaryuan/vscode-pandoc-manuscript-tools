@@ -2,8 +2,9 @@ import * as crypto from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
-import { applyHtmlPreviewKaTeXNonce, buildHtmlPreviewCsp } from "../htmlPreviewCsp";
+import { prepareHtmlPreviewKaTeX, buildHtmlPreviewCsp } from "../htmlPreviewCsp";
 import { PreviewScrollAnchors } from "./scrollAnchors";
+import { renderPreviewMath } from "./mathRendering";
 
 /**
  * Creates a nonce for the inline Webview scroll bridge script.
@@ -81,8 +82,8 @@ export function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, s
  * @param cspSource Webview CSP source token.
  */
 export function injectHtmlPreviewBridge(html: string, nonce: string, cspSource: string) {
-  const noncePreparedHtml = applyHtmlPreviewKaTeXNonce(html, nonce);
-  const csp = buildHtmlPreviewCsp(noncePreparedHtml, nonce, cspSource);
+  const preparedMath = prepareHtmlPreviewKaTeX(html);
+  const csp = buildHtmlPreviewCsp(preparedMath.html, nonce, cspSource);
   // String.raw preserves regex backslashes in the embedded browser script.
   const bridge = String.raw`<meta http-equiv="Content-Security-Policy" content="${csp}"><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
@@ -104,9 +105,24 @@ let mappedPreviewBlocks = [];
 let previewLayoutDirty = true;
 let previewMappingRevision = 0;
 let previewResizeObserver = null;
+let previewMathRendering = 0;
+let previewUserScrolledDuringMath = false;
 // Serialize the self-contained class so tests and the packaged bridge use the same algorithm.
 const PreviewScrollAnchors = (${PreviewScrollAnchors.toString()});
 const previewScrollAnchors = new PreviewScrollAnchors();
+const renderPreviewMath = (${renderPreviewMath.toString()});
+const previewMathFleqn = ${preparedMath.fleqn};
+// Report actual WebView stalls, including layout and image decoding outside our JS timers.
+if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+  let reportedLongTasks = 0;
+  new PerformanceObserver(list => {
+    for (const entry of list.getEntries()) {
+      if (entry.duration >= 100 && reportedLongTasks++ < 10) {
+        vscode.postMessage({ type: 'previewPerformance', detail: 'mainThreadBlocked=' + entry.duration.toFixed(1) + ' ms;at=' + entry.startTime.toFixed(1) + ' ms' });
+      }
+    }
+  }).observe({ type: 'longtask', buffered: true });
+}
 let previewBlockMapReady = false;
 let readySent = false;
 let pendingSourceScroll = null;
@@ -233,6 +249,7 @@ function collectPreviewBlocks() {
 }
 // Requests one source mapping for the current rendered block order.
 function requestPreviewBlockMapping() {
+  const started = performance.now();
   previewTextCache = new WeakMap();
   previewBlocks = collectPreviewBlocks();
   mappedPreviewBlocks = [];
@@ -243,13 +260,14 @@ function requestPreviewBlockMapping() {
     revision: ++previewMappingRevision,
     blocks: previewBlocks.map(({ element, ...block }) => block)
   });
+  vscode.postMessage({ type: 'previewPerformance', detail: 'blocks=' + previewBlocks.length + ';collect=' + (performance.now() - started).toFixed(1) + ' ms' });
 }
 // Releases a source scroll request if a host mapping cannot be produced.
 function deferSourceScrollUntilMapping(message) {
   pendingSourceScroll = message;
   if (pendingSourceMappingTimer) window.clearTimeout(pendingSourceMappingTimer);
   pendingSourceMappingTimer = window.setTimeout(() => {
-    if (pendingSourceScroll === message && !previewBlockMapReady) {
+    if (pendingSourceScroll === message && !previewBlockMapReady && previewMathRendering === 0) {
       pendingSourceScroll = null;
       applySourceScroll(message);
     }
@@ -270,10 +288,13 @@ function getVisibleSourceBlock() {
 // VS Code may inject #_defaultStyles after the preview loads; remove it so it
 // cannot override Papper's generated styles, including after incremental updates.
 function removeVscodeDefaultStyles() {
-  document.querySelectorAll('style#_defaultStyles').forEach(style => style.remove());
+  const style = document.getElementById('_defaultStyles');
+  if (style && style.tagName === 'STYLE') style.remove();
 }
+// VS Code inserts defaults into <head>; observing formula mutations in <body>
+// needlessly searched the entire growing document during every render batch.
 const styleObserver = new MutationObserver(removeVscodeDefaultStyles);
-styleObserver.observe(document.documentElement, { childList: true, subtree: true });
+if (document.head) styleObserver.observe(document.head, { childList: true });
 document.addEventListener('DOMContentLoaded', removeVscodeDefaultStyles, { once: true });
 removeVscodeDefaultStyles();
 // Waits briefly for the KaTeX script declared by the generated HTML.
@@ -307,12 +328,33 @@ function unwrapMathDelimiters(tex) {
     [/^\$([\s\S]*)\$$/, '$1']
   ];
   for (const [pattern, replacement] of delimiters) {
-    if (pattern.test(trimmed)) return trimmed.replace(pattern, replacement).trim();
+    if (pattern.test(trimmed)) return trimmed.replace(pattern, replacement);
   }
-  return trimmed;
+  // A trailing TeX escaped space (backslash + space) is a command. Trimming
+  // raw Pandoc TeX turns it into a dangling backslash and breaks valid formulas.
+  return tex;
 }
-// Renders raw Pandoc math spans that KaTeX has not already converted.
+// Defers automatic scroll synchronization while formula batches change paragraph heights.
 async function renderKaTeX(root) {
+  if (previewMathRendering++ === 0) previewUserScrolledDuringMath = false;
+  try {
+    await renderKaTeXContent(root);
+  } finally {
+    previewMathRendering--;
+    if (previewMathRendering === 0 && root === previewContent) {
+      invalidatePreviewLayout();
+      if (pendingSourceScroll && readySent) {
+        if (previewBlockMapReady) {
+          const message = pendingSourceScroll;
+          pendingSourceScroll = null;
+          applySourceScroll(message);
+        } else deferSourceScrollUntilMapping(pendingSourceScroll);
+      } else if (previewUserScrolledDuringMath) handlePreviewScrollEvent();
+    }
+  }
+}
+// Retains raw TeX immediately, then renders only spans not already converted by KaTeX.
+async function renderKaTeXContent(root) {
   const elements = Array.from(root.querySelectorAll('.math')).filter(element => element.tagName === 'SPAN');
   if (elements.length === 0) return;
   const formulaEntries = elements.map(element => {
@@ -332,30 +374,31 @@ async function renderKaTeX(root) {
     vscode.postMessage({ type: 'previewKatexUnavailable', detail: 'math=' + renderableEntries.length + ';error=' + String(error) });
     return;
   }
-  let failures = 0;
-  for (const { element, tex } of renderableEntries) {
-    try {
-      katex.render(tex, element, {
-        displayMode: element.classList.contains('display'),
-        throwOnError: false
-      });
-    } catch (error) {
-      failures += 1;
-      vscode.postMessage({ type: 'previewKatexFailed', detail: 'error=' + String(error) });
-    }
-  }
+  const result = await renderPreviewMath(renderableEntries, katex, previewMathFleqn,
+    // Stop work on nodes superseded by a newer preview revision.
+    () => root.isConnected && root.contains(renderableEntries[0].element),
+    error => vscode.postMessage({ type: 'previewKatexFailed', detail: 'error=' + String(error) }));
+  vscode.postMessage({ type: 'previewPerformance', detail: 'math=' + result.rendered + ';failures=' + result.failures + ';elapsed=' + result.elapsedMs.toFixed(1) + ' ms;maxBatch=' + result.maxBatchMs.toFixed(1) + ' ms' });
 }
 // Returns visible text while excluding rendered formulas that have a separate
 // TeX source locator.
 function getClickableText(element) {
-  // Prose does not change when KaTeX replaces formula glyphs. Reuse the text
-  // collected for this HTML revision instead of cloning math-heavy DOM on clicks.
+  // Prose does not change when KaTeX replaces formula glyphs; retain this revision's text.
   if (previewTextCache.has(element)) return previewTextCache.get(element);
-  const clone = element.cloneNode(true);
-  // A nested list owns its own blocks; exclude it from its parent's text.
-  if (element.matches('li')) clone.querySelectorAll('ul,ol').forEach(child => child.remove());
-  clone.querySelectorAll('.math, .katex, .citation, .header-section-number, .header-section-name, script, style').forEach(child => child.remove());
-  const text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  // Reject formula subtrees before visiting them. Cloning first copied tens of
+  // thousands of KaTeX glyph nodes merely to discard them during refreshed mapping.
+  const excluded = '.math, .katex, .citation, .header-section-number, .header-section-name, script, style'
+    + (element.matches('li') ? ', ul, ol' : '');
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    // Reject excluded containers together with every nested glyph node.
+    acceptNode(node) {
+      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+      return node.matches(excluded) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+    }
+  });
+  const parts = [];
+  while (walker.nextNode()) parts.push(walker.currentNode.nodeValue || '');
+  const text = parts.join('').replace(/\s+/g, ' ').trim();
   previewTextCache.set(element, text);
   return text;
 }
@@ -744,6 +787,12 @@ window.addEventListener('message', event => {
     return;
   }
   if (!event.data || event.data.type !== 'sourceScroll') return;
+  // Measuring every source request during rendering caused repeated full layout
+  // passes; apply the latest request once the formula heights have settled.
+  if (previewMathRendering > 0) {
+    pendingSourceScroll = event.data;
+    return;
+  }
   if (!readySent) {
     deferSourceScrollUntilMapping(event.data);
     return;
@@ -776,7 +825,7 @@ function applyPreviewBlockMap(mappings) {
     window.clearTimeout(pendingSourceMappingTimer);
     pendingSourceMappingTimer = 0;
   }
-  if (pendingSourceScroll) {
+  if (pendingSourceScroll && previewMathRendering === 0) {
     const message = pendingSourceScroll;
     pendingSourceScroll = null;
     applySourceScroll(message);
@@ -784,10 +833,10 @@ function applyPreviewBlockMap(mappings) {
 }
 // Handles scroll events from either the viewport or a nested document scroller.
 function handlePreviewScrollEvent() {
-  if (suppressScroll || scrollFrame) return;
+  if (suppressScroll || scrollFrame || previewMathRendering > 0) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = 0;
-    if (suppressScroll) return;
+    if (suppressScroll || previewMathRendering > 0) return;
     if (pendingSourceScrollTarget !== null && Math.abs(getScrollTop() - pendingSourceScrollTarget) < 2) {
       pendingSourceScrollTarget = null;
       if (pendingSourceScrollTimer) window.clearTimeout(pendingSourceScrollTimer);
@@ -813,6 +862,13 @@ function handlePreviewScrollEvent() {
 window.addEventListener('scroll', handlePreviewScrollEvent, { passive: true });
 // Scroll events on the document do not always bubble to window in WebView Chromium.
 document.addEventListener('scroll', handlePreviewScrollEvent, { passive: true, capture: true });
+// Keep a user's wheel gesture ahead of a queued automatic initial source position.
+window.addEventListener('wheel', () => {
+  if (previewMathRendering > 0) {
+    previewUserScrolledDuringMath = true;
+    pendingSourceScroll = null;
+  }
+}, { passive: true });
 const sendReady = () => {
   if (readySent) return;
   const content = ensurePreviewContent();
@@ -828,7 +884,7 @@ const sendReady = () => {
   }
   readySent = true;
   vscode.postMessage({ type: 'ready' });
-  if (pendingSourceScroll && (previewBlockMapReady || !Number.isFinite(pendingSourceScroll.sourceLine))) {
+  if (pendingSourceScroll && previewMathRendering === 0 && (previewBlockMapReady || !Number.isFinite(pendingSourceScroll.sourceLine))) {
     const message = pendingSourceScroll;
     pendingSourceScroll = null;
     applySourceScroll(message);
@@ -837,7 +893,7 @@ const sendReady = () => {
 window.addEventListener('DOMContentLoaded', sendReady, { once: true });
 window.addEventListener('load', sendReady, { once: true });
 </script>`;
-  const withoutExistingCsp = noncePreparedHtml.replace(/<meta\s+http-equiv=["']content-security-policy["'][^>]*>\s*/gi, "");
+  const withoutExistingCsp = preparedMath.html.replace(/<meta\s+http-equiv=["']content-security-policy["'][^>]*>\s*/gi, "");
   const markedPandocStyles = withoutExistingCsp.replace(/<style(?=[\s>])/gi, '<style data-papper-preview-style="pandoc"');
   const headIndex = markedPandocStyles.search(/<head(?:\s[^>]*)?>/i);
   if (headIndex >= 0) {
