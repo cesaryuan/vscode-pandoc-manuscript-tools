@@ -42,9 +42,19 @@ export class PandocBuildRunner {
       return;
     }
 
-    const project = await findPandocManuscriptProject(document.uri)
-      || { rootUri: vscode.Uri.file(path.dirname(document.uri.fsPath)) };
-    await this.runDocxBuild(project, document);
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `正在转换 DOCX：${path.basename(document.uri.fsPath)}`,
+        cancellable: false,
+      },
+      /** Keeps progress indeterminate until preparation, conversion, and opening finish. */
+      async () => {
+        const project = await findPandocManuscriptProject(document.uri)
+          || { rootUri: vscode.Uri.file(path.dirname(document.uri.fsPath)) };
+        await this.runDocxBuild(project, document);
+      },
+    );
   }
 
   /**
