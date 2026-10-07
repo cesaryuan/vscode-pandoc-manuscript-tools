@@ -71,6 +71,7 @@ export class HtmlPreviewClickNavigation {
 
     const target = this.resolvePreviewSourceTarget(document, message);
     if (!target) {
+      this.output.appendLine(`[HTML][click] No source match: type=${message.blockType || "unknown"}, block=${message.blockId || "none"}, text=${JSON.stringify((message.text || message.caption || message.alt || message.tex || "").slice(0, 120))}`);
       return;
     }
 
@@ -100,7 +101,7 @@ export class HtmlPreviewClickNavigation {
   /** Maps rendered preview blocks in source order using one parser pass per update. */
   mapPreviewBlocks(document: vscode.TextDocument, blocks: HtmlPreviewBlockDescriptor[]): HtmlPreviewBlockMapping[] {
     const parsed = parsePandocDocument(document.getText(), document.uri.toString());
-    const sourceBlocks = collectSourceBlocks(document.getText());
+    const sourceBlocks = collectSourceBlocks(document.getText(), parsed.mathBlocks);
     const mappings: HtmlPreviewBlockMapping[] = [];
     let previousSourceLine = -1;
     for (const block of blocks) {
@@ -144,10 +145,11 @@ function findPreviewSourceTarget(document: vscode.TextDocument, message: HtmlPre
   if (message.blockType === "heading") {
     return findHeadingSourceTarget(document, parsed.headings, message.text, context?.minimumLine);
   }
+  const sourceBlocks = context?.sourceBlocks || collectSourceBlocks(document.getText(), parsed.mathBlocks);
   if (message.blockType === "image" || message.blockType === "caption" || message.blockType === "table") {
-    return findMediaOrTableSourceTarget(document, message, context?.sourceBlocks, context?.minimumLine);
+    return findMediaOrTableSourceTarget(document, message, sourceBlocks, context?.minimumLine);
   }
-  return findParagraphSourceTarget(document, message.text || message.caption || message.alt, context?.sourceBlocks, context?.minimumLine);
+  return findParagraphSourceTarget(document, message.text || message.caption || message.alt, sourceBlocks, context?.minimumLine);
 }
 
 /** Resolves a stable Pandoc label before attempting fuzzy text matching. */
@@ -276,16 +278,21 @@ function findBestSourceBlockTarget(document: vscode.TextDocument, blocks: Source
 }
 
 /** Builds source blocks while keeping formulas, tables, and images out of prose matching. */
-function collectSourceBlocks(text: string): SourceBlock[] {
+function collectSourceBlocks(text: string, mathBlocks = parsePandocDocument(text).mathBlocks): SourceBlock[] {
   const lines = text.split(/\r?\n/);
   const blocks: SourceBlock[] = [];
+  // Reuse the parser's complete formula ranges: treating $$...$$ or escaped
+  // bibliography brackets (\[1\]) as openers used to hide subsequent prose.
+  const standaloneMath = mathBlocks.filter((entry) => entry.line !== entry.endLine
+    || (!lines[entry.line].slice(0, entry.range.start.character).trim()
+      && /^\s*(?:\{[^}]*\})?\s*$/.test(lines[entry.endLine].slice(entry.range.end.character))));
+  let mathIndex = 0;
   let currentKind: SourceBlock["kind"] | undefined;
   let currentStart = -1;
   let currentLines: string[] = [];
   let inYaml = lines[0]?.trim() === "---";
   let inFence = false;
   let fenceMarker = "";
-  let inDisplayMath = false;
 
   const flush = () => {
     if (currentKind && currentStart >= 0 && currentLines.length > 0) {
@@ -330,23 +337,24 @@ function collectSourceBlocks(text: string): SourceBlock[] {
       continue;
     }
 
-    if (inDisplayMath) {
-      if (/^\s*(?:\$\$|\\\])/.test(line)) {
-        inDisplayMath = false;
-      }
-      continue;
+    while (mathIndex < standaloneMath.length && standaloneMath[mathIndex].endLine < lineNumber) {
+      mathIndex += 1;
     }
-    if (/^\s*(?:\$\$|\\\[)/.test(line)) {
-      flush();
-      inDisplayMath = true;
-      continue;
-    }
-
-    if (!trimmed || /^\s*#{1,6}\s+/.test(line)) {
+    if (mathIndex < standaloneMath.length && standaloneMath[mathIndex].line <= lineNumber) {
       flush();
       continue;
     }
 
+    if (!trimmed || /^\s*(?:>\s*)+$/.test(line) || /^\s*#{1,6}\s+/.test(line)) {
+      flush();
+      continue;
+    }
+
+    // Tight lists render each item as a separate clickable block even without
+    // blank lines, so do not merge adjacent items into one source paragraph.
+    if (/^\s*(?:[-+*]|(?:\d+|[A-Za-z])[.)]|\(\d+\)\.?)\s+/.test(line)) {
+      flush();
+    }
     const kind: SourceBlock["kind"] = /^\s*!\[[^\]]*\]\(/.test(line)
       ? "image"
       : /^\s*:\s+/.test(line)
@@ -401,8 +409,12 @@ function normalizeFormula(value: string, relaxed = false): string {
 /** Normalizes rendered and Markdown text for conservative block matching. */
 function normalizeVisibleText(value: string): string {
   return value
+    .replace(/^(?:\s*>\s*)+/gm, "")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/!\[([^\]]*)\]\([^)]*\)(?:\{[^}]*\})?/g, "$1")
+    // Word-exported TOCs nest a page-number link inside the section link.
+    // Unwrap the outer link first to avoid leaving its destination as prose.
+    .replace(/\[([^\[\]]*(?:\[[^\[\]]*\]\([^)]*\)[^\[\]]*)+)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/\[@[^\]]+\]/g, " ")
     .replace(/@(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+/g, " ")
@@ -416,9 +428,14 @@ function normalizeVisibleText(value: string): string {
     .replace(/\{#[^}]+\}/g, " ")
     .replace(/\{[^}]*\}/g, " ")
     .replace(/`+([^`]+)`+/g, "$1")
+    // Autolink URLs are visible reference text, unlike raw HTML tags.
+    .replace(/<(https?:\/\/[^<>\s]+)>/gi, "$1")
     .replace(/<[^>]+>/g, " ")
     .replace(/[*_~]/g, " ")
-    .replace(/\\([\\`*_{}\[\]()])/g, "$1")
+    .replace(/\\([\\`*_{}\[\]().])/g, "$1")
+    // Pandoc renders list markers outside the item's text node. Strip them
+    // after Markdown escapes so literal headings like "1\\. Results" agree too.
+    .replace(/^\s*(?:[-+*]|(?:\d+|[A-Za-z])[.)]|\(\d+\)\.?)\s+/gm, "")
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\s\p{P}\p{S}]+/gu, "");

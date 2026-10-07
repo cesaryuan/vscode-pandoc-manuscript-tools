@@ -155,8 +155,11 @@ function collectPreviewBlocks() {
     ...Array.from(content.querySelectorAll('table')).filter(element => !element.closest('figure')),
     // Display equations are wrapped in <p> by Pandoc, so keep the equation
     // block while omitting inline math that belongs to ordinary prose.
-    ...Array.from(content.querySelectorAll('.math')).filter(element => element.classList.contains('display') || !element.closest('p,figure,table')),
-    ...Array.from(content.querySelectorAll('p')).filter(element => !element.closest('figure,table') && !element.querySelector('.math.display') && getClickableText(element).length > 0)
+    ...Array.from(content.querySelectorAll('.math')).filter(element => element.classList.contains('display') || !element.closest('p,li,figure,table')),
+    ...Array.from(content.querySelectorAll('p')).filter(element => !element.closest('figure,table') && !element.querySelector('.math.display') && getClickableText(element).length > 0),
+    // Tight list items have no <p>. Map their prose as a block so repeated
+    // inline variables cannot become anchors pointing to unrelated later text.
+    ...Array.from(content.querySelectorAll('li')).filter(element => !element.closest('figure,table') && !element.querySelector('p') && getClickableText(element).length > 0)
   ];
   const unique = Array.from(new Set(candidates));
   unique.sort((left, right) => {
@@ -345,6 +348,8 @@ async function renderKaTeX(root) {
 // TeX source locator.
 function getClickableText(element) {
   const clone = element.cloneNode(true);
+  // A nested list owns its own blocks; exclude it from its parent's text.
+  if (element.matches('li')) clone.querySelectorAll('ul,ol').forEach(child => child.remove());
   clone.querySelectorAll('.math, .katex, .citation, .header-section-number, .header-section-name, script, style').forEach(child => child.remove());
   return (clone.textContent || '').replace(/\s+/g, ' ').trim();
 }
@@ -437,7 +442,7 @@ function handlePreviewClick(event) {
     vscode.postMessage({ type: 'previewBlockClick', blockType: 'table', blockId: getClickableBlockId(table), label: getClickableLabel(table), text: getClickableText(table), caption: tableCaption ? getClickableText(tableCaption) : '' });
     return;
   }
-  const paragraph = target.closest('p');
+  const paragraph = target.closest('p,li');
   if (paragraph) {
     const mathInParagraph = paragraph.querySelector('.math, [data-pmt-tex]');
     if (mathInParagraph && target === mathInParagraph) return;
