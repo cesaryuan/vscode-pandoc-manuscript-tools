@@ -111,3 +111,43 @@ async function locatesQuotedLinksAndAutolinks(): Promise<void> {
 }
 
 test("quoted nested links and reference autolinks retain source locations", locatesQuotedLinksAndAutolinks);
+
+/** Ensures both cached matches and cached misses follow edits instead of retaining stale locations. */
+async function invalidatesNavigationAfterSourceEdits(): Promise<void> {
+  const { navigator, document } = await createNavigation("Repeated response.\n\nRepeated response.");
+  const blocks: HtmlPreviewBlockDescriptor[] = [
+    { blockId: "first", blockType: "paragraph", text: "Repeated response." },
+    { blockId: "second", blockType: "paragraph", text: "Repeated response." },
+  ];
+  navigator.mapPreviewBlocks(document, blocks);
+  assert.equal(navigator.resolvePreviewSourceTarget(document, blocks[1])?.range.start.line, 2);
+  const added = { blockType: "paragraph" as const, text: "New response." };
+  assert.equal(navigator.resolvePreviewSourceTarget(document, added), undefined);
+  assert.equal(navigator.resolvePreviewSourceTarget(document, added), undefined);
+  const updatedText = "New response.\n\nRepeated response.\n\nRepeated response.";
+  Object.assign(document, {
+    version: 2, lineCount: 5,
+    /** Exposes the edited immutable buffer after invalidating the document version. */
+    getText: () => updatedText,
+    /** Supplies new line lengths so cached ranges cannot hide changed source. */
+    lineAt: (line: number) => ({ text: updatedText.split("\n")[line] }),
+  });
+  assert.equal(navigator.resolvePreviewSourceTarget(document, added)?.range.start.line, 0);
+  navigator.mapPreviewBlocks(document, blocks);
+  assert.equal(navigator.resolvePreviewSourceTarget(document, blocks[1])?.range.start.line, 4);
+}
+
+/** Keeps labels and repeated inline/display equations distinct when their text shares an index key. */
+async function locatesIndexedLabelsAndFormulaFamilies(): Promise<void> {
+  const { navigator, document } = await createNavigation([
+    '# Results {#sec:results}', '', 'Inline $x$ result.', '', '$$x$$ {#eq:result}', '',
+    '<div id="fig:raw">', 'Raw figure caption.', '</div>', '', 'Inline $x$ later.',
+  ].join("\n"));
+  assert.equal(navigator.resolvePreviewSourceTarget(document, { blockType: "heading", label: "sec:results" })?.range.start.line, 0);
+  assert.equal(navigator.resolvePreviewSourceTarget(document, { blockType: "math", tex: "x", display: true })?.range.start.line, 4);
+  assert.equal(navigator.resolvePreviewSourceTarget(document, { blockType: "math", tex: "x", display: false })?.range.start.line, 2);
+  assert.equal(navigator.resolvePreviewSourceTarget(document, { blockType: "image", label: "fig:raw" })?.range.start.line, 6);
+}
+
+test("source edits invalidate cached paragraph locations and misses", invalidatesNavigationAfterSourceEdits);
+test("indexed navigation preserves labels and formula families", locatesIndexedLabelsAndFormulaFamilies);

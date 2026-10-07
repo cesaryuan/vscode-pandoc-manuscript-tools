@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { applyHtmlPreviewKaTeXNonce, buildHtmlPreviewCsp } from "../htmlPreviewCsp";
+import { PreviewScrollAnchors } from "./scrollAnchors";
 
 /**
  * Creates a nonce for the inline Webview scroll bridge script.
@@ -98,6 +99,14 @@ let lastSentBlockOffsetRatio = 0;
 let previewUpdateChain = Promise.resolve();
 let previewContent = null;
 let previewBlocks = [];
+let previewTextCache = new WeakMap();
+let mappedPreviewBlocks = [];
+let previewLayoutDirty = true;
+let previewMappingRevision = 0;
+let previewResizeObserver = null;
+// Serialize the self-contained class so tests and the packaged bridge use the same algorithm.
+const PreviewScrollAnchors = (${PreviewScrollAnchors.toString()});
+const previewScrollAnchors = new PreviewScrollAnchors();
 let previewBlockMapReady = false;
 let readySent = false;
 let pendingSourceScroll = null;
@@ -112,7 +121,28 @@ function ensurePreviewContent() {
     previewContent.append(...Array.from(document.body.childNodes));
     document.body.appendChild(previewContent);
   }
+  if (previewResizeObserver) previewResizeObserver.disconnect();
+  previewResizeObserver = new ResizeObserver(invalidatePreviewLayout);
+  previewResizeObserver.observe(previewContent);
   return previewContent;
+}
+// Invalidates geometry after images, fonts, styles, or the viewport change document layout.
+function invalidatePreviewLayout() {
+  previewLayoutDirty = true;
+}
+window.addEventListener('resize', invalidatePreviewLayout, { passive: true });
+document.addEventListener('load', invalidatePreviewLayout, { passive: true, capture: true });
+if (document.fonts) document.fonts.addEventListener('loadingdone', invalidatePreviewLayout);
+// Measures mapped blocks once per layout revision, never once per scroll frame.
+function ensurePreviewLayout() {
+  if (!previewLayoutDirty) return;
+  const scrollTop = getScrollTop();
+  const anchors = mappedPreviewBlocks.map(block => {
+    const rect = block.element.getBoundingClientRect();
+    return { blockId: block.blockId, startLine: block.startLine, endLine: block.endLine, top: scrollTop + rect.top, bottom: scrollTop + rect.bottom };
+  });
+  previewScrollAnchors.update(anchors);
+  previewLayoutDirty = false;
 }
 // Returns the element that owns the document's vertical scroll position.
 function getScrollElement() {
@@ -203,10 +233,14 @@ function collectPreviewBlocks() {
 }
 // Requests one source mapping for the current rendered block order.
 function requestPreviewBlockMapping() {
+  previewTextCache = new WeakMap();
   previewBlocks = collectPreviewBlocks();
+  mappedPreviewBlocks = [];
+  invalidatePreviewLayout();
   previewBlockMapReady = false;
   vscode.postMessage({
     type: 'previewBlocks',
+    revision: ++previewMappingRevision,
     blocks: previewBlocks.map(({ element, ...block }) => block)
   });
 }
@@ -225,46 +259,13 @@ function deferSourceScrollUntilMapping(message) {
 // Interpolates between source/block anchors so wheel scrolling does not snap
 // repeatedly to one paragraph top and then jump to the next paragraph.
 function getPreviewTopForSourcePosition(sourcePosition) {
-  let previous = null;
-  let next = null;
-  for (const block of previewBlocks) {
-    // Number(null) is zero: unmapped blocks must not become false line-zero anchors.
-    if (!block.element.hasAttribute('data-source-line')) continue;
-    const startLine = Number(block.element.getAttribute('data-source-line'));
-    if (!Number.isFinite(startLine)) continue;
-    if (startLine > sourcePosition) {
-      next = { block, sourcePosition: startLine };
-      break;
-    }
-    previous = { block, sourcePosition: startLine };
-  }
-  if (!previous && !next) return null;
-  const scrollTop = getScrollTop();
-  const startPosition = previous ? previous.sourcePosition : 0;
-  const startTop = previous ? scrollTop + previous.block.element.getBoundingClientRect().top : 0;
-  const endLine = previous ? Number(previous.block.element.getAttribute('data-source-end-line')) : 0;
-  const endPosition = next ? next.sourcePosition : Math.max(startPosition + 1, endLine + 1);
-  const endTop = next
-    ? scrollTop + next.block.element.getBoundingClientRect().top
-    : scrollTop + previous.block.element.getBoundingClientRect().bottom;
-  const progress = Math.max(0, Math.min(1, (sourcePosition - startPosition) / Math.max(1, endPosition - startPosition)));
-  return startTop + progress * (endTop - startTop);
+  ensurePreviewLayout();
+  return previewScrollAnchors.previewTop(sourcePosition);
 }
 // Returns the mapped block currently nearest the top of the preview viewport.
 function getVisibleSourceBlock() {
-  let previous = null;
-  let next = null;
-  for (const block of previewBlocks) {
-    if (!block.element.hasAttribute('data-source-line')) continue;
-    const rect = block.element.getBoundingClientRect();
-    if (rect.top <= 0) {
-      previous = block;
-      continue;
-    }
-    next = block;
-    break;
-  }
-  return previous || next;
+  ensurePreviewLayout();
+  return previewScrollAnchors.visible(getScrollTop());
 }
 // VS Code may inject #_defaultStyles after the preview loads; remove it so it
 // cannot override Papper's generated styles, including after incremental updates.
@@ -347,11 +348,16 @@ async function renderKaTeX(root) {
 // Returns visible text while excluding rendered formulas that have a separate
 // TeX source locator.
 function getClickableText(element) {
+  // Prose does not change when KaTeX replaces formula glyphs. Reuse the text
+  // collected for this HTML revision instead of cloning math-heavy DOM on clicks.
+  if (previewTextCache.has(element)) return previewTextCache.get(element);
   const clone = element.cloneNode(true);
   // A nested list owns its own blocks; exclude it from its parent's text.
   if (element.matches('li')) clone.querySelectorAll('ul,ol').forEach(child => child.remove());
   clone.querySelectorAll('.math, .katex, .citation, .header-section-number, .header-section-name, script, style').forEach(child => child.remove());
-  return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  const text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  previewTextCache.set(element, text);
+  return text;
 }
 // Finds a Pandoc label on the block itself; only headings and math may use a
 // semantic wrapper because nested subfigure tables must not inherit figure ids.
@@ -682,6 +688,8 @@ async function replacePreviewHtml(html, token) {
       document.body.innerHTML = fallback.innerHTML;
       previewContent = null;
       previewBlocks = [];
+      mappedPreviewBlocks = [];
+      invalidatePreviewLayout();
       previewBlockMapReady = false;
     }
   }
@@ -730,6 +738,8 @@ window.addEventListener('message', event => {
     return;
   }
   if (event.data && event.data.type === 'previewBlockMap') {
+    // A slow host reply from an older HTML revision must not overwrite fresh anchors.
+    if (Number.isInteger(event.data.revision) && event.data.revision !== previewMappingRevision) return;
     applyPreviewBlockMap(event.data.mappings);
     return;
   }
@@ -747,6 +757,7 @@ window.addEventListener('message', event => {
 // Applies host-provided source ranges to the rendered block elements.
 function applyPreviewBlockMap(mappings) {
   const mappingById = new Map((Array.isArray(mappings) ? mappings : []).map(mapping => [mapping.blockId, mapping]));
+  mappedPreviewBlocks = [];
   for (const block of previewBlocks) {
     const mapping = mappingById.get(block.blockId);
     if (!mapping || !Number.isFinite(mapping.startLine)) {
@@ -755,8 +766,11 @@ function applyPreviewBlockMap(mappings) {
       continue;
     }
     block.element.setAttribute('data-source-line', String(mapping.startLine));
-    block.element.setAttribute('data-source-end-line', String(Number.isFinite(mapping.endLine) ? mapping.endLine : mapping.startLine));
+    const endLine = Number.isFinite(mapping.endLine) ? mapping.endLine : mapping.startLine;
+    block.element.setAttribute('data-source-end-line', String(endLine));
+    mappedPreviewBlocks.push({ element: block.element, blockId: block.blockId, startLine: mapping.startLine, endLine });
   }
+  invalidatePreviewLayout();
   previewBlockMapReady = true;
   if (pendingSourceMappingTimer) {
     window.clearTimeout(pendingSourceMappingTimer);
@@ -785,9 +799,9 @@ function handlePreviewScrollEvent() {
     pendingSourceScrollTimer = 0;
     const ratio = scrollRatio();
     const block = getVisibleSourceBlock();
-    const sourceLine = block ? Number(block.element.getAttribute('data-source-line')) : null;
+    const sourceLine = block ? block.startLine : null;
     const blockId = block ? block.blockId : '';
-    const blockOffsetRatio = block ? Math.max(-1.5, Math.min(1.5, block.element.getBoundingClientRect().top / getViewportHeight())) : 0;
+    const blockOffsetRatio = block ? Math.max(-1.5, Math.min(1.5, (block.top - getScrollTop()) / getViewportHeight())) : 0;
     if (Math.abs(ratio - lastSentRatio) < 0.01 && sourceLine === lastSentSourceLine && blockId === lastSentBlockId && Math.abs(blockOffsetRatio - lastSentBlockOffsetRatio) < 0.02) return;
     lastSentRatio = ratio;
     lastSentSourceLine = sourceLine;
@@ -805,9 +819,10 @@ const sendReady = () => {
   // The standalone Papper page may have rendered KaTeX before this bridge;
   // record annotation TeX immediately so clicks still locate source math.
   if (content) {
-    const katexRender = renderKaTeX(content).catch(error => vscode.postMessage({ type: 'previewKatexFailed', detail: 'initial=' + String(error) }));
+    // renderKaTeX records TeX before its first await. Formula glyph replacement
+    // changes geometry, but not descriptors, so one initial mapping is enough.
+    void renderKaTeX(content).catch(error => vscode.postMessage({ type: 'previewKatexFailed', detail: 'initial=' + String(error) }));
     requestPreviewBlockMapping();
-    void katexRender.finally(requestPreviewBlockMapping);
   } else {
     requestPreviewBlockMapping();
   }

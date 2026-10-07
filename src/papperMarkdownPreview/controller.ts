@@ -24,6 +24,8 @@ export class PapperMarkdownPreviewController {
   private htmlPreviewWebviewReady = false;
   private htmlPreviewUpdateToken = 0;
   private htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
+  private htmlPreviewSourceVersion: number | undefined;
+  private htmlPreviewMappingRequest = 0;
   private readonly scrollSync: HtmlPreviewScrollSync;
   private readonly editorScrollIntent: HtmlPreviewEditorScrollIntent;
   private readonly clickNavigation: HtmlPreviewClickNavigation;
@@ -142,12 +144,13 @@ export class PapperMarkdownPreviewController {
    */
   private async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const buildId = ++this.htmlPreviewBuildId;
+    const sourceVersion = document.version;
     try {
       const html = await this.htmlServer.convert(project.rootUri.fsPath, document.uri.fsPath, document.getText());
-      if (buildId !== this.htmlPreviewBuildId) {
+      if (buildId !== this.htmlPreviewBuildId || document.version !== sourceVersion) {
         return;
       }
-      await this.updateHtmlPreviewPanel(html, document, project);
+      await this.updateHtmlPreviewPanel(html, document, project, sourceVersion);
     } catch (error) {
       const message = `Failed to build HTML preview: ${String(error.message || error)}`;
       this.output.appendLine(`[HTML] ${message}`);
@@ -189,6 +192,7 @@ export class PapperMarkdownPreviewController {
       }
     }
     this.htmlPreviewDocumentUri = document.uri;
+    this.htmlPreviewSourceVersion = undefined;
     if (this.htmlPreviewPanel) {
       this.htmlPreviewPanel.title = `${path.basename(document.uri.fsPath)} — Papper HTML Preview`;
       this.htmlPreviewPanel.webview.options = {
@@ -212,7 +216,7 @@ export class PapperMarkdownPreviewController {
     );
     this.htmlPreviewPanel = panel;
     this.htmlPreviewWebviewReady = false;
-    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage & Partial<HtmlPreviewClickMessage> & { blocks?: HtmlPreviewBlockDescriptor[] }) => {
+    panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage & Partial<HtmlPreviewClickMessage> & { blocks?: HtmlPreviewBlockDescriptor[]; revision?: number }) => {
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
         this.scrollSync.resetSourcePosition();
@@ -244,7 +248,7 @@ export class PapperMarkdownPreviewController {
         return;
       }
       if (message.type === "previewBlocks") {
-        void this.mapPreviewBlocks(panel, message.blocks as HtmlPreviewBlockDescriptor[]);
+        void this.mapPreviewBlocks(panel, message.blocks as HtmlPreviewBlockDescriptor[], message.revision);
         return;
       }
       this.scrollSync.handlePreviewScroll(this.htmlPreviewDocumentUri, message);
@@ -260,14 +264,21 @@ export class PapperMarkdownPreviewController {
   }
 
   /** Maps WebView blocks to source lines and returns the mapping to the bridge. */
-  private async mapPreviewBlocks(panel: vscode.WebviewPanel, blocks: HtmlPreviewBlockDescriptor[]) {
+  private async mapPreviewBlocks(panel: vscode.WebviewPanel, blocks: HtmlPreviewBlockDescriptor[], revision?: number) {
     if (!this.htmlPreviewDocumentUri || !Array.isArray(blocks)) {
       return;
     }
+    const request = ++this.htmlPreviewMappingRequest;
+    const uri = this.htmlPreviewDocumentUri;
     try {
-      const document = await vscode.workspace.openTextDocument(this.htmlPreviewDocumentUri);
+      const document = await vscode.workspace.openTextDocument(uri);
+      // Coalesce duplicate requests queued during rendering and discard HTML
+      // whose editor buffer changed while the server conversion was running.
+      if (request !== this.htmlPreviewMappingRequest || panel !== this.htmlPreviewPanel
+        || !this.htmlPreviewDocumentUri || !isSameUri(uri, this.htmlPreviewDocumentUri)
+        || document.version !== this.htmlPreviewSourceVersion) return;
       const mappings = this.clickNavigation.mapPreviewBlocks(document, blocks);
-      await panel.webview.postMessage({ type: "previewBlockMap", mappings });
+      await panel.webview.postMessage({ type: "previewBlockMap", mappings, revision });
     } catch (error) {
       this.output.appendLine(`[HTML] Preview block mapping failed: ${String(error)}`);
     }
@@ -311,7 +322,7 @@ export class PapperMarkdownPreviewController {
    * @param document Source Markdown document.
    * @param project Detected Papper project that bounds image resource access.
    */
-  private async updateHtmlPreviewPanel(html: string, document: vscode.TextDocument, project: PandocManuscriptProject) {
+  private async updateHtmlPreviewPanel(html: string, document: vscode.TextDocument, project: PandocManuscriptProject, sourceVersion: number) {
     if (!this.htmlPreviewPanel) {
       return;
     }
@@ -331,6 +342,8 @@ export class PapperMarkdownPreviewController {
       return;
     }
     const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    if (document.version !== sourceVersion) return;
+    this.htmlPreviewSourceVersion = sourceVersion;
     const updateExistingWebview = this.htmlPreviewWebviewReady;
     if (updateExistingWebview) {
       const token = `${Date.now()}-${++this.htmlPreviewUpdateToken}`;

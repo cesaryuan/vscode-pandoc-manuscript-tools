@@ -8,9 +8,10 @@
       "preLaunchTask": "bundle",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "E:/research/article/1-3d-mesh",
-        "--goto",
-        "E:/research/article/1-3d-mesh/manuscript.md:1:1"
+        // "E:/research/article/1-3d-mesh",
+        "E:\\research\\article\\vscode-pandoc-crossref-helper\\test_project",
+        // "--goto",
+        // "E:/research/article/1-3d-mesh/manuscript.md:1:1"
       ]
     }
   ]
