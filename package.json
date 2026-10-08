@@ -47,6 +47,16 @@
     "onCustomEditor:pandocManuscriptTools.svgPreviewEditor"
   ],
   "main": "./dist/extension.js",
+  "files": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "dist/extension.js",
+    "dist/image-directory-preview.js",
+    "assets/icon.png",
+    "assets/libemf2svg/emf2svg.js",
+    "assets/libemf2svg/emf2svg.wasm",
+    "assets/mathjax-newcm-font/cjs/svg/dynamic/*.js"
+  ],
   "dependencies": {
     "@jimp/core": "^1.6.1",
     "@jimp/js-jpeg": "^1.6.1",
