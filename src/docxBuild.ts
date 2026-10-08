@@ -6,6 +6,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { findExistingPapperExecutable, findPandocManuscriptProject, isPapperBuildAvailable, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "./papperBuildUtils";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
+import { openWindowsDocx } from "./windowsDocxOpener";
 
 type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
 
@@ -176,6 +177,12 @@ async function pathExists(uri: vscode.Uri) {
  */
 async function openDocxInLocalWord(docxUri: vscode.Uri, output: vscode.OutputChannel) {
   if (!vscode.env.remoteName) {
+    // Only Unicode Windows paths need to bypass the external file-URI opener.
+    if (process.platform === "win32" && /[^\x00-\x7F]/.test(docxUri.fsPath)) {
+      output.appendLine(`[DOCX] Opening Unicode path through Windows file association: ${docxUri.fsPath}`);
+      await openWindowsDocx(docxUri.fsPath);
+      return true;
+    }
     return vscode.env.openExternal(docxUri);
   }
 

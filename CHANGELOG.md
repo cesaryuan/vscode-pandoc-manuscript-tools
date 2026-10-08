@@ -15,6 +15,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Fixed
 
+- Open DOCX files with Chinese and other Unicode Windows paths through the native file association, avoiding encoded file-URI launch failures.
 - Show display-math hover previews for same-line `$$...$$` formulas, including trailing equation labels, while ignoring literal code and escaped delimiters.
 
 ## 0.3.0 - 2026-07-06
