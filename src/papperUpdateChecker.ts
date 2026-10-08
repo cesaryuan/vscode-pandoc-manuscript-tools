@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { checkForPapperUpdate, upgradePapper } from "./papperBuildUtils";
 
 const INITIAL_CHECK_DELAY_MS = 60_000;
-const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 60 * 1_000;
 const LAST_UPDATE_CHECK_KEY = "papper.lastUpdateCheckAt";
 
 /** Periodically checks for Papper updates and asks before upgrading. */
@@ -15,7 +15,7 @@ export class PapperUpdateChecker {
   /** Creates a checker that persists the last check across VS Code sessions. */
   constructor(private readonly state: vscode.Memento) {}
 
-  /** Starts the delayed initial check and the daily update check. */
+  /** Starts the delayed initial check and recurring checks every three hours. */
   start() {
     this.initialCheckTimer = setTimeout(() => {
       this.initialCheckTimer = undefined;
