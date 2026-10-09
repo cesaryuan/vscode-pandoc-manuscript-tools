@@ -30,6 +30,28 @@ const DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\$\$\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Z
 const BRACKET_DISPLAY_MATH_BOUNDARY_PATTERN = /^\s*\\\]\s*(?:\{#(?:sec|fig|tbl|eq):[-A-Za-z0-9_:.]+\b[^}]*\})?\s*$/;
 const CUSTOM_STYLE_ATTRIBUTE_PATTERN = /(?:^|\s)custom-style\s*=\s*(["'])(.*?)\1(?=\s|$)/g;
 
+/** Shares code-fence boundaries between language features and fenced-div highlighting. */
+class CodeFenceScanner {
+  private marker = "";
+
+  /** Shorter fences and fences with trailing text are literal content inside a longer block. */
+  ignores(line: string): boolean {
+    const match = line.match(FENCE_PATTERN);
+    if (this.marker) {
+      if (match && match[1][0] === this.marker[0] && match[1].length >= this.marker.length
+        && line.slice(match[0].length).trim() === "") {
+        this.marker = "";
+      }
+      return true;
+    }
+    if (match && !(match[1][0] === "`" && line.slice(match[0].length).includes("`"))) {
+      this.marker = match[1];
+      return true;
+    }
+    return false;
+  }
+}
+
 /**
  * Parses a Markdown document with Pandoc-crossref extensions.
  *
@@ -54,8 +76,7 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
   const referenceMap = new Map<string, ReferenceEntry[]>();
 
   let inYaml = lines[0] && lines[0].text.trim() === "---";
-  let inFence = false;
-  let fenceMarker = "";
+  const codeFence = new CodeFenceScanner();
   let inMath = false;
   let mathDelimiter: DisplayMathDelimiter | undefined;
   let mathStart: ParsedLine | null = null;
@@ -72,20 +93,7 @@ export function parsePandocDocument(text: string, uriText = ""): ParsedPandocDoc
       continue;
     }
 
-    const fenceMatch = line.text.match(FENCE_PATTERN);
-    if (fenceMatch) {
-      const marker = fenceMatch[1][0];
-      if (!inFence) {
-        inFence = true;
-        fenceMarker = marker;
-      } else if (marker === fenceMarker) {
-        inFence = false;
-        fenceMarker = "";
-      }
-      continue;
-    }
-
-    if (inFence) {
+    if (codeFence.ignores(line.text)) {
       continue;
     }
 
@@ -204,8 +212,7 @@ function scanFencedDivs(lines: ParsedLine[], uriText: string): FencedDivEntry[] 
   const blocks: FencedDivEntry[] = [];
   const stack: FencedDivStackEntry[] = [];
   let inYaml = lines[0] && lines[0].text.trim() === "---";
-  let inFence = false;
-  let fenceMarker = "";
+  const codeFence = new CodeFenceScanner();
   let inMath = false;
   let mathDelimiter: DisplayMathDelimiter | undefined;
 
@@ -219,20 +226,7 @@ function scanFencedDivs(lines: ParsedLine[], uriText: string): FencedDivEntry[] 
       continue;
     }
 
-    const codeFenceMatch = line.text.match(FENCE_PATTERN);
-    if (codeFenceMatch) {
-      const marker = codeFenceMatch[1][0];
-      if (!inFence) {
-        inFence = true;
-        fenceMarker = marker;
-      } else if (marker === fenceMarker) {
-        inFence = false;
-        fenceMarker = "";
-      }
-      continue;
-    }
-
-    if (inFence) {
+    if (codeFence.ignores(line.text)) {
       continue;
     }
 

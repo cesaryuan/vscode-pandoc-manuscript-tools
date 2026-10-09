@@ -12,9 +12,17 @@ All notable changes to Papper Tools are documented in this file.
 ### Changed
 
 - Check for uv-managed Papper updates every three hours instead of daily.
+- Use existing label/reference maps for document lookups and diagnostics.
+- Bound image and translation caches by recency and retained character count, and discard superseded image versions.
+- Log translation timing and character counts by default; full text requires `debugParagraphHoverTranslation`.
 
 ### Fixed
 
+- Keep the latest HTML preview request when switching documents, and reject obsolete results after asynchronous resource processing or panel disposal.
+- Refresh expired Microsoft translation tokens and retry rejected authorization once.
+- Decode local HTML resource paths while preserving query strings, fragments, and attribute escaping.
+- Remove deleted manuscript definition sources from the index and refresh reviewer diagnostics after external file changes.
+- Respect code-fence length and closing-line boundaries in both Pandoc parsing and fenced-div highlighting.
 - Open DOCX files with Chinese and other Unicode Windows paths through the native file association, avoiding encoded file-URI launch failures.
 - Show display-math hover previews for same-line `$$...$$` formulas, including trailing equation labels, while ignoring literal code and escaped delimiters.
 

@@ -31,7 +31,7 @@
     "publish:patch": "npm run check && vsce publish patch",
     "publish:minor": "npm run check && vsce publish minor",
     "profile:test-md": "tsx scripts/profile-test-md.ts test.md",
-    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts tests/inlineFoldParser.test.ts tests/headingStructure.test.ts tests/mathHoverParser.test.ts tests/metafilePreviewAppearance.test.ts tests/metafileResourceCache.test.ts tests/customImagePreviewContext.test.ts tests/pathResolver.test.ts tests/imageDirectoryPreview.test.ts tests/paragraphTranslationDiff.test.ts tests/commentParagraph.test.ts tests/pandocNumbering.test.ts tests/papperToolPolicy.test.ts tests/papperHtmlServer.test.ts tests/papperMarkdownScrollIntent.test.ts tests/papperMarkdownClickNavigation.test.ts tests/papperMarkdownScrollAnchors.test.ts tests/papperMarkdownMathRendering.test.ts",
+    "test": "tsx --test tests/reviewerReplyDefinitions.test.ts tests/inlineFoldParser.test.ts tests/headingStructure.test.ts tests/mathHoverParser.test.ts tests/metafilePreviewAppearance.test.ts tests/metafileResourceCache.test.ts tests/customImagePreviewContext.test.ts tests/pathResolver.test.ts tests/imageDirectoryPreview.test.ts tests/paragraphTranslationDiff.test.ts tests/commentParagraph.test.ts tests/pandocNumbering.test.ts tests/papperToolPolicy.test.ts tests/papperHtmlServer.test.ts tests/papperMarkdownScrollIntent.test.ts tests/papperMarkdownClickNavigation.test.ts tests/papperMarkdownScrollAnchors.test.ts tests/papperMarkdownMathRendering.test.ts tests/papperMarkdownLifecycle.test.ts tests/htmlResourceUris.test.ts tests/paragraphTranslator.test.ts tests/workspaceIndex.test.ts tests/asyncLruCache.test.ts tests/imagePreviewCache.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run bundle && npm run check:bundle"
   },
@@ -250,6 +250,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show translations for eligible English Markdown paragraphs and nearby code comments, using Google Translate when available and Microsoft Translator as a fallback."
+        },
+        "pandocManuscriptTools.debugParagraphHoverTranslation": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log complete paragraph translation requests and responses for debugging. Disabled by default to keep output concise."
         },
         "pandocManuscriptTools.enableDiffAwareParagraphHoverTranslation": {
           "type": "boolean",

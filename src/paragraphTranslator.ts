@@ -1,5 +1,6 @@
 import type * as vscode from "vscode";
 import { getConfiguration } from "./configuration";
+import { AsyncLruCache } from "./asyncLruCache";
 
 const GOOGLE_TRANSLATE_HTML_URL = "https://translate-pa.googleapis.com/v1/translateHtml";
 const GOOGLE_TRANSLATE_HTML_API_KEY = "AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520";
@@ -15,11 +16,12 @@ export type TranslationSegmentsResult = { texts: string[]; engine: TranslationEn
 
 export class ParagraphTranslator {
   declare output: import("vscode").OutputChannel;
-  declare translationCache: Map<string, Promise<TranslationResult | undefined>>;
+  private readonly translationCache = new AsyncLruCache<TranslationResult | undefined>(256, 4_000_000, (value) => value?.text.length || 0);
   declare preferredEngine: TranslationEngine | undefined;
   declare engineProbePromise: Promise<TranslationEngine | undefined> | undefined;
   declare microsoftToken: string | undefined;
   declare microsoftTokenPromise: Promise<string | undefined> | undefined;
+  private microsoftTokenExpiresAt = 0;
   /**
    * Creates a small translator for paragraph hover previews.
    *
@@ -27,7 +29,6 @@ export class ParagraphTranslator {
    */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
-    this.translationCache = new Map();
     this.preferredEngine = undefined;
     this.engineProbePromise = undefined;
     this.microsoftToken = undefined;
@@ -62,24 +63,15 @@ export class ParagraphTranslator {
     }
 
     const cacheKey = `${engine}:${targetLanguage}:${text}`;
-    if (!this.translationCache.has(cacheKey)) {
-      this.translationCache.set(cacheKey, this.translateTextWithEngine(text, targetLanguage, engine)
-        .then((translatedText) => {
-          // Do not cache transient translation failures; the next hover should retry.
-          if (translatedText === undefined) {
-            this.translationCache.delete(cacheKey);
-            return undefined;
-          }
-          return { text: translatedText, engine };
-        })
-        .catch((error): TranslationResult | undefined => {
-          this.translationCache.delete(cacheKey);
-          this.output.appendLine(`Paragraph translation failed unexpectedly: ${String(error)}`);
-          return undefined;
-        }));
-    }
-
-    return this.translationCache.get(cacheKey);
+    return this.translationCache.getOrCreate(cacheKey, () => this.translateTextWithEngine(text, targetLanguage, engine)
+      .then((translatedText) => {
+        if (translatedText === undefined) return undefined;
+        return { text: translatedText, engine };
+      })
+      .catch((error): TranslationResult | undefined => {
+        this.output.appendLine(`Paragraph translation failed unexpectedly: ${String(error)}`);
+        return undefined;
+      }));
   }
 
   /**
@@ -198,17 +190,12 @@ export class ParagraphTranslator {
    * @param shouldLog Whether to log failures for user-triggered translations.
    */
   async translateWithGoogle(text: string, targetLanguage: string, shouldLog: boolean) {
+    const started = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TRANSLATION_TIMEOUT_MS);
 
     try {
-      // Keep the exact marked HTML and returned text visible when diagnosing
-      // paragraph diff marker drift through Google's HTML translation path.
-      if (shouldLog) {
-        this.output.appendLine("Google paragraph translation request text BEGIN");
-        this.output.appendLine(text);
-        this.output.appendLine("Google paragraph translation request text END");
-      }
+      if (shouldLog) this.logTranslationText("Google", "request", text);
 
       const response = await fetch(GOOGLE_TRANSLATE_HTML_URL, {
         method: "POST",
@@ -226,7 +213,8 @@ export class ParagraphTranslator {
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
         if (shouldLog) {
-          this.output.appendLine(`Google paragraph translation failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`);
+          this.output.appendLine(`Google paragraph translation failed: ${response.status} ${response.statusText}; sourceCharacters=${text.length}`);
+          this.logTranslationText("Google", "error response", errorText);
         }
         return undefined;
       }
@@ -241,14 +229,13 @@ export class ParagraphTranslator {
 
       const translatedText = decodeHtmlText(result[0][0]).trim();
       if (shouldLog) {
-        this.output.appendLine("Google paragraph translation response text BEGIN");
-        this.output.appendLine(translatedText);
-        this.output.appendLine("Google paragraph translation response text END");
+        this.output.appendLine(`Google paragraph translation completed: target=${targetLanguage}; sourceCharacters=${text.length}; resultCharacters=${translatedText.length}; duration=${Date.now() - started} ms`);
+        this.logTranslationText("Google", "response", translatedText);
       }
       return translatedText;
     } catch (error) {
       if (shouldLog) {
-        this.output.appendLine(`Google paragraph translation failed for ${formatTranslationTextForLog(text)}: ${String(error)}`);
+        this.output.appendLine(`Google paragraph translation failed: sourceCharacters=${text.length}; ${String(error)}`);
       }
       return undefined;
     } finally {
@@ -266,16 +253,15 @@ export class ParagraphTranslator {
    * @param targetLanguage Target language code accepted by Microsoft.
    * @param shouldLog Whether to log failures for user-triggered translations.
    */
-  async translateWithMicrosoft(text: string, targetLanguage: string, shouldLog: boolean) {
+  async translateWithMicrosoft(text: string, targetLanguage: string, shouldLog: boolean, retryUnauthorized = true): Promise<string | undefined> {
+    const started = Date.now();
+    const token = await this.getMicrosoftToken();
+    if (!token) return undefined;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TRANSLATION_TIMEOUT_MS);
 
     try {
-      const token = await this.getMicrosoftToken();
-      if (!token) {
-        return undefined;
-      }
-
+      if (shouldLog) this.logTranslationText("Microsoft", "request", text);
       const url = `${MICROSOFT_TRANSLATE_URL}?from=en&to=${encodeURIComponent(targetLanguage)}&api-version=3.0&includeSentenceLength=true&textType=html`;
       const response = await fetch(url, {
         method: "POST",
@@ -290,8 +276,22 @@ export class ParagraphTranslator {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
+        if (response.status === 401) {
+          // Concurrent failures for an old token must not clear a newer token or its refresh.
+          if (this.microsoftToken === token) {
+            this.microsoftToken = undefined;
+            this.microsoftTokenExpiresAt = 0;
+            this.microsoftTokenPromise = undefined;
+          }
+          if (retryUnauthorized) {
+            if (shouldLog) this.output.appendLine("Microsoft translation token was rejected; refreshing and retrying once");
+            clearTimeout(timeout);
+            return await this.translateWithMicrosoft(text, targetLanguage, shouldLog, false);
+          }
+        }
         if (shouldLog) {
-          this.output.appendLine(`Microsoft paragraph translation failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`);
+          this.output.appendLine(`Microsoft paragraph translation failed: ${response.status} ${response.statusText}; sourceCharacters=${text.length}`);
+          this.logTranslationText("Microsoft", "error response", errorText);
         }
         return undefined;
       }
@@ -305,10 +305,15 @@ export class ParagraphTranslator {
         return undefined;
       }
 
-      return decodeHtmlText(translatedText).trim();
+      const decoded = decodeHtmlText(translatedText).trim();
+      if (shouldLog) {
+        this.output.appendLine(`Microsoft paragraph translation completed: target=${targetLanguage}; sourceCharacters=${text.length}; resultCharacters=${decoded.length}; duration=${Date.now() - started} ms`);
+        this.logTranslationText("Microsoft", "response", decoded);
+      }
+      return decoded;
     } catch (error) {
       if (shouldLog) {
-        this.output.appendLine(`Microsoft paragraph translation failed for ${formatTranslationTextForLog(text)}: ${String(error)}`);
+        this.output.appendLine(`Microsoft paragraph translation failed: sourceCharacters=${text.length}; ${String(error)}`);
       }
       return undefined;
     } finally {
@@ -321,22 +326,32 @@ export class ParagraphTranslator {
    *
    */
   async getMicrosoftToken() {
-    if (this.microsoftToken) {
+    if (this.microsoftToken && Date.now() < this.microsoftTokenExpiresAt) {
       return this.microsoftToken;
     }
 
     if (!this.microsoftTokenPromise) {
-      this.microsoftTokenPromise = this.fetchMicrosoftToken();
+      this.microsoftToken = undefined;
+      const pending = this.fetchMicrosoftToken().then((token) => {
+        if (this.microsoftTokenPromise === pending) {
+          this.microsoftToken = token;
+          this.microsoftTokenExpiresAt = token ? microsoftTokenExpiry(token) : 0;
+          this.microsoftTokenPromise = undefined;
+        }
+        return token;
+      });
+      this.microsoftTokenPromise = pending;
     }
+    return this.microsoftTokenPromise;
+  }
 
-    const token = await this.microsoftTokenPromise;
-    if (!token) {
-      this.microsoftTokenPromise = undefined;
-      return undefined;
+  /** Emits full source, result, and error bodies only during explicit translation debugging. */
+  private logTranslationText(engine: string, phase: string, text: string): void {
+    if (getConfiguration().get("debugParagraphHoverTranslation", false)) {
+      this.output.appendLine(`${engine} paragraph translation ${phase} text BEGIN`);
+      this.output.appendLine(text);
+      this.output.appendLine(`${engine} paragraph translation ${phase} text END`);
     }
-
-    this.microsoftToken = token;
-    return this.microsoftToken;
   }
 
   /**
@@ -416,15 +431,17 @@ function escapeTranslationHtmlText(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-/**
- * Formats translation text compactly for one-line output-channel diagnostics.
- *
- * @param text Source text.
- */
-function formatTranslationTextForLog(text: string) {
-  const compactText = text.replace(/\s+/g, " ").trim();
-  const truncatedText = compactText.length > 120 ? `${compactText.slice(0, 117)}...` : compactText;
-  return `"${truncatedText}"`;
+/** Uses JWT expiry as a cache hint, with a short fallback for opaque Edge tokens. */
+function microsoftTokenExpiry(token: string): number {
+  const fallback = Date.now() + 5 * 60_000;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+    return typeof payload.exp === "number" && Number.isFinite(payload.exp)
+      ? Math.min(fallback, payload.exp * 1000 - 30_000) : fallback;
+  } catch {
+    // Token contents only control refresh timing; authorization remains server-validated.
+    return fallback;
+  }
 }
 
 

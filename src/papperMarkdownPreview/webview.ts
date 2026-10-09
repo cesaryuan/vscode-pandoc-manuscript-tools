@@ -66,11 +66,36 @@ export function countHtmlElements(html: string, elementName: string) {
  */
 export function rewriteHtmlResourceUris(html: string, webview: vscode.Webview, sourceDirectory: string) {
   return html.replace(/(\b(?:src|href)\s*=\s*["'])([^"']+)(["'])/gi, (match, prefix: string, value: string, suffix: string) => {
-    if (/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(value)) {
+    const decodedValue = decodeResourceAttribute(value);
+    if (/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(decodedValue)) {
       return match;
     }
-    const resourcePath = path.resolve(sourceDirectory, value);
-    return `${prefix}${webview.asWebviewUri(vscode.Uri.file(resourcePath)).toString()}${suffix}`;
+    // URL suffixes are URI components, not part of a local filename. Split before
+    // decoding so encoded # and ? can still be literal filename characters.
+    const suffixIndex = decodedValue.search(/[?#]/);
+    let localPath = suffixIndex < 0 ? decodedValue : decodedValue.slice(0, suffixIndex);
+    const resourceSuffix = suffixIndex < 0 ? "" : decodedValue.slice(suffixIndex);
+    try {
+      localPath = decodeURIComponent(localPath);
+    } catch {
+      // Malformed escapes may be literal filenames; do not abort the entire preview.
+    }
+    const resourcePath = path.resolve(sourceDirectory, localPath.replace(/[\\/]/g, path.sep));
+    const uri = `${webview.asWebviewUri(vscode.Uri.file(resourcePath)).toString()}${resourceSuffix}`;
+    const escapedUri = uri.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `${prefix}${escapedUri}${suffix}`;
+  });
+}
+
+/** Decodes resource attribute entities before interpreting URL components. */
+function decodeResourceAttribute(value: string): string {
+  return value.replace(/&(?:amp|quot|apos|lt|gt|#\d+|#x[0-9a-f]+);/gi, (entity) => {
+    const named: Record<string, string> = { "&amp;": "&", "&quot;": '"', "&apos;": "'", "&lt;": "<", "&gt;": ">" };
+    const normalized = entity.toLowerCase();
+    if (named[normalized]) return named[normalized];
+    const hexadecimal = normalized.startsWith("&#x");
+    const code = Number.parseInt(normalized.slice(hexadecimal ? 3 : 2, -1), hexadecimal ? 16 : 10);
+    return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : entity;
   });
 }
 
@@ -908,10 +933,14 @@ window.addEventListener('load', sendReady, { once: true });
  * @param confirmation Promise resolved by the panel message handler.
  */
 export async function waitForWebviewUpdate(confirmation: Promise<boolean>) {
-  return Promise.race([
-    confirmation,
-    // KaTeX renders synchronously after its page script loads, so a short bound
-    // is enough to release the build queue if that external script is blocked.
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
-  ]);
+  let timeout: NodeJS.Timeout;
+  try {
+    return await Promise.race([
+      confirmation,
+      // Bound blocked script loading, and clear the timer on source switches too.
+      new Promise<boolean>((resolve) => { timeout = setTimeout(() => resolve(false), 5000); }),
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
 }

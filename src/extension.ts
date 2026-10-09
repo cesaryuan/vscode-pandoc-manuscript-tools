@@ -233,6 +233,34 @@ export function activate(context: vscode.ExtensionContext) {
     numberingInlayHints.closeDocument(document);
   }));
 
+  // Closed manuscript files can change or disappear outside the editor. Refresh
+  // dependent reviewer diagnostics without waiting for another document save.
+  const manuscriptWatcher = vscode.workspace.createFileSystemWatcher("**/manuscript.md");
+  let manuscriptRefreshRunning = false;
+  let manuscriptRefreshPending = false;
+  /** Reloads reviewer definition sources after external manuscript file events. */
+  const refreshManuscriptDefinitions = async () => {
+    manuscriptRefreshPending = true;
+    if (manuscriptRefreshRunning) return;
+    manuscriptRefreshRunning = true;
+    try {
+      // Atomic saves emit bursts; serialize reads so an older snapshot cannot win last.
+      while (manuscriptRefreshPending) {
+        manuscriptRefreshPending = false;
+        await index.refreshWorkspace();
+      }
+      updateDiagnosticsForOpenDocuments(index, diagnostics);
+    } catch (error) {
+      output.appendLine(`Could not refresh manuscript definitions: ${String(error)}`);
+    } finally {
+      manuscriptRefreshRunning = false;
+    }
+  };
+  context.subscriptions.push(manuscriptWatcher,
+    manuscriptWatcher.onDidCreate(refreshManuscriptDefinitions),
+    manuscriptWatcher.onDidChange(refreshManuscriptDefinitions),
+    manuscriptWatcher.onDidDelete(refreshManuscriptDefinitions));
+
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
   for (const document of vscode.workspace.textDocuments) {
     numberingInlayHints.scheduleRefresh(document);

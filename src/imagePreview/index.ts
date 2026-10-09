@@ -6,6 +6,7 @@ import { getDataUriMimeType, prepareImageDataUriForHover } from "./dataUri";
 import { resolveLocalPath } from "./pathResolver";
 import { pruneInlineRasterImagesToDataUriLimit, renderSvgPreviewDataUri } from "./svgPreview";
 import { renderMetafilePreviewDataUri, type MetafilePreviewOptions } from "./emfPreview";
+import { AsyncLruCache } from "../asyncLruCache";
 
 type PreviewDocument = { uri: vscode.Uri };
 type ImagePreviewRenderOptions = {
@@ -20,7 +21,7 @@ const VSCODE_MARKDOWN_VALUE_LIMIT = 100_000;
 
 export class ImagePreviewRenderer {
   declare output: import("vscode").OutputChannel;
-  declare cache: Map<string, Promise<string | undefined>>;
+  private readonly cache = new AsyncLruCache<string | undefined>(64, 16_000_000, (value) => value?.length || 0);
   /**
    * Creates a renderer for SVG, EMF, and WMF hover previews.
    *
@@ -28,7 +29,6 @@ export class ImagePreviewRenderer {
    */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
-    this.cache = new Map();
   }
 
   /**
@@ -81,10 +81,10 @@ export class ImagePreviewRenderer {
       return undefined;
     }
 
-    if (!this.cache.has(cacheKey)) {
-      this.cache.set(cacheKey, this.renderToDataUriUncached(document, imagePath, extension, options));
-    }
-    return this.cache.get(cacheKey);
+    const [imageKey, version] = cacheKey.split("\0");
+    // Keep compression variants of the current image, but release superseded file versions.
+    this.cache.deleteWhere((key) => key.startsWith(`${imageKey}\0`) && !key.startsWith(`${imageKey}\0${version}\0`));
+    return this.cache.getOrCreate(cacheKey, () => this.renderToDataUriUncached(document, imagePath, extension, options));
   }
 
   /**
@@ -96,7 +96,7 @@ export class ImagePreviewRenderer {
    */
   async createCacheKey(imagePath: string, extension: string, options: ImagePreviewRenderOptions = {}) {
     const stats = await fs.stat(imagePath);
-    return `${extension}:${imagePath}:${stats.size}:${stats.mtimeMs}:${renderOptionsCacheSuffix(options)}`;
+    return `${JSON.stringify([extension, path.resolve(imagePath)])}\0${JSON.stringify([stats.size, stats.mtimeMs])}\0${renderOptionsCacheSuffix(options)}`;
   }
 
   /**

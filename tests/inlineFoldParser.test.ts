@@ -56,3 +56,23 @@ test("ignores ordinary code spans, fenced code, and YAML", verifiesLineExcerptFo
 test("supports multi-backtick Line annotations", verifiesMultiBacktickLineExcerptFold);
 test("parses the Revision Char attribute fold range", verifiesRevisionCharAttributeRange);
 test("folds only the exact Revision Char custom style", verifiesRevisionCharStyleBoundary);
+
+/** Embedded short fences and invalid closing lines must keep literal examples out of language features. */
+function respectsCodeFenceClosingBoundaries(): void {
+  for (const marker of ["`", "~"]) {
+    const text = [
+      marker.repeat(4) + "markdown", marker.repeat(3),
+      "@fig:literal", "# Hidden {#sec:hidden}", "::: {.hidden}", "inside", ":::",
+      marker.repeat(4) + " trailing text", "@eq:literal", marker.repeat(5),
+      "# Visible {#sec:visible}", "@fig:visible", "::: {.visible}", "body", ":::",
+    ].join("\n");
+    const parsed = parsePandocDocument(text);
+    assert.deepEqual(parsed.references.map((entry) => entry.label), ["fig:visible"]);
+    assert.deepEqual(parsed.labels.map((entry) => entry.label), ["sec:visible"]);
+    assert.deepEqual(parsed.headings.map((entry) => entry.title), ["Visible"]);
+    assert.equal(parsed.fencedDivs.length, 1);
+    assert.equal(parsed.fencedDivs[0].range.start.line, 12);
+  }
+}
+
+test("code examples remain literal until a sufficiently long clean closing fence", respectsCodeFenceClosingBoundaries);

@@ -110,6 +110,11 @@ export class PandocWorkspaceIndex {
       this.documents.set(uri.toString(), entry);
       return entry;
     } catch (error) {
+      // Deleted sources must stop supplying reviewer definitions after an index refresh.
+      // Preserve cached content for transient permission/network failures instead.
+      if (error.code === "ENOENT" || error.code === "ENOTDIR" || error.code === "FileNotFound") {
+        this.documents.delete(uri.toString());
+      }
       this.output.appendLine(`Failed to index ${uri.fsPath}: ${String(error)}`);
       return undefined;
     }
@@ -131,8 +136,9 @@ export class PandocWorkspaceIndex {
    * @param label Pandoc label.
    */
   getDefinitions(document: vscode.TextDocument, label: string): import("./parser").LabelEntry[] {
-    const localDefinitions = this.getParsedDocument(document).labels.filter((entry) => entry.label === label);
-    const manuscriptDefinitions = this.getReviewerManuscriptDefinitions(document).filter((entry) => entry.label === label);
+    const localDefinitions = this.getParsedDocument(document).labelMap.get(label) || [];
+    const manuscriptUri = this.getReviewerManuscriptUri(document);
+    const manuscriptDefinitions = manuscriptUri ? this.documents.get(manuscriptUri.toString())?.parsed.labelMap.get(label) || [] : [];
     return resolveReviewerReplyDefinitions(document.uri.path, localDefinitions, manuscriptDefinitions);
   }
 
@@ -143,7 +149,7 @@ export class PandocWorkspaceIndex {
    * @param label Pandoc label.
    */
   getReferences(document: vscode.TextDocument, label: string): import("./parser").ReferenceEntry[] {
-    return this.getParsedDocument(document).references.filter((entry) => entry.label === label);
+    return this.getParsedDocument(document).referenceMap.get(label) || [];
   }
 
   /**
@@ -164,7 +170,7 @@ export class PandocWorkspaceIndex {
    */
   getDocumentEntriesByLabel(document: vscode.TextDocument, collection: "labels" | "references", label: string): Array<import("./parser").LabelEntry | import("./parser").ReferenceEntry> {
     const parsed = this.getParsedDocument(document);
-    return parsed[collection].filter((entry) => entry.label === label);
+    return (collection === "labels" ? parsed.labelMap : parsed.referenceMap).get(label) || [];
   }
 
   /**
@@ -173,16 +179,9 @@ export class PandocWorkspaceIndex {
    * @param document Markdown document whose labels define the duplicate scope.
    */
   getDefinitionMap(document: vscode.TextDocument) {
-    const map = new Map();
     // Duplicate-label diagnostics remain document-local. A reviewer reply may
     // intentionally repeat a manuscript label while quoting revised content.
-    for (const label of this.getParsedDocument(document).labels) {
-      if (!map.has(label.label)) {
-        map.set(label.label, []);
-      }
-      map.get(label.label).push(label);
-    }
-    return map;
+    return this.getParsedDocument(document).labelMap;
   }
 
   /**

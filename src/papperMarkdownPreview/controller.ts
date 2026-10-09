@@ -19,8 +19,8 @@ export class PapperMarkdownPreviewController {
   private htmlPreviewDocumentUri: vscode.Uri | undefined;
   private htmlPreviewTimer: NodeJS.Timeout | undefined;
   private htmlPreviewBuildId = 0;
-  private htmlPreviewBuildRunning = false;
-  private htmlPreviewRefreshPending = false;
+  private htmlPreviewBuildRunning: Promise<void> | undefined;
+  private htmlPreviewRefreshPending: { document: vscode.TextDocument; project?: PandocManuscriptProject } | undefined;
   private htmlPreviewWebviewReady = false;
   private htmlPreviewUpdateToken = 0;
   private htmlPreviewPendingUpdate: { token: string; resolve: (confirmed: boolean) => void } | undefined;
@@ -43,6 +43,7 @@ export class PapperMarkdownPreviewController {
 
   /** Clears the preview refresh timer and closes its WebView panel. */
   dispose() {
+    this.invalidateHtmlBuild();
     this.editorScrollIntent.dispose();
     if (this.htmlPreviewTimer) {
       clearTimeout(this.htmlPreviewTimer);
@@ -145,18 +146,21 @@ export class PapperMarkdownPreviewController {
   private async runHtmlBuild(project: PandocManuscriptProject, document: vscode.TextDocument) {
     const buildId = ++this.htmlPreviewBuildId;
     const sourceVersion = document.version;
+    const panel = this.htmlPreviewPanel;
     try {
       const started = performance.now();
       const html = await this.htmlServer.convert(project.rootUri.fsPath, document.uri.fsPath, document.getText());
       this.output.appendLine(`[HTML][performance] convert=${(performance.now() - started).toFixed(1)} ms`);
-      if (buildId !== this.htmlPreviewBuildId || document.version !== sourceVersion) {
+      if (!this.isCurrentHtmlBuild(panel, document, sourceVersion, buildId)) {
         return;
       }
-      await this.updateHtmlPreviewPanel(html, document, project, sourceVersion);
+      await this.updateHtmlPreviewPanel(html, document, project, sourceVersion, buildId, panel!);
     } catch (error) {
       const message = `Failed to build HTML preview: ${String(error.message || error)}`;
       this.output.appendLine(`[HTML] ${message}`);
-      vscode.window.showErrorMessage(message);
+      if (this.isCurrentHtmlBuild(panel, document, sourceVersion, buildId)) {
+        vscode.window.showErrorMessage(message);
+      }
     }
   }
 
@@ -187,6 +191,12 @@ export class PapperMarkdownPreviewController {
    * @param project Detected Papper project.
    */
   private openHtmlPreview(document: vscode.TextDocument, project: PandocManuscriptProject) {
+    const sourceChanged = !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, document.uri);
+    this.invalidateHtmlBuild();
+    if (this.htmlPreviewTimer) {
+      clearTimeout(this.htmlPreviewTimer);
+      this.htmlPreviewTimer = undefined;
+    }
     this.editorScrollIntent.dispose();
     for (const editor of vscode.window.visibleTextEditors) {
       if (isSameUri(editor.document.uri, document.uri)) {
@@ -196,6 +206,11 @@ export class PapperMarkdownPreviewController {
     this.htmlPreviewDocumentUri = document.uri;
     this.htmlPreviewSourceVersion = undefined;
     if (this.htmlPreviewPanel) {
+      if (sourceChanged) {
+        // A previous document's DOM must not remain clickable under the new source URI.
+        this.htmlPreviewWebviewReady = false;
+        this.htmlPreviewPanel.webview.html = "";
+      }
       this.htmlPreviewPanel.title = `${path.basename(document.uri.fsPath)} — Papper HTML Preview`;
       this.htmlPreviewPanel.webview.options = {
         ...this.htmlPreviewPanel.webview.options,
@@ -219,10 +234,11 @@ export class PapperMarkdownPreviewController {
     this.htmlPreviewPanel = panel;
     this.htmlPreviewWebviewReady = false;
     panel.webview.onDidReceiveMessage((message: HtmlPreviewMessage & Partial<HtmlPreviewClickMessage> & { blocks?: HtmlPreviewBlockDescriptor[]; revision?: number }) => {
+      if (this.htmlPreviewPanel !== panel) return;
       if (message.type === "ready") {
         this.htmlPreviewWebviewReady = true;
         this.scrollSync.resetSourcePosition();
-        const sourceEditor = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri));
+        const sourceEditor = vscode.window.visibleTextEditors.find((editor) => this.htmlPreviewDocumentUri && isSameUri(editor.document.uri, this.htmlPreviewDocumentUri));
         if (sourceEditor) {
           this.scrollSync.syncFromEditor(panel, this.htmlPreviewDocumentUri, sourceEditor);
         }
@@ -261,6 +277,11 @@ export class PapperMarkdownPreviewController {
     });
     panel.onDidDispose(() => {
       if (this.htmlPreviewPanel === panel) {
+        this.invalidateHtmlBuild();
+        if (this.htmlPreviewTimer) {
+          clearTimeout(this.htmlPreviewTimer);
+          this.htmlPreviewTimer = undefined;
+        }
         this.editorScrollIntent.dispose();
         this.htmlPreviewPanel = undefined;
         this.htmlPreviewDocumentUri = undefined;
@@ -300,24 +321,49 @@ export class PapperMarkdownPreviewController {
     if (!this.htmlPreviewPanel || !this.htmlPreviewDocumentUri || !isSameUri(this.htmlPreviewDocumentUri, document.uri)) {
       return;
     }
-    if (this.htmlPreviewBuildRunning) {
-      this.htmlPreviewRefreshPending = true;
-      return;
+    // Store the latest source itself: a boolean lost B's request while A was building.
+    this.htmlPreviewRefreshPending = { document, project };
+    if (!this.htmlPreviewBuildRunning) {
+      this.htmlPreviewBuildRunning = this.drainHtmlBuilds().finally(() => {
+        this.htmlPreviewBuildRunning = undefined;
+      });
     }
-    const resolvedProject = project || await resolveHtmlPreviewProject(document.uri);
-    this.htmlPreviewBuildRunning = true;
-    try {
-      await this.runHtmlBuild(resolvedProject, document);
-    } finally {
-      this.htmlPreviewBuildRunning = false;
-      if (this.htmlPreviewRefreshPending) {
-        this.htmlPreviewRefreshPending = false;
-        const latestDocument = vscode.workspace.textDocuments.find((candidate) => isSameUri(candidate.uri, document.uri));
-        if (latestDocument) {
-          void this.refreshHtmlPreview(latestDocument);
+    await this.htmlPreviewBuildRunning;
+  }
+
+  /** Serializes project resolution and builds, coalescing queued edits to the latest source. */
+  private async drainHtmlBuilds(): Promise<void> {
+    while (this.htmlPreviewRefreshPending) {
+      const { document, project } = this.htmlPreviewRefreshPending;
+      this.htmlPreviewRefreshPending = undefined;
+      const buildId = this.htmlPreviewBuildId;
+      try {
+        const resolvedProject = project || await resolveHtmlPreviewProject(document.uri);
+        if (buildId !== this.htmlPreviewBuildId || !this.htmlPreviewPanel || !this.htmlPreviewDocumentUri
+          || !isSameUri(this.htmlPreviewDocumentUri, document.uri)) continue;
+        await this.runHtmlBuild(resolvedProject, document);
+      } catch (error) {
+        // Failed project lookup must not strand a newer source already waiting in this queue.
+        this.output.appendLine(`[HTML] Could not resolve preview project: ${String(error)}`);
+        if (buildId === this.htmlPreviewBuildId && this.htmlPreviewPanel) {
+          vscode.window.showErrorMessage(`Could not resolve preview project: ${String(error)}`);
         }
       }
     }
+  }
+
+  /** Cancels obsolete results and releases any Webview acknowledgement wait on source changes. */
+  private invalidateHtmlBuild(): void {
+    this.htmlPreviewBuildId++;
+    this.htmlPreviewRefreshPending = undefined;
+    this.htmlPreviewPendingUpdate?.resolve(false);
+    this.htmlPreviewPendingUpdate = undefined;
+  }
+
+  /** Guards all asynchronous boundaries against source switching, edits, and panel disposal. */
+  private isCurrentHtmlBuild(panel: vscode.WebviewPanel | undefined, document: vscode.TextDocument, version: number, buildId: number): boolean {
+    return Boolean(panel && panel === this.htmlPreviewPanel && buildId === this.htmlPreviewBuildId
+      && document.version === version && this.htmlPreviewDocumentUri && isSameUri(document.uri, this.htmlPreviewDocumentUri));
   }
 
   /**
@@ -328,8 +374,8 @@ export class PapperMarkdownPreviewController {
    * @param document Source Markdown document.
    * @param project Detected Papper project that bounds image resource access.
    */
-  private async updateHtmlPreviewPanel(html: string, document: vscode.TextDocument, project: PandocManuscriptProject, sourceVersion: number) {
-    if (!this.htmlPreviewPanel) {
+  private async updateHtmlPreviewPanel(html: string, document: vscode.TextDocument, project: PandocManuscriptProject, sourceVersion: number, buildId: number, panel: vscode.WebviewPanel) {
+    if (!this.isCurrentHtmlBuild(panel, document, sourceVersion, buildId)) {
       return;
     }
     const nonce = createNonce();
@@ -339,16 +385,17 @@ export class PapperMarkdownPreviewController {
       path.dirname(document.uri.fsPath),
       project.rootUri.fsPath,
       path.join(project.rootUri.fsPath, ".pmt", "cache", "html-preview", "metafile-svg"),
-      (filePath) => this.htmlPreviewPanel!.webview.asWebviewUri(vscode.Uri.file(filePath)).toString(),
+      (filePath) => panel.webview.asWebviewUri(vscode.Uri.file(filePath)).toString(),
       this.output,
     );
 
-    const rewrittenHtml = rewriteHtmlResourceUris(cachedHtml.html, this.htmlPreviewPanel.webview, path.dirname(document.uri.fsPath));
+    if (!this.isCurrentHtmlBuild(panel, document, sourceVersion, buildId)) return;
+    const rewrittenHtml = rewriteHtmlResourceUris(cachedHtml.html, panel.webview, path.dirname(document.uri.fsPath));
     if (countHtmlElements(html, "style") !== countHtmlElements(rewrittenHtml, "style")) {
       this.output.appendLine(`[HTML] Preserving Pandoc styles failed: style element count changed for ${document.uri.fsPath}`);
       return;
     }
-    const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, this.htmlPreviewPanel.webview.cspSource);
+    const preparedHtml = injectHtmlPreviewBridge(rewrittenHtml, nonce, panel.webview.cspSource);
     this.output.appendLine(`[HTML][performance] resourcePrep=${(performance.now() - started).toFixed(1)} ms;metafilesConverted=${cachedHtml.converted};metafilesReused=${cachedHtml.reused}`);
     if (document.version !== sourceVersion) return;
     this.htmlPreviewSourceVersion = sourceVersion;
@@ -358,18 +405,20 @@ export class PapperMarkdownPreviewController {
       const confirmation = new Promise<boolean>((resolve) => {
         this.htmlPreviewPendingUpdate = { token, resolve };
       });
-      const delivered = await this.htmlPreviewPanel.webview.postMessage({ type: "replacePreviewHtml", html: preparedHtml, token });
+      const delivered = await panel.webview.postMessage({ type: "replacePreviewHtml", html: preparedHtml, token });
+      if (!this.isCurrentHtmlBuild(panel, document, sourceVersion, buildId)) return;
       const confirmed = delivered && await waitForWebviewUpdate(confirmation);
+      if (!this.isCurrentHtmlBuild(panel, document, sourceVersion, buildId)) return;
       if (!confirmed) {
         if (this.htmlPreviewPendingUpdate?.token === token) {
           this.htmlPreviewPendingUpdate = undefined;
         }
         this.output.appendLine("[HTML] Incremental preview update timed out; reloading the WebView.");
         this.htmlPreviewWebviewReady = false;
-        this.htmlPreviewPanel.webview.html = preparedHtml;
+        panel.webview.html = preparedHtml;
       }
     } else {
-      this.htmlPreviewPanel.webview.html = preparedHtml;
+      panel.webview.html = preparedHtml;
     }
     const sourceEditor = vscode.window.visibleTextEditors.find((editor) => isSameUri(editor.document.uri, document.uri));
     if (!updateExistingWebview && sourceEditor) {

@@ -72,6 +72,7 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `pandocManuscriptTools.enableParagraphHoverTranslation`: show a translation for eligible English Markdown paragraphs and code comments, using Google Translate when available and Microsoft Translator as a fallback.
 - `pandocManuscriptTools.paragraphHoverTranslationMaxCharacters`: maximum English paragraph length, in characters, that can request a paragraph hover translation.
 - `pandocManuscriptTools.paragraphHoverTranslationTargetLanguage`: target language code for paragraph hover translations, for example `zh` or `zh-TW`.
+- `pandocManuscriptTools.debugParagraphHoverTranslation`: log complete translation requests and responses for debugging. Defaults to `false`; normal logs show the engine, character counts, timing, and failures.
 - `pandocManuscriptTools.imageDirectoryPreviewScanDepth`: maximum subfolder depth for Image Directory Preview. `-1` (default) scans all nested folders, `0` scans only the selected folder, and a positive integer scans that many subfolder levels.
 - `pandocManuscriptTools.imageDirectoryPreviewIncludedFolderKeywords`: optional case-insensitive keywords; when set, only image folders whose root-relative path contains one of these keywords are included.
 - `pandocManuscriptTools.imageDirectoryPreviewExcludedFolderKeywords`: optional case-insensitive keywords; matching folders are skipped, and exclusion takes precedence over inclusion.
