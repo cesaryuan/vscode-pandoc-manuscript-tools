@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, manuscriptStyles));
   context.subscriptions.push(vscode.commands.registerCommand(SET_MANUSCRIPT_STYLE_COMMAND,
     /** Resolves the resource encoded in the hover link even when another editor is active. */
-    (uriText: unknown, styleName: unknown) => manuscriptStyles.setStyle(uriText, styleName)));
+    (uriText: unknown, styleName: unknown, styleType: unknown) => manuscriptStyles.setStyle(uriText, styleName, styleType)));
   context.subscriptions.push(vscode.languages.registerHoverProvider({ language: "*" }, commentHoverProvider));
   context.subscriptions.push(vscode.window.registerCustomEditorProvider(METAFILE_PREVIEW_EDITOR_VIEW_TYPE, metafilePreviewEditorProvider, {
     webviewOptions: {

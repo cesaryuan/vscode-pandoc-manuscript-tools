@@ -40,3 +40,7 @@ export const DOCX_STYLE_FIELDS: Record<string, StyleField> = {
   },
   font: { description: "兼容旧配置的字体对象", children: { family: { description: "兼容旧配置的字体名称" } } },
 };
+
+/** Character styles support typography; paragraph spacing, alignment and indentation belong to Div styles. */
+export const CHARACTER_STYLE_FIELDS: Record<string, StyleField> = Object.fromEntries(
+  ["fontFamily", "fontName", "fontSize", "fontColor", "bold", "font"].map((key) => [key, DOCX_STYLE_FIELDS[key]]));

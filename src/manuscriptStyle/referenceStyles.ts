@@ -2,7 +2,8 @@ import { unzipSync, strFromU8 } from "fflate";
 import { DOMParser } from "@xmldom/xmldom";
 
 export type DocxStyleValues = Record<string, string | number | boolean | Record<string, string | number>>;
-export type ReferenceStyle = { id: string; name: string; values: DocxStyleValues; notes: Record<string, string> };
+export type DocxStyleType = "paragraph" | "character";
+export type ReferenceStyle = { id: string; name: string; type: DocxStyleType; values: DocxStyleValues; notes: Record<string, string> };
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 type XmlElement = ReturnType<DOMParser["parseFromString"]>["documentElement"];
@@ -47,7 +48,7 @@ function themeFont(theme: XmlElement | undefined, binding: string, eastAsianLang
 }
 
 /** Extracts inherited formatting and reports Word settings Papper cannot express faithfully. */
-function readValues(properties: Map<string, XmlElement>, theme: XmlElement | undefined, themeLanguage: string): Pick<ReferenceStyle, "values" | "notes"> {
+function readValues(properties: Map<string, XmlElement>, theme: XmlElement | undefined, themeLanguage: string, type: DocxStyleType): Pick<ReferenceStyle, "values" | "notes"> {
   const values: DocxStyleValues = {};
   const notes: Record<string, string> = {};
   const fonts = properties.get("rFonts");
@@ -63,7 +64,7 @@ function readValues(properties: Map<string, XmlElement>, theme: XmlElement | und
   const size = attribute(properties.get("sz"), "val");
   if (size !== undefined) values.fontSize = units(size, 2);
   const bold = properties.get("b");
-  values.bold = Boolean(bold && !/^(?:0|false|off)$/i.test(attribute(bold, "val") ?? "true"));
+  if (bold || type === "paragraph") values.bold = Boolean(bold && !/^(?:0|false|off)$/i.test(attribute(bold, "val") ?? "true"));
   const color = attribute(properties.get("color"), "val");
   if (color && /^[\da-f]{6}$/i.test(color)) values.fontColor = `#${color.toUpperCase()}`;
   else notes.fontColor = color === "auto" ? "auto（Word 自动颜色）" : "未指定（Word 自动颜色）";
@@ -73,6 +74,8 @@ function readValues(properties: Map<string, XmlElement>, theme: XmlElement | und
     delete values.fontColor;
     notes.fontColor = `主题 ${colorTheme}（保留主题颜色）`;
   }
+  // Inline styles overlay their containing paragraph; absent run properties must keep inheriting from it.
+  if (type === "character") return { values, notes };
   const justification = attribute(properties.get("jc"), "val") ?? "left";
   const alignment = ({ both: "justify", start: "left", end: "right" } as Record<string, string>)[justification] ?? justification;
   if (["left", "center", "right", "justify", "distribute"].includes(alignment)) values.alignment = alignment;
@@ -112,7 +115,7 @@ function readValues(properties: Map<string, XmlElement>, theme: XmlElement | und
   return { values, notes };
 }
 
-/** Parses actual reference DOCX styles, resolving basedOn chains and document defaults. */
+/** Parses paragraph and character reference styles, retaining contextual inheritance for inline text. */
 export function readReferenceStyles(docx: Uint8Array): ReferenceStyle[] {
   const files = unzipSync(docx, { filter: (entry) => ["word/styles.xml", "word/theme/theme1.xml", "word/settings.xml"].includes(entry.name) });
   /** Parses only trusted-format XML entries and rejects malformed reference documents. */
@@ -125,8 +128,9 @@ export function readReferenceStyles(docx: Uint8Array): ReferenceStyle[] {
   if (!styles || styles.localName !== "styles" || styles.namespaceURI !== WORD_NS) throw new Error("Reference DOCX has no valid word/styles.xml");
   const theme = parseXml("word/theme/theme1.xml");
   const settings = parseXml("word/settings.xml");
-  const themeLanguage = attribute(settings?.getElementsByTagNameNS(WORD_NS, "themeFontLang").item(0), "eastAsia") ?? "";
   const defaults = child(styles, "docDefaults");
+  const themeLanguage = attribute(settings?.getElementsByTagNameNS(WORD_NS, "themeFontLang").item(0), "eastAsia")
+    ?? attribute(child(child(child(defaults, "rPrDefault"), "rPr"), "lang"), "eastAsia") ?? "";
   const definitions = new Map<string, XmlElement>();
   const styleNodes = styles.getElementsByTagNameNS(WORD_NS, "style");
   for (let index = 0; index < styleNodes.length; index += 1) {
@@ -168,24 +172,28 @@ export function readReferenceStyles(docx: Uint8Array): ReferenceStyle[] {
     const definition = definitions.get(id);
     const parent = attribute(child(definition, "basedOn"), "val");
     const properties = parent && definitions.has(parent) ? resolve(parent, visiting) : new Map<string, XmlElement>();
-    if (!parent || !definitions.has(parent)) {
+    if ((!parent || !definitions.has(parent)) && attribute(definition, "type") !== "character") {
       mergeProperties(properties, child(child(defaults, "pPrDefault"), "pPr"));
       mergeProperties(properties, child(child(defaults, "rPrDefault"), "rPr"));
     }
-    mergeProperties(properties, child(definition, "pPr"));
+    if (attribute(definition, "type") !== "character") mergeProperties(properties, child(definition, "pPr"));
     mergeProperties(properties, child(definition, "rPr"));
     visiting.delete(id);
     return properties;
   };
-  return [...definitions].filter(([, definition]) => attribute(definition, "type") === "paragraph")
-    .map(([id, definition]) => ({ id, name: attribute(child(definition, "name"), "val") ?? id, ...readValues(resolve(id), theme, themeLanguage) }));
+  return [...definitions].filter(([, definition]) => ["paragraph", "character"].includes(attribute(definition, "type")))
+    .map(([id, definition]) => {
+      const type = attribute(definition, "type") as DocxStyleType;
+      return { id, name: attribute(child(definition, "name"), "val") ?? id, type, ...readValues(resolve(id), theme, themeLanguage, type) };
+    });
 }
 
 /** Matches Word built-ins by ID or translated name, while preserving exact custom names. */
-export function findReferenceStyle(styles: ReferenceStyle[], requested: string): ReferenceStyle | undefined {
+export function findReferenceStyle(styles: ReferenceStyle[], requested: string, type: DocxStyleType = "paragraph"): ReferenceStyle | undefined {
+  const candidates = styles.filter((style) => style.type === type);
   const aliases: Record<string, string> = { 正文文本: "BodyText", 正文: "Normal" };
   const heading = requested.match(/^(?:标题|Heading)\s*(\d)$/i);
   const id = heading ? `Heading${heading[1]}` : aliases[requested] ?? requested.replace(/\s/g, "");
-  return styles.find((style) => style.name === requested)
-    ?? styles.find((style) => style.id.toLowerCase() === id.toLowerCase() || style.name.replace(/\s/g, "").toLowerCase() === id.toLowerCase());
+  return candidates.find((style) => style.name === requested)
+    ?? candidates.find((style) => style.id.toLowerCase() === id.toLowerCase() || style.name.replace(/\s/g, "").toLowerCase() === id.toLowerCase());
 }

@@ -9,7 +9,8 @@ import { findPandocManuscriptProject, findExistingPapperExecutable, preparePappe
 
 export const SET_MANUSCRIPT_STYLE_COMMAND = "pandocManuscriptTools.setManuscriptStyle";
 type CacheRecord = { fingerprint: string; styles: ReferenceStyle[] };
-const CACHE_VERSION = "reference-styles-v1";
+// Older persisted results omitted character styles and their type information.
+const CACHE_VERSION = "reference-styles-v2";
 
 /** Caches effective reference formatting per document and deduplicates simultaneous first exports. */
 export class ReferenceStyleCache {
@@ -78,7 +79,8 @@ export class ReferenceStyleCache {
     try {
       const cached = JSON.parse(await fs.readFile(cachePath, "utf8")) as CacheRecord;
       if (cached.fingerprint === inputs.fingerprint && Array.isArray(cached.styles) && cached.styles.length
-        && cached.styles.every((style) => typeof style.name === "string" && typeof style.id === "string" && style.values && style.notes)) {
+        && cached.styles.every((style) => typeof style.name === "string" && typeof style.id === "string"
+          && ["paragraph", "character"].includes(style.type) && style.values && style.notes)) {
         this.output.appendLine(`[Styles] Loaded cached reference styles: ${document.uri.fsPath}`);
         return cached.styles;
       }
@@ -102,7 +104,7 @@ export class ReferenceStyleCache {
         throw error;
       }
       const styles = readReferenceStyles(await fs.readFile(exported));
-      if (!styles.length) throw new Error("导出的 reference DOCX 中没有段落样式");
+      if (!styles.length) throw new Error("导出的 reference DOCX 中没有段落或字符样式");
       try {
         await fs.mkdir(this.storage, { recursive: true });
         const temporaryCache = `${cachePath}.${randomUUID()}.tmp`;
@@ -116,7 +118,7 @@ export class ReferenceStyleCache {
         // A read-only/full storage directory should not prevent the current in-memory style edit.
         this.output.appendLine(`[Styles] Could not persist reference styles: ${String(error)}`);
       }
-      this.output.appendLine(`[Styles] Cached ${styles.length} paragraph styles: ${document.uri.fsPath}`);
+      this.output.appendLine(`[Styles] Cached ${styles.length} text styles: ${document.uri.fsPath}`);
       return styles;
     } finally {
       await fs.rm(snapshot, { force: true }).catch((error) => this.output.appendLine(`[Styles] Snapshot cleanup failed: ${String(error)}`));
@@ -150,21 +152,34 @@ export class ManuscriptStyleController implements vscode.HoverProvider {
         this.targets.set(document, targets);
       }
     } catch { return undefined; } // Incomplete YAML should remain editable without background errors.
-    const target = [...targets.entries].reverse().find((entry) => position.line >= entry.line && position.line <= entry.endLine
+    const matching = targets.entries.filter((entry) => position.line >= entry.line && position.line <= entry.endLine
       && (position.line !== entry.line || position.character >= entry.startCharacter)
       && (position.line !== entry.endLine || position.character <= entry.endCharacter));
-    if (!target || token.isCancellationRequested) return undefined;
+    if (!matching.length || token.isCancellationRequested) return undefined;
+    const base = [...matching].reverse().find((entry) => !entry.custom);
+    const actions = [...(base ? [base] : []), ...matching.filter((entry) => entry.custom)];
+    const unique = actions.filter((entry, index) => actions.findIndex((candidate) => candidate.name === entry.name && candidate.type === entry.type) === index);
     const markdown = new vscode.MarkdownString();
     markdown.isTrusted = { enabledCommands: [SET_MANUSCRIPT_STYLE_COMMAND] };
-    const args = encodeURIComponent(JSON.stringify([document.uri.toString(), target.name]));
-    markdown.appendMarkdown(`[Papper: 设置 ${escapeMarkdownText(target.name)} 的样式](command:${SET_MANUSCRIPT_STYLE_COMMAND}?${args})`);
-    return new vscode.Hover(markdown, new vscode.Range(target.line, target.startCharacter, target.endLine, target.endCharacter));
+    markdown.appendMarkdown("Papper: ");
+    for (const [index, target] of unique.entries()) {
+      const args = encodeURIComponent(JSON.stringify(target.custom ? [document.uri.toString(), target.name, target.type] : [document.uri.toString(), target.name]));
+      if (index) markdown.appendMarkdown(" | ");
+      markdown.appendMarkdown(`[设置 ${escapeMarkdownText(target.name)} 的样式](command:${SET_MANUSCRIPT_STYLE_COMMAND}?${args})`);
+    }
+    // Restrict the hover to the intersection so an inline action disappears when the mouse leaves its span.
+    const startLine = Math.max(...unique.map((entry) => entry.line));
+    const endLine = Math.min(...unique.map((entry) => entry.endLine));
+    const startCharacter = Math.max(...unique.filter((entry) => entry.line === startLine).map((entry) => entry.startCharacter));
+    const endCharacter = Math.min(...unique.filter((entry) => entry.endLine === endLine).map((entry) => entry.endCharacter));
+    return new vscode.Hover(markdown, new vscode.Range(startLine, startCharacter, endLine, endCharacter));
   }
 
   /** Inserts the clicked element's effective defaults in a single undoable frontmatter edit. */
-  async setStyle(uriText: unknown, requested: unknown): Promise<void> {
+  async setStyle(uriText: unknown, requested: unknown, type: unknown = "paragraph"): Promise<void> {
     try {
       if (typeof uriText !== "string" || typeof requested !== "string" || requested.length > 200) throw new Error("无效的样式设置请求");
+      if (type !== "paragraph" && type !== "character") throw new Error("无效的样式类型");
       const uri = vscode.Uri.parse(uriText);
       if (uri.scheme !== "file") throw new Error("样式设置仅支持本地 Markdown 文档");
       const document = await vscode.workspace.openTextDocument(uri);
@@ -174,12 +189,14 @@ export class ManuscriptStyleController implements vscode.HoverProvider {
         /** Retries export failures only after the user explicitly clicks the style action. */
         () => this.cache.get(document, true));
       if (originalHeader !== getYamlHeader(document.getText())?.content) throw new Error("读取期间 YAML header 已改变，请重新点击样式按钮");
-      const style = findReferenceStyle(styles, requested);
-      if (!style) throw new Error(`当前 reference DOCX 不包含 ${requested} 样式`);
+      // Missing custom styles use effective body defaults; character actions filter out paragraph-only properties below.
+      const style = findReferenceStyle(styles, requested, type)
+        ?? findReferenceStyle(styles, "正文文本") ?? findReferenceStyle(styles, "正文");
+      if (!style) throw new Error("当前 reference DOCX 缺少正文默认样式，无法读取继承配置");
       const editor = await vscode.window.showTextDocument(document, { preview: false });
       if (originalHeader !== getYamlHeader(document.getText())?.content) throw new Error("读取期间 YAML header 已改变，请重新点击样式按钮");
       const before = document.getText();
-      const result = addManuscriptStyle(before, requested, style.values);
+      const result = addManuscriptStyle(before, requested, style.values, type);
       const updatedHeader = getYamlHeader(result.text);
       if (before !== result.text) {
         const oldHeader = getYamlHeader(before);
@@ -192,7 +209,7 @@ export class ManuscriptStyleController implements vscode.HoverProvider {
           /** Adds only the frontmatter as one Undo operation. */
           (edit) => edit.replace(range, replacement), { undoStopBefore: true, undoStopAfter: true });
         if (!applied) throw new Error("VS Code 拒绝了 YAML header 编辑");
-        this.output.appendLine(`[Styles] Added missing ${result.styleName} defaults: ${document.uri.fsPath}`);
+        this.output.appendLine(`[Styles] Added missing ${result.styleName} settings: ${document.uri.fsPath}`);
       }
       const source = document.getText();
       const offset = source.indexOf(result.styleName, getYamlHeader(source).start);

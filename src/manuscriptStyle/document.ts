@@ -1,9 +1,9 @@
 import { isAlias, isMap, isScalar, Pair, parseDocument, YAMLMap } from "yaml";
 import { collectMarkdownCodeSpanRanges, parsePandocDocument } from "../parser";
-import { DOCX_STYLE_FIELDS, type StyleField } from "./fields";
-import type { DocxStyleValues } from "./referenceStyles";
+import { CHARACTER_STYLE_FIELDS, DOCX_STYLE_FIELDS, type StyleField } from "./fields";
+import type { DocxStyleType, DocxStyleValues } from "./referenceStyles";
 
-export type StyleTarget = { name: string; line: number; endLine: number; startCharacter: number; endCharacter: number };
+export type StyleTarget = { name: string; type: DocxStyleType; custom?: boolean; line: number; endLine: number; startCharacter: number; endCharacter: number };
 export type YamlHeader = { start: number; end: number; content: string; bodyStart: number };
 
 /** Finds the leading YAML header; language help may opt into an unfinished header while typing. */
@@ -21,13 +21,26 @@ export function getYamlHeader(text: string, allowIncomplete = false): YamlHeader
   return { start: opening[0].length, end: match.index, content: text.slice(opening[0].length, match.index), bodyStart: match.index + match[0].length };
 }
 
+/** Reads one unambiguous custom-style attribute without treating text inside other quoted attributes as keys. */
+function customStyleName(attributes: string): string | undefined {
+  const names: string[] = [];
+  const pattern = /(?:^|[\s{])([\w-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^\s{}]+))/g;
+  for (const match of attributes.matchAll(pattern)) {
+    if (match[1] === "custom-style") names.push((match[2] ?? match[3] ?? match[4]).replace(/\\(["'\\])/g, "$1"));
+  }
+  return names.length === 1 && names[0].trim() ? names[0] : undefined;
+}
+
 /** Finds eligible source blocks without offering prose styles inside code, comments, YAML or math. */
 export function getManuscriptStyleTargets(text: string): StyleTarget[] {
-  const header = getYamlHeader(text);
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
-  const parsed = parsePandocDocument(text.replace(/^\uFEFF/, ""));
+  const sourceText = text.replace(/^\uFEFF/, "");
+  const header = getYamlHeader(sourceText);
+  const lines = sourceText.split(/\r?\n/);
+  // Mask metadata without shifting source positions: the shared scanner only recognizes --- as a YAML close.
+  const parsed = parsePandocDocument(header ? sourceText.slice(0, header.bodyStart).replace(/[^\r\n]/g, " ") + sourceText.slice(header.bodyStart) : sourceText);
   const targets: StyleTarget[] = [];
-  const headerEndLine = header ? text.slice(0, header.bodyStart).split(/\r?\n/).length - 1 : 0;
+  const eligibleLines = new Set<number>();
+  const headerEndLine = header ? sourceText.slice(0, header.bodyStart).split(/\r?\n/).length - 1 : 0;
   let fence = "";
   let comment = false;
   let displayMath = false;
@@ -50,6 +63,7 @@ export function getManuscriptStyleTargets(text: string): StyleTarget[] {
       continue;
     }
     if (displayMath || /^ {4}|^\t/.test(source)) continue;
+    eligibleLines.add(line);
     if (!trimmed) { gridTable = false; continue; }
     if (/^(?::{3,}|<\/?(?:div|table|thead|tbody|tr)\b|<\/?figure\b)/i.test(trimmed)) continue;
     const heading = parsed.headings.find((entry) => entry.line === line);
@@ -71,21 +85,31 @@ export function getManuscriptStyleTargets(text: string): StyleTarget[] {
       else name = "正文文本";
     }
     const endLine = setext && !heading ? line + 1 : line;
-    const custom = [...parsed.fencedDivs].reverse().find((div) => div.range.start.line < line && div.range.end.line > line
-      && /(?:^|[\s{])custom-style\s*=/.test(div.attributes));
-    const customName = custom?.attributes.match(/custom-style\s*=\s*["']([^"']+)["']/)?.[1];
-    if (customName && name === "正文文本") name = customName;
     const cellStyle = source.match(/custom-text-style\s*=\s*["']([^"']+)["']/)?.[1];
     if (cellStyle && name === "Table Text") name = cellStyle;
-    targets.push({ name, line, endLine, startCharacter: 0, endCharacter: lines[endLine].length });
+    targets.push({ name, type: "paragraph", line, endLine, startCharacter: 0, endCharacter: lines[endLine].length });
     // Images inside prose expose their caption action only over the image token.
     const images = /!\[(?:[^\]\\]|\\.)*\](?:\([^\n]*?\)|\[[^\]\n]*\])(?:\{[^}\n]*\})?/g;
     const literalRanges = collectMarkdownCodeSpanRanges(source);
     for (const image of source.matchAll(images)) {
       if (literalRanges.some((range) => image.index >= range.start && image.index < range.end) || /\\$/.test(source.slice(0, image.index))) continue;
-      targets.push({ name: "Image Caption", line, endLine: line, startCharacter: image.index, endCharacter: image.index + image[0].length });
+      targets.push({ name: "Image Caption", type: "paragraph", line, endLine: line, startCharacter: image.index, endCharacter: image.index + image[0].length });
     }
-    if (endLine > line) line = endLine;
+    if (endLine > line) { eligibleLines.add(endLine); line = endLine; }
+  }
+  // Div actions augment the source element's usual action, including fences and nested styled Divs.
+  for (const div of parsed.fencedDivs) {
+    const name = customStyleName(div.attributes);
+    if (!name) continue;
+    for (let line = div.range.start.line; line <= div.range.end.line; line += 1) {
+      if (eligibleLines.has(line)) targets.push({ name, type: "paragraph", custom: true, line, endLine: line, startCharacter: 0, endCharacter: lines[line].length });
+    }
+  }
+  for (const span of parsed.spans) {
+    const name = customStyleName(span.attributes);
+    if (!name || !eligibleLines.has(span.line)) continue;
+    targets.push({ name, type: "character", custom: true, line: span.range.start.line, endLine: span.range.end.line,
+      startCharacter: span.range.start.character, endCharacter: span.range.end.character });
   }
   return targets;
 }
@@ -103,7 +127,7 @@ function sameField(left: string, right: string): boolean {
 }
 
 /** Adds a concrete style block in one YAML edit without overwriting user values or comments. */
-export function addManuscriptStyle(text: string, name: string, defaults: DocxStyleValues): { text: string; styleName: string } {
+export function addManuscriptStyle(text: string, name: string, defaults: DocxStyleValues, type: DocxStyleType = "paragraph"): { text: string; styleName: string } {
   const header = getYamlHeader(text);
   const yaml = parseDocument(header?.content ?? "");
   if (yaml.errors.length) throw new Error(`YAML header 无法解析：${yaml.errors[0].message}`);
@@ -137,6 +161,7 @@ export function addManuscriptStyle(text: string, name: string, defaults: DocxSty
     const indentationPair = root.items.find((entry) => isScalar(entry.key) && sameField(String(entry.key.value), "indentation"));
     for (const [key, value] of Object.entries(source)) {
       const field = fields[key];
+      if (!field) continue; // Inline style actions must not insert paragraph fields even from an unexpected reference/cache.
       if (has(target, key)) {
         const pair = target.items.find((entry) => isScalar(entry.key) && sameField(String(entry.key.value), key));
         if (isMap(pair.value) && value && typeof value === "object") {
@@ -166,7 +191,7 @@ export function addManuscriptStyle(text: string, name: string, defaults: DocxSty
       }
     }
   };
-  fill(style, defaults);
+  fill(style, defaults, style, type === "character" ? CHARACTER_STYLE_FIELDS : DOCX_STYLE_FIELDS);
   // Re-serializing an unchanged header can relocate map-key comments; repeated clicks must be a no-op.
   if (!changed) return { text, styleName };
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
