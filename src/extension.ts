@@ -19,6 +19,7 @@ import { CustomImagePreviewContext } from "./customImagePreviewContext";
 import { NumberingInlayHints } from "./numberingInlayHints";
 import { PapperUpdateChecker } from "./papperUpdateChecker";
 import { installOrUpdatePapper } from "./papperBuildUtils";
+import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -76,6 +77,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(PANDOC_SELECTOR, new PandocFoldingRangeProvider(index)));
   context.subscriptions.push(vscode.languages.registerInlayHintsProvider(PANDOC_SELECTOR, numberingInlayHints));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
+  context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
@@ -99,6 +102,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand(BUILD_HTML_COMMAND, async (uri: vscode.Uri | undefined) => {
     await markdownPreview.buildActiveMarkdownHtml(uri);
   }));
+  context.subscriptions.push(vscode.commands.registerCommand("pandocManuscriptTools.mergeStyleExample",
+    /** Applies the example to the CodeLens resource, including inactive editor groups. */
+    async (uri: vscode.Uri | undefined) => {
+      try {
+        const document = uri ? await vscode.workspace.openTextDocument(uri) : vscode.window.activeTextEditor?.document;
+        if (!document || !isStyleConfigurationDocument(document)) {
+          void vscode.window.showWarningMessage("请先打开 style.yml 或 style.yaml 配置文件");
+          return;
+        }
+        const editor = await vscode.window.showTextDocument(document, { preview: false });
+        const examplePath = vscode.Uri.joinPath(context.extensionUri, "assets", "style-project.yml").fsPath;
+        await mergeStyleExampleIntoEditor(editor, examplePath, output);
+      } catch (error) {
+        output.appendLine(`Could not merge the style example: ${String(error)}`);
+        void vscode.window.showErrorMessage(`合并示例配置失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }));
   /** Installs or updates Papper and refreshes features without reopening the Markdown editor. */
   context.subscriptions.push(vscode.commands.registerCommand(INSTALL_OR_UPDATE_PAPPER_COMMAND, async () => {
     output.show(true);

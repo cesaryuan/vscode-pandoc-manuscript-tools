@@ -19,6 +19,8 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Inline folding for quoted line annotations such as ``(Line `quoted text`)``; moving the cursor into the code span temporarily reveals the excerpt for editing.
 - Inline folding for the attribute block in `[revised text]{custom-style="Revision Char"}` spans; other custom styles remain visible.
 - Completion suggestions after `@` using labels found in the current Markdown document.
+- Context-aware YAML key and value completions for `style.yml`, including `pandocMetadata`, `reply`, named DOCX styles and inline mappings, with Chinese descriptions.
+- A **Papper: 合并示例配置** text action above style YAML that recursively adds missing example settings while retaining existing values and comments.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - Inlay hints for section, display-equation, labeled figure, and labeled table numbers resolved by Papper's processed Pandoc AST.
 - A DOCX build button for any saved Markdown file, with each build written to a unique OS temporary directory and opened in Word. The Papper HTML preview button accepts any saved Markdown file when `papper` is on PATH or `uv` is available to install it, and renders its current unsaved changes.
@@ -55,7 +57,16 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `Papper Tools: Rebuild Index`
 - `Papper Tools: Build DOCX and Open in Word`
 - `Papper Tools: Install or Update Papper`
+- `Papper Tools: Merge Style Example`
 - `View Images` (Explorer folder context menu)
+
+## Style Configuration Editing
+
+Open `style.yml`, `style.yaml`, `style-project.yml` or `style-project.yaml` in a YAML editor. Type a configuration key, or press `Ctrl+Space`, to see Papper settings with Chinese descriptions. Value suggestions include booleans, MathType backends, line numbering, table autofit and DOCX text formatting. Nested suggestions follow `pandocMetadata`, `reply`, named `docxStyle` entries and their font, indentation and paragraph-spacing blocks. Arbitrary Word style names are supported. Existing keys, including configuration aliases, are omitted from new-key suggestions.
+
+Click **Papper: 合并示例配置** above the first line to merge the bundled Papper project starter into the current editor buffer. This action requires VS Code's `editor.codeLens` setting to be enabled; the same action is available as `Papper Tools: Merge Style Example` in the Command Palette. The starter is bundled from Papper's `template/style-project.yml`, so editing does not require Papper to be installed or its repository to be available.
+
+The merge adds missing settings recursively. Existing values, including `false`, `null`, arrays and scalar font overrides, take priority. Commented optional examples remain comments and are not enabled. Existing comments and YAML anchors are retained, although YAML indentation and spacing may be normalized. The edit is not automatically saved and can be reversed with one Undo. Applying the same starter again makes no changes. Invalid YAML, duplicate keys, multiple YAML documents and a non-mapping root are rejected before editing.
 
 ## Settings
 

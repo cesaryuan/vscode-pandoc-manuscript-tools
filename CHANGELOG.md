@@ -6,6 +6,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Add context-aware Papper style YAML completions and a top-of-editor CodeLens action that merges the bundled example without overwriting existing values or enabling commented settings.
 - Translate nearby English code comment paragraphs using built-in and installed language extensions' comment delimiters, without querying language servers or parsing whole documents.
 - Support standalone and trailing line comments, block comment paragraphs, and Python triple-quoted text, including short English comments.
 
