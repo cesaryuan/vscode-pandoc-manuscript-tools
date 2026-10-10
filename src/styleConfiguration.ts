@@ -21,7 +21,7 @@ const STYLE_FILE_NAMES = new Set(["style.yml", "style.yaml", "style-project.yml"
 
 const BOOLEAN_VALUES = ["true", "false"] as const;
 
-const PANDOC_METADATA_FIELDS: Record<string, StyleField> = {
+export const PANDOC_METADATA_FIELDS: Record<string, StyleField> = {
   figureTitle: { description: "图题前缀" },
   tableTitle: { description: "表题前缀" },
   titleDelim: { description: "编号和题注之间的分隔符" },
@@ -46,7 +46,7 @@ const PANDOC_METADATA_FIELDS: Record<string, StyleField> = {
   lang: { description: "文档语言，例如 zh-CN 或 en-US" },
 };
 
-const STYLE_FIELDS: Record<string, StyleField> = {
+export const STYLE_FIELDS: Record<string, StyleField> = {
   mathtype: { description: "是否将 DOCX 公式转换为可编辑 MathType 公式", values: BOOLEAN_VALUES },
   mathtypeConversionMethod: { description: "MathType 转换后端", values: ["rust", "rust-sdk", "set-data", "auto", "both"] },
   mathtypeSvgBackend: { description: "MathType 公式 SVG 渲染器", values: ["ratex", "typst"] },
@@ -99,8 +99,8 @@ export function isStyleConfigurationDocument(document: vscode.TextDocument): boo
 }
 
 /** Returns a field schema for a nested completion path. */
-function fieldsAtPath(pathParts: string[]): Record<string, StyleField> | undefined {
-  let fields: Record<string, StyleField> | undefined = STYLE_FIELDS;
+function fieldsAtPath(pathParts: string[], rootFields: Record<string, StyleField> = STYLE_FIELDS): Record<string, StyleField> | undefined {
+  let fields: Record<string, StyleField> | undefined = rootFields;
   for (let index = 0; index < pathParts.length; index += 1) {
     if (!fields) return undefined;
     const field = fields[canonicalField(pathParts[index], fields)];
@@ -113,6 +113,8 @@ function fieldsAtPath(pathParts: string[]): Record<string, StyleField> | undefin
       continue;
     }
     if (!field?.children) return undefined;
+    // Author lists contain mapping items; their sequence index is not a configuration key.
+    if (field.sequenceItems && /^\d+$/.test(pathParts[index + 1] ?? "")) index += 1;
     fields = field.children;
   }
   return fields;
@@ -125,7 +127,8 @@ const COMPLETION_MARKER = "__papper_style_completion__";
 
 /** Locates the YAML token under the cursor without crossing comments or quoted delimiters. */
 function completionSegment(text: string, offset: number): CompletionSegment | undefined {
-  const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
+  // lastIndexOf clamps a negative position to zero, which would skip a leading blank line.
+  const lineStart = offset === 0 ? 0 : text.lastIndexOf("\n", offset - 1) + 1;
   let quote = "";
   let start = lineStart;
   let isValue = false;
@@ -145,6 +148,11 @@ function completionSegment(text: string, offset: number): CompletionSegment | un
     else if (char === ":" && (!text[index + 1] || /[\s{\[]/.test(text[index + 1]))) { start = index + 1; isValue = true; }
   }
   while (start < offset && /[ \t]/.test(text[start])) start += 1;
+  // A block sequence item's dash precedes its first mapping key, e.g. `- name: Author`.
+  if (text.slice(start, start + 2) === "- ") {
+    start += 2;
+    while (start < offset && /[ \t]/.test(text[start])) start += 1;
+  }
   if (/^[-&*!|>\[\]}]/.test(text.slice(start, offset))) return undefined;
   let end = offset;
   for (; end < text.length && text[end] !== "\n" && text[end] !== "\r"; end += 1) {
@@ -161,6 +169,12 @@ function completionSegment(text: string, offset: number): CompletionSegment | un
 
 /** Finds the probe token's enclosing map and domain path in the YAML tree. */
 function findCompletionContext(node: unknown, pathParts: string[] = []): CompletionContext | undefined {
+  if (isSeq(node)) {
+    for (let index = 0; index < node.items.length; index += 1) {
+      const nested = findCompletionContext(node.items[index], [...pathParts, String(index)]);
+      if (nested) return nested;
+    }
+  }
   if (!isMap(node)) return undefined;
   for (const pair of node.items) {
     if (!isScalar(pair.key)) continue;
@@ -199,7 +213,7 @@ function conflictingKeys(existing: Set<string>): Set<string> {
 }
 
 /** Builds completion edits from a temporary YAML probe, including incomplete and flow maps. */
-export function getStyleSuggestions(text: string, offset: number): StyleSuggestion[] {
+export function getStyleSuggestions(text: string, offset: number, rootFields: Record<string, StyleField> = STYLE_FIELDS): StyleSuggestion[] {
   if (isMultilineScalarContent(text, offset)) return [];
   const segment = completionSegment(text, offset);
   if (!segment) return [];
@@ -208,7 +222,7 @@ export function getStyleSuggestions(text: string, offset: number): StyleSuggesti
   const parsed = parseDocument(text.slice(0, segment.start) + probe + text.slice(segment.end));
   const context = findCompletionContext(parsed.contents);
   if (!context) return [];
-  const fields = fieldsAtPath(context.path);
+  const fields = fieldsAtPath(context.path, rootFields);
   if (!fields) return [];
   const prefix = segment.prefix.toLowerCase();
   if (context.key) {
@@ -236,20 +250,24 @@ export class StyleConfigurationCompletionProvider implements vscode.CompletionIt
   /** Provides style keys or allowed scalar values at the cursor. */
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     if (!isStyleConfigurationDocument(document)) return undefined;
-    return getStyleSuggestions(document.getText(), document.offsetAt(position))
-      .map((suggestion) => {
-        const item = new vscode.CompletionItem(suggestion.label, suggestion.isValue ? vscode.CompletionItemKind.Value : vscode.CompletionItemKind.Property);
-        item.insertText = suggestion.insertText;
-        item.range = new vscode.Range(document.positionAt(suggestion.start), document.positionAt(suggestion.end));
-        // Show the setting's purpose in the suggestion row without requiring the details popup.
-        const valuesHint = suggestion.values?.length ? suggestion.values.join(" / ") : undefined;
-        item.detail = suggestion.description + (valuesHint ? `（${valuesHint}）` : "");
-        const documentation = new vscode.MarkdownString(suggestion.description);
-        if (valuesHint) documentation.appendText(`\n\n取值提示：${valuesHint}`);
-        item.documentation = documentation;
-        return item;
-      });
+    return createConfigurationCompletionItems(document, getStyleSuggestions(document.getText(), document.offsetAt(position)));
   }
+}
+
+/** Converts shared YAML suggestions to editor items using absolute source offsets. */
+export function createConfigurationCompletionItems(document: vscode.TextDocument, suggestions: StyleSuggestion[]): vscode.CompletionItem[] {
+  return suggestions.map((suggestion) => {
+    const item = new vscode.CompletionItem(suggestion.label, suggestion.isValue ? vscode.CompletionItemKind.Value : vscode.CompletionItemKind.Property);
+    item.insertText = suggestion.insertText;
+    item.range = new vscode.Range(document.positionAt(suggestion.start), document.positionAt(suggestion.end));
+    // Show the setting's purpose in the suggestion row without requiring the details popup.
+    const valuesHint = suggestion.values?.length ? suggestion.values.join(" / ") : undefined;
+    item.detail = suggestion.description + (valuesHint ? `（${valuesHint}）` : "");
+    const documentation = new vscode.MarkdownString(suggestion.description);
+    if (valuesHint) documentation.appendText(`\n\n取值提示：${valuesHint}`);
+    item.documentation = documentation;
+    return item;
+  });
 }
 
 export type StyleHoverInfo = {
@@ -262,25 +280,31 @@ export type StyleHoverInfo = {
 };
 
 /** Resolves a field's documentation, including arbitrary names under docxStyle. */
-function hoverField(pathParts: string[], key: string): StyleField | undefined {
-  const fields = fieldsAtPath(pathParts);
+function hoverField(pathParts: string[], key: string, rootFields: Record<string, StyleField>): StyleField | undefined {
+  const fields = fieldsAtPath(pathParts, rootFields);
   const field = fields?.[canonicalField(key, fields)];
   if (field) return field;
-  const ownerFields = fieldsAtPath(pathParts.slice(0, -1));
+  const ownerFields = fieldsAtPath(pathParts.slice(0, -1), rootFields);
   const owner = ownerFields?.[canonicalField(pathParts.at(-1) ?? "", ownerFields)];
   if (owner?.dynamicChildren) {
     return { description: "DOCX 段落或字符样式；按精确样式名称应用，可在本节设置字体、对齐、缩进和段落间距" };
   }
+  if (owner?.dynamicValueDescription) return { description: owner.dynamicValueDescription };
   return undefined;
 }
 
 /** Collects exact YAML token ranges so comments and surrounding whitespace have no field hover. */
-function collectStyleHovers(node: unknown, text: string, pathParts: string[], entries: StyleHoverInfo[]): void {
+function collectStyleHovers(node: unknown, text: string, pathParts: string[], entries: StyleHoverInfo[], rootFields: Record<string, StyleField>): void {
+  if (isSeq(node)) {
+    for (let index = 0; index < node.items.length; index += 1) {
+      collectStyleHovers(node.items[index], text, [...pathParts, String(index)], entries, rootFields);
+    }
+  }
   if (!isMap(node)) return;
   for (const pair of node.items) {
     if (!isScalar(pair.key)) continue;
     const key = String(pair.key.value);
-    const field = hoverField(pathParts, key);
+    const field = hoverField(pathParts, key, rootFields);
     if (field) {
       const value = pair.value;
       const valueRange = isScalar(value) || isMap(value) || isSeq(value) || isAlias(value) ? value.range : undefined;
@@ -291,7 +315,7 @@ function collectStyleHovers(node: unknown, text: string, pathParts: string[], en
       if (pair.key.range) entries.push({ ...info, start: pair.key.range[0], end: pair.key.range[1] });
       collectStyleValueHovers(value, info, entries);
     }
-    collectStyleHovers(pair.value, text, [...pathParts, key], entries);
+    collectStyleHovers(pair.value, text, [...pathParts, key], entries, rootFields);
   }
 }
 
@@ -305,11 +329,11 @@ function collectStyleValueHovers(node: unknown, info: Omit<StyleHoverInfo, "star
 }
 
 /** Builds documentation locations from the same field definitions used by completion. */
-export function getStyleHoverEntries(text: string): StyleHoverInfo[] {
+export function getStyleHoverEntries(text: string, rootFields: Record<string, StyleField> = STYLE_FIELDS): StyleHoverInfo[] {
   const entries: StyleHoverInfo[] = [];
   // Incomplete unrelated lines should not hide help for fields that still parse successfully.
   const document = parseDocument(text);
-  collectStyleHovers(document.contents, text, [], entries);
+  collectStyleHovers(document.contents, text, [], entries, rootFields);
   return entries;
 }
 
@@ -328,18 +352,23 @@ export class StyleConfigurationHoverProvider implements vscode.HoverProvider {
     const offset = document.offsetAt(position);
     const info = cached.entries.find((entry) => entry.start <= offset && offset < entry.end);
     if (!info) return undefined;
-    const markdown = new vscode.MarkdownString();
-    markdown.appendMarkdown("**Papper 配置帮助**\n\n");
-    markdown.appendText(info.description);
-    markdown.appendText("\n\n配置路径：");
-    markdown.appendCodeblock(info.path.join(" → "), "text");
-    if (info.values?.length) markdown.appendText(`\n\n取值提示：${info.values.join(" / ")}`);
-    if (info.currentValue !== undefined) {
-      markdown.appendText("\n\n当前配置：");
-      markdown.appendCodeblock(info.currentValue, "yaml");
-    }
-    return new vscode.Hover(markdown, new vscode.Range(document.positionAt(info.start), document.positionAt(info.end)));
+    return createConfigurationHover(document, info);
   }
+}
+
+/** Renders YAML field help safely for either a style file or a Markdown header. */
+export function createConfigurationHover(document: vscode.TextDocument, info: StyleHoverInfo): vscode.Hover {
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown("**Papper 配置帮助**\n\n");
+  markdown.appendText(info.description);
+  markdown.appendText("\n\n配置路径：");
+  markdown.appendCodeblock(info.path.join(" → "), "text");
+  if (info.values?.length) markdown.appendText(`\n\n取值提示：${info.values.join(" / ")}`);
+  if (info.currentValue !== undefined) {
+    markdown.appendText("\n\n当前配置：");
+    markdown.appendCodeblock(info.currentValue, "yaml");
+  }
+  return new vscode.Hover(markdown, new vscode.Range(document.positionAt(info.start), document.positionAt(info.end)));
 }
 
 /** Provides the clickable text action shown above a style configuration file. */

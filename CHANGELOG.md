@@ -6,6 +6,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Extend configuration completion and hover help to leading Markdown/MDX YAML headers, including manuscript metadata, author lists and `papperSettings` overrides.
 - Add source-element style hover buttons that fill missing heading, body, table-text and image-caption settings with inline descriptions in the current Markdown YAML header, using actual reference DOCX defaults with persistent caching and preservation of existing overrides.
 
 - Show Papper configuration hover help for existing style YAML fields and values, including nested styles, aliases and inline mappings.

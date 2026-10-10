@@ -4,6 +4,8 @@ export type StyleField = {
   values?: readonly string[];
   children?: Record<string, StyleField>;
   dynamicChildren?: boolean;
+  sequenceItems?: boolean;
+  dynamicValueDescription?: string;
 };
 
 const BOOLEAN_VALUES = ["true", "false"] as const;

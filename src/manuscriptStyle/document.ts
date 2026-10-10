@@ -6,14 +6,18 @@ import type { DocxStyleValues } from "./referenceStyles";
 export type StyleTarget = { name: string; line: number; endLine: number; startCharacter: number; endCharacter: number };
 export type YamlHeader = { start: number; end: number; content: string; bodyStart: number };
 
-/** Finds the leading Pandoc YAML header, preserving BOM, delimiters and body bytes. */
-export function getYamlHeader(text: string): YamlHeader | undefined {
+/** Finds the leading YAML header; language help may opt into an unfinished header while typing. */
+export function getYamlHeader(text: string, allowIncomplete = false): YamlHeader | undefined {
   const opening = /^(?:\uFEFF)?---[ \t]*(?:\r?\n|$)/.exec(text);
   if (!opening) return undefined;
   const closing = /^(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/gm;
   closing.lastIndex = opening[0].length;
   const match = closing.exec(text);
-  if (!match) throw new Error("YAML header 缺少结束分隔符 --- 或 ...");
+  if (!match) {
+    // Completion must work before a closing delimiter is typed; edit commands still require it.
+    if (allowIncomplete) return { start: opening[0].length, end: text.length, content: text.slice(opening[0].length), bodyStart: text.length };
+    throw new Error("YAML header 缺少结束分隔符 --- 或 ...");
+  }
   return { start: opening[0].length, end: match.index, content: text.slice(opening[0].length, match.index), bodyStart: match.index + match[0].length };
 }
 

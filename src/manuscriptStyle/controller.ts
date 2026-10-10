@@ -157,7 +157,7 @@ export class ManuscriptStyleController implements vscode.HoverProvider {
     const markdown = new vscode.MarkdownString();
     markdown.isTrusted = { enabledCommands: [SET_MANUSCRIPT_STYLE_COMMAND] };
     const args = encodeURIComponent(JSON.stringify([document.uri.toString(), target.name]));
-    markdown.appendMarkdown(`[设置 ${escapeMarkdownText(target.name)} 的样式](command:${SET_MANUSCRIPT_STYLE_COMMAND}?${args})`);
+    markdown.appendMarkdown(`[Papper: 设置 ${escapeMarkdownText(target.name)} 的样式](command:${SET_MANUSCRIPT_STYLE_COMMAND}?${args})`);
     return new vscode.Hover(markdown, new vscode.Range(target.line, target.startCharacter, target.endLine, target.endCharacter));
   }
 

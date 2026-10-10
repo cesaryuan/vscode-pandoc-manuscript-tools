@@ -152,7 +152,7 @@ function showsOnlyStyleButton(): void {
   assert.ok(hover instanceof HoverResult);
   const button = /^\[([^\]]+)\]\(command:([^?]+)\?([^\n]+)\)$/.exec(hover.content.value);
   assert.ok(button, "Hover must contain one button link and no additional content");
-  assert.match(button[1], /标题 1/);
+  assert.match(button[1], /^Papper: .*标题 1/);
   assert.deepEqual(JSON.parse(decodeURIComponent(button[3])), [uriText, "标题 1"]);
 }
 
