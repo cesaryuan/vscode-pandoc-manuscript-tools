@@ -18,6 +18,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Changed
 
+- Use a book icon for Papper Markdown preview to distinguish it from VS Code's built-in preview.
 - Simplify YAML configuration hover help to descriptions and value hints.
 - Check for uv-managed Papper updates every three hours instead of daily.
 - Use existing label/reference maps for document lookups and diagnostics.

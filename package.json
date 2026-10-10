@@ -87,7 +87,7 @@
       {
         "command": "pandocManuscriptTools.buildHtmlAndOpen",
         "title": "Papper Tools: Preview Markdown (Papper HTML)",
-        "icon": "$(open-preview)"
+        "icon": "$(book)"
       },
       {
         "command": "pandocManuscriptTools.installOrUpdatePapper",
