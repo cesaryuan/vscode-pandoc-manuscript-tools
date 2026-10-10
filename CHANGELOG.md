@@ -6,6 +6,8 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Add source-element style hover buttons that fill missing heading, body, table-text and image-caption settings with inline descriptions in the current Markdown YAML header, using actual reference DOCX defaults with persistent caching and preservation of existing overrides.
+
 - Show Papper configuration hover help for existing style YAML fields and values, including nested styles, aliases and inline mappings.
 - Add context-aware Papper style YAML completions and a top-of-editor CodeLens action that merges the bundled example without overwriting existing values or enabling commented settings.
 - Translate nearby English code comment paragraphs using built-in and installed language extensions' comment delimiters, without querying language servers or parsing whole documents.

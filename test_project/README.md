@@ -1,3 +1,13 @@
+---
+papperSettings:
+  docxStyle:
+    标题 2:
+      fontFamily: # 字体名称，或分别指定西文和中文字体
+        western: Times New Roman # 西文字体名称，例如 Times New Roman
+        chinese: 黑体 # 中文字体名称，例如 宋体
+      fontSize: 13pt # 字体大小，例如 10.5pt、小五或四号；也可输入其他正磅值
+---
+
 # Papper Tools F5 Test Document {#sec:test-document}
 
 This file is the smoke-test manuscript opened from the Extension Development Host. It intentionally contains many small Markdown and Pandoc-crossref patterns so each extension feature can be tested in one place.

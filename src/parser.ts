@@ -720,7 +720,7 @@ function scanInlineMath(line: ParsedLine, uriText: string, displayMathRanges: Co
  *
  * @param text Line text.
  */
-function collectMarkdownCodeSpanRanges(text: string): CodeSpanRange[] {
+export function collectMarkdownCodeSpanRanges(text: string): CodeSpanRange[] {
   const ranges: CodeSpanRange[] = [];
   let searchStart = 0;
 

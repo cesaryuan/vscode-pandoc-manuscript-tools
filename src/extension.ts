@@ -20,6 +20,7 @@ import { NumberingInlayHints } from "./numberingInlayHints";
 import { PapperUpdateChecker } from "./papperUpdateChecker";
 import { installOrUpdatePapper } from "./papperBuildUtils";
 import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationHoverProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
+import { ManuscriptStyleController, SET_MANUSCRIPT_STYLE_COMMAND } from "./manuscriptStyle";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -32,6 +33,7 @@ export function activate(context: vscode.ExtensionContext) {
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
   const paragraphTranslator = new ParagraphTranslator(output);
+  const manuscriptStyles = new ManuscriptStyleController(context, output);
   const commentHoverProvider = new CommentHoverProvider(paragraphTranslator, output);
   const imagePreviewRenderer = new ImagePreviewRenderer(output);
   const imagePreviewSidePanel = new ImagePreviewSidePanel(imagePreviewRenderer, output);
@@ -62,6 +64,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerReferenceProvider(PANDOC_SELECTOR, new PandocReferenceProvider(index)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(IMAGE_PREVIEW_SELECTOR, new ImagePreviewHoverProvider(imagePreviewRenderer, output)));
   context.subscriptions.push(vscode.languages.registerHoverProvider(MATH_HOVER_SELECTOR, new PandocHoverProvider(index, mathRenderer, paragraphTranslator, output)));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, manuscriptStyles));
+  context.subscriptions.push(vscode.commands.registerCommand(SET_MANUSCRIPT_STYLE_COMMAND,
+    /** Resolves the resource encoded in the hover link even when another editor is active. */
+    (uriText: unknown, styleName: unknown) => manuscriptStyles.setStyle(uriText, styleName)));
   context.subscriptions.push(vscode.languages.registerHoverProvider({ language: "*" }, commentHoverProvider));
   context.subscriptions.push(vscode.window.registerCustomEditorProvider(METAFILE_PREVIEW_EDITOR_VIEW_TYPE, metafilePreviewEditorProvider, {
     webviewOptions: {

@@ -21,6 +21,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Context-aware YAML key and value completions for `style.yml`, including `pandocMetadata`, `reply`, named DOCX styles and inline mappings, with Chinese descriptions.
 - Hover help for existing style YAML keys and values, showing Chinese descriptions, configuration paths, value hints and the current configuration.
+- Source-element hover buttons for headings, body text, pipe/grid table cells and images, adding missing settings with inline Chinese help to the current document's `papperSettings.docxStyle` header using effective reference DOCX defaults.
 - A **Papper: 合并示例配置** text action above style YAML that recursively adds missing example settings while retaining existing values and comments.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - Inlay hints for section, display-equation, labeled figure, and labeled table numbers resolved by Papper's processed Pandoc AST.
@@ -62,6 +63,12 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - `View Images` (Explorer folder context menu)
 
 ## Style Configuration Editing
+
+Hover over a heading, body text, a pipe/grid table cell, or an image in a local Markdown/MDX document to see only the **设置 标题 N / 正文文本 / Table Text / Image Caption 的样式** button. Click the action to read the actual reference defaults, add the corresponding style under the document's YAML `papperSettings.docxStyle`, and jump to it for editing. Newly inserted fields include Chinese descriptions as inline YAML comments; existing values and comments are retained. A missing YAML header is created automatically, the manuscript body is retained, and the edit can be undone in one step. English built-in names already in YAML are reused instead of adding duplicate Chinese aliases. Table captions use their separate `Table Caption` style, and paragraphs in a `custom-style` fenced div use that named style.
+
+On the first click, defaults come from `papper build docx <current-source-snapshot> --export-reference-doc <temporary-path>`, including unsaved YAML overrides, source/project `style.yml`, language/reply settings and `PMT_REFERENCE_DOC`. The export skips manuscript conversion. The extension reads Word style inheritance, document defaults and theme fonts from the exported DOCX, then stores the parsed values in its persistent extension storage. Subsequent actions reuse the cache after normal body edits or extension restarts; hovering never launches Papper. Relevant YAML, style-file, reference-file or Papper executable changes invalidate it. Export requires an installed Papper version supporting `--export-reference-doc`; older versions show an update instruction when clicked instead of substituting guessed defaults.
+
+The source-style feature lives in `src/manuscriptStyle/`. The action fills canonical fields only, preserving existing compatibility aliases such as `fontName` and `font.family`. Mutually exclusive first-line/character/hanging indentation controls are not inserted together. Word-only automatic spacing, automatic/theme colors and minimum line spacing are retained in the reference instead of converted to inaccurate overrides. Maps using YAML anchors or aliases must be expanded before editing so unrelated metadata is not changed indirectly.
 
 Open `style.yml`, `style.yaml`, `style-project.yml` or `style-project.yaml` in a YAML editor. Type a configuration key, or press `Ctrl+Space`, to see Papper settings with Chinese descriptions. Value suggestions include booleans, MathType backends, line numbering, table autofit and DOCX text formatting. Nested suggestions follow `pandocMetadata`, `reply`, named `docxStyle` entries and their font, indentation and paragraph-spacing blocks. Arbitrary Word style names are supported. Existing keys, including configuration aliases, are omitted from new-key suggestions.
 
