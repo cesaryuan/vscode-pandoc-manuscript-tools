@@ -20,6 +20,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Inline folding for the attribute block in `[revised text]{custom-style="Revision Char"}` spans; other custom styles remain visible.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Context-aware YAML key and value completions for `style.yml`, including `pandocMetadata`, `reply`, named DOCX styles and inline mappings, with Chinese descriptions.
+- Hover help for existing style YAML keys and values, showing Chinese descriptions, configuration paths, value hints and the current configuration.
 - A **Papper: 合并示例配置** text action above style YAML that recursively adds missing example settings while retaining existing values and comments.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
 - Inlay hints for section, display-equation, labeled figure, and labeled table numbers resolved by Papper's processed Pandoc AST.
@@ -63,6 +64,8 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 ## Style Configuration Editing
 
 Open `style.yml`, `style.yaml`, `style-project.yml` or `style-project.yaml` in a YAML editor. Type a configuration key, or press `Ctrl+Space`, to see Papper settings with Chinese descriptions. Value suggestions include booleans, MathType backends, line numbering, table autofit and DOCX text formatting. Nested suggestions follow `pandocMetadata`, `reply`, named `docxStyle` entries and their font, indentation and paragraph-spacing blocks. Arbitrary Word style names are supported. Existing keys, including configuration aliases, are omitted from new-key suggestions.
+
+Hover over an existing field name or value to view its Chinese description, full configuration path, value hints and current configuration. Hover help follows nested blocks, inline mappings, configuration aliases and custom Word style names. Comments and unknown fields do not show Papper configuration help. This uses VS Code's normal editor hover and requires `editor.hover.enabled` to be enabled.
 
 Click **Papper: 合并示例配置** above the first line to merge the bundled Papper project starter into the current editor buffer. This action requires VS Code's `editor.codeLens` setting to be enabled; the same action is available as `Papper Tools: Merge Style Example` in the Command Palette. The starter is bundled from Papper's `template/style-project.yml`, so editing does not require Papper to be installed or its repository to be available.
 

@@ -19,7 +19,7 @@ import { CustomImagePreviewContext } from "./customImagePreviewContext";
 import { NumberingInlayHints } from "./numberingInlayHints";
 import { PapperUpdateChecker } from "./papperUpdateChecker";
 import { installOrUpdatePapper } from "./papperBuildUtils";
-import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
+import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationHoverProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -79,6 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
   context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationHoverProvider()));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });

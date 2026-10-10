@@ -1,10 +1,10 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { isMap, isScalar, YAMLMap, parseDocument, visit } from "yaml";
+import { isMap, isScalar, isSeq, isAlias, YAMLMap, parseDocument, visit } from "yaml";
 
 /**
- * Provides completion and example-configuration editing for Papper `style.yml` files.
+ * Provides completion, hover help and example-configuration editing for Papper `style.yml` files.
  *
  * The completion data mirrors the public style configuration guide. The example
  * merge deliberately edits the parsed YAML tree so existing values and comments
@@ -286,6 +286,96 @@ export class StyleConfigurationCompletionProvider implements vscode.CompletionIt
         item.documentation = documentation;
         return item;
       });
+  }
+}
+
+export type StyleHoverInfo = {
+  start: number;
+  end: number;
+  path: string[];
+  description: string;
+  values?: readonly string[];
+  currentValue?: string;
+};
+
+/** Resolves a field's documentation, including arbitrary names under docxStyle. */
+function hoverField(pathParts: string[], key: string): StyleField | undefined {
+  const fields = fieldsAtPath(pathParts);
+  const field = fields?.[canonicalField(key, fields)];
+  if (field) return field;
+  const ownerFields = fieldsAtPath(pathParts.slice(0, -1));
+  const owner = ownerFields?.[canonicalField(pathParts.at(-1) ?? "", ownerFields)];
+  if (owner?.dynamicChildren) {
+    return { description: "DOCX 段落或字符样式；按精确样式名称应用，可在本节设置字体、对齐、缩进和段落间距" };
+  }
+  return undefined;
+}
+
+/** Collects exact YAML token ranges so comments and surrounding whitespace have no field hover. */
+function collectStyleHovers(node: unknown, text: string, pathParts: string[], entries: StyleHoverInfo[]): void {
+  if (!isMap(node)) return;
+  for (const pair of node.items) {
+    if (!isScalar(pair.key)) continue;
+    const key = String(pair.key.value);
+    const field = hoverField(pathParts, key);
+    if (field) {
+      const value = pair.value;
+      const valueRange = isScalar(value) || isMap(value) || isSeq(value) || isAlias(value) ? value.range : undefined;
+      const info = {
+        path: [...pathParts, key], description: field.description, values: field.values,
+        currentValue: valueRange && valueRange[1] > valueRange[0] ? text.slice(valueRange[0], valueRange[1]).trim() : undefined,
+      };
+      if (pair.key.range) entries.push({ ...info, start: pair.key.range[0], end: pair.key.range[1] });
+      collectStyleValueHovers(value, info, entries);
+    }
+    collectStyleHovers(pair.value, text, [...pathParts, key], entries);
+  }
+}
+
+/** Associates scalar values and sequence items with their owning field without covering nested maps. */
+function collectStyleValueHovers(node: unknown, info: Omit<StyleHoverInfo, "start" | "end">, entries: StyleHoverInfo[]): void {
+  if (isScalar(node) || isAlias(node)) {
+    if (node.range && node.range[1] > node.range[0]) entries.push({ ...info, start: node.range[0], end: node.range[1] });
+  } else if (isSeq(node)) {
+    for (const item of node.items) collectStyleValueHovers(item, info, entries);
+  }
+}
+
+/** Builds documentation locations from the same field definitions used by completion. */
+export function getStyleHoverEntries(text: string): StyleHoverInfo[] {
+  const entries: StyleHoverInfo[] = [];
+  // Incomplete unrelated lines should not hide help for fields that still parse successfully.
+  const document = parseDocument(text);
+  collectStyleHovers(document.contents, text, [], entries);
+  return entries;
+}
+
+/** Shows field documentation for existing YAML keys and values, caching each document version. */
+export class StyleConfigurationHoverProvider implements vscode.HoverProvider {
+  private readonly cache = new WeakMap<vscode.TextDocument, { version: number; entries: StyleHoverInfo[] }>();
+
+  /** Renders the hovered setting's purpose, exact configuration path and value hints. */
+  provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.Hover | undefined {
+    if (token.isCancellationRequested || !isStyleConfigurationDocument(document)) return undefined;
+    let cached = this.cache.get(document);
+    if (!cached || cached.version !== document.version) {
+      cached = { version: document.version, entries: getStyleHoverEntries(document.getText()) };
+      this.cache.set(document, cached);
+    }
+    const offset = document.offsetAt(position);
+    const info = cached.entries.find((entry) => entry.start <= offset && offset < entry.end);
+    if (!info) return undefined;
+    const markdown = new vscode.MarkdownString();
+    markdown.appendMarkdown("**Papper 配置帮助**\n\n");
+    markdown.appendText(info.description);
+    markdown.appendText("\n\n配置路径：");
+    markdown.appendCodeblock(info.path.join(" → "), "text");
+    if (info.values?.length) markdown.appendText(`\n\n取值提示：${info.values.join(" / ")}`);
+    if (info.currentValue !== undefined) {
+      markdown.appendText("\n\n当前配置：");
+      markdown.appendCodeblock(info.currentValue, "yaml");
+    }
+    return new vscode.Hover(markdown, new vscode.Range(document.positionAt(info.start), document.positionAt(info.end)));
   }
 }
 

@@ -5,7 +5,7 @@ import test from "node:test";
 import { parse, parseDocument } from "yaml";
 import { SourceModuleFixture } from "./helpers/sourceModule";
 
-const { getStyleSuggestions, mergeStyleExample } = new SourceModuleFixture({ vscode: {} })
+const { getStyleSuggestions, getStyleHoverEntries, mergeStyleExample } = new SourceModuleFixture({ vscode: {} })
   .load<typeof import("../src/styleConfiguration")>("src/styleConfiguration.ts");
 
 /** Requests production completions at the cursor marker in a user-written YAML fragment. */
@@ -119,6 +119,58 @@ function rejectsInvalidMerges(): void {
   assert.equal(mergeStyleExample(original, "mathtype: true\nmathtypeTypstMathFont:\n  font: XITS Math\n").text, original);
 }
 
+/** Finds the hover at a marked source position using real parsed YAML token ranges. */
+function hoverAt(markedText: string) {
+  const offset = markedText.indexOf("<cursor>");
+  assert.ok(offset >= 0);
+  const text = markedText.replace("<cursor>", "");
+  const entry = getStyleHoverEntries(text).find((info) => info.start <= offset && offset < info.end);
+  return { entry, token: entry ? text.slice(entry.start, entry.end) : undefined };
+}
+
+/** Ensures filled keys and scalar values resolve to the same help with precise token ranges. */
+function hoversExistingKeysAndValues(): void {
+  const key = hoverAt("reply:\r\n  mathtype-conversion-<cursor>method: rust # backend\r\n");
+  const value = hoverAt("reply:\r\n  mathtype-conversion-method: r<cursor>ust # backend\r\n");
+  assert.ok(key.entry);
+  assert.ok(value.entry);
+  assert.equal(key.token, "mathtype-conversion-method");
+  assert.equal(value.token, "rust");
+  assert.deepEqual(key.entry.path, ["reply", "mathtype-conversion-method"]);
+  assert.equal(key.entry.currentValue, "rust");
+  assert.equal(key.entry.description, value.entry.description);
+  assert.deepEqual(key.entry.values, value.entry.values);
+  const nullValue = hoverAt("docxPageMargins: n<cursor>ull\n");
+  assert.equal(nullValue.entry?.currentValue, "null");
+}
+
+/** Resolves arbitrary named styles and nested flow maps without using a parent field's help. */
+function hoversNestedAndCustomStyles(): void {
+  const name = hoverAt('reply:\n  docxStyle:\n    "My <cursor>custom: style": { paragraphSpacing: { before: 6pt } }\n');
+  assert.ok(name.entry);
+  assert.deepEqual(name.entry.path, ["reply", "docxStyle", "My custom: style"]);
+  const nested = hoverAt('reply:\n  docxStyle:\n    "My custom: style": { paragraphSpacing: { before: 6<cursor>pt } }\n');
+  assert.deepEqual(nested.entry?.path, ["reply", "docxStyle", "My custom: style", "paragraphSpacing", "before"]);
+  assert.equal(nested.token, "6pt");
+  assert.notEqual(nested.entry?.description, name.entry.description);
+  const color = hoverAt("docxStyle: { 正文文本: { fontColor: [255, <cursor>0, 0] } }");
+  assert.deepEqual(color.entry?.path, ["docxStyle", "正文文本", "fontColor"]);
+  assert.equal(color.entry?.currentValue, "[255, 0, 0]");
+}
+
+/** Avoids help on comments, whitespace and similarly named keys in unrelated configuration blocks. */
+function confinesHoverToKnownFieldTokens(): void {
+  for (const text of [
+    "# <cursor>mathtype: true\n",
+    "mathtype: true # <cursor>comment\n",
+    "mathtype:<cursor> true\n",
+    "unrelated:\n  <cursor>mathtype: true\n",
+    "pandocMetadata:\n  <cursor>mathtype: true\n",
+    "docxStyle:\n  Body Text:\n    <cursor>unknown: true\n",
+  ]) assert.equal(hoverAt(text).entry, undefined);
+  assert.ok(hoverAt("mathtype: f<cursor>alse\nbroken: [\n").entry);
+}
+
 test("completes the correct nested style configuration domain", completesNestedDomains);
 test("completes arbitrary style names and inline mappings", completesNamedAndInlineStyles);
 test("accepts scalar suggestions as valid YAML without duplicate suffixes", acceptsValidScalarCompletions);
@@ -127,3 +179,6 @@ test("avoids duplicate aliases and incompatible controls", avoidsDuplicateAndCon
 test("merges missing settings while preserving overrides and comments", mergesWithoutOverwritingUserSettings);
 test("merges the shipped starter and is idempotent", mergesTheShippedStarter);
 test("rejects invalid style files and preserves existing scalar overrides", rejectsInvalidMerges);
+test("shows matching hover help for existing style keys and values", hoversExistingKeysAndValues);
+test("shows hover help in arbitrary DOCX styles and nested inline maps", hoversNestedAndCustomStyles);
+test("confines style hover help to known YAML field tokens", confinesHoverToKnownFieldTokens);
