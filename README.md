@@ -20,7 +20,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Inline folding for the attribute block in `[revised text]{custom-style="Revision Char"}` spans; other custom styles remain visible.
 - Completion suggestions after `@` using labels found in the current Markdown document.
 - Context-aware YAML key and value completions for `style.yml`, including `pandocMetadata`, `reply`, named DOCX styles and inline mappings, with Chinese descriptions.
-- Hover help for existing style YAML keys and values, showing Chinese descriptions, configuration paths, value hints and the current configuration.
+- Hover help for existing style YAML keys and values, showing Chinese descriptions and value hints.
 - Completion and hover help in Markdown/MDX YAML headers, including manuscript metadata, author-list fields and local `papperSettings` overrides.
 - Source-element hover buttons for headings, body text, pipe/grid table cells and images, adding missing settings with inline Chinese help to the current document's `papperSettings.docxStyle` header using effective reference DOCX defaults.
 - A **Papper: 合并示例配置** text action above style YAML that recursively adds missing example settings while retaining existing values and comments.
@@ -75,7 +75,7 @@ The source-style feature lives in `src/manuscriptStyle/`. The action fills canon
 
 Open `style.yml`, `style.yaml`, `style-project.yml` or `style-project.yaml` in a YAML editor. Type a configuration key, or press `Ctrl+Space`, to see Papper settings with Chinese descriptions. Value suggestions include booleans, MathType backends, line numbering, table autofit and DOCX text formatting. Nested suggestions follow `pandocMetadata`, `reply`, named `docxStyle` entries and their font, indentation and paragraph-spacing blocks. Arbitrary Word style names are supported. Existing keys, including configuration aliases, are omitted from new-key suggestions.
 
-Hover over an existing field name or value to view its Chinese description, full configuration path, value hints and current configuration. Hover help follows nested blocks, inline mappings, configuration aliases and custom Word style names. Comments and unknown fields do not show Papper configuration help. This uses VS Code's normal editor hover and requires `editor.hover.enabled` to be enabled.
+Hover over an existing field name or value to view its Chinese description and value hints. Hover help follows nested blocks, inline mappings, configuration aliases and custom Word style names. Comments and unknown fields do not show Papper configuration help. This uses VS Code's normal editor hover and requires `editor.hover.enabled` to be enabled.
 
 The same completion and hover help is available in the leading YAML header of Markdown/MDX documents, including unsaved buffers. Top-level suggestions cover manuscript metadata (`title`, `authors`, `abstract`, `keywords`, `bibliography`, `reply`), Pandoc cross-reference/citation settings and LaTeX class settings. Author mappings inside `authors` or `author` lists have their own field suggestions. Put local formatting/build overrides under `papperSettings` (or `papper-settings`); this block supports the same nested configuration as `style.yml`, including `reply.docxStyle` and `pandocMetadata`. Top-level `reply` denotes the manuscript path for reviewer replies. Header language help accepts `---` or `...` as a closing delimiter and remains available before that delimiter is typed. YAML examples in body code fences do not receive header configuration help.
 

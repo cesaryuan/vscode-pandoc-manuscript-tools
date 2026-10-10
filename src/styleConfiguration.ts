@@ -341,7 +341,7 @@ export function getStyleHoverEntries(text: string, rootFields: Record<string, St
 export class StyleConfigurationHoverProvider implements vscode.HoverProvider {
   private readonly cache = new WeakMap<vscode.TextDocument, { version: number; entries: StyleHoverInfo[] }>();
 
-  /** Renders the hovered setting's purpose, exact configuration path and value hints. */
+  /** Renders the hovered setting's purpose and value hints. */
   provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.Hover | undefined {
     if (token.isCancellationRequested || !isStyleConfigurationDocument(document)) return undefined;
     let cached = this.cache.get(document);
@@ -361,13 +361,7 @@ export function createConfigurationHover(document: vscode.TextDocument, info: St
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown("**Papper 配置帮助**\n\n");
   markdown.appendText(info.description);
-  markdown.appendText("\n\n配置路径：");
-  markdown.appendCodeblock(info.path.join(" → "), "text");
   if (info.values?.length) markdown.appendText(`\n\n取值提示：${info.values.join(" / ")}`);
-  if (info.currentValue !== undefined) {
-    markdown.appendText("\n\n当前配置：");
-    markdown.appendCodeblock(info.currentValue, "yaml");
-  }
   return new vscode.Hover(markdown, new vscode.Range(document.positionAt(info.start), document.positionAt(info.end)));
 }
 
