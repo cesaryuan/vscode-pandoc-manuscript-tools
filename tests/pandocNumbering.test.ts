@@ -119,7 +119,44 @@ function ignoresUnnumberedAndMalformedAstEntries(): void {
   assert.deepEqual(collectPandocCrossReferenceNumbers(undefined, parsed), []);
 }
 
+/** Reproduces chapter-prefixed captions collapsing to the same chapter number, including a subfigure parent. */
+function preservesChapterCaptionNumbers(): void {
+  const source = [
+    "![Single](single.png){#fig:single}", "", "![SVG](layout.svg){#fig:svg}", "",
+    '<div id="fig:panels">', "![Left](left.png){#fig:left}", "![Right](right.png){#fig:right}", "",
+    "Panels", "</div>", "", "| Value |", "| --- |", "| 1 |", "", ": Values {#tbl:values}",
+  ].join("\n");
+  const parsed = parsePandocDocument(source, "file:///manuscript-cn.md");
+  // Custom delimiters may contain regex syntax; they must be matched as literal build output.
+  for (const delimiter of ["-", ".", "+", "::", "[chapter]"]) {
+    /** Models processed captions independently of the extension's number parser. */
+    const figure = (label: string, caption: string, body: unknown[] = []): unknown => ({
+      t: "Figure", c: [[label, [], []], [null, [{ t: "Plain", c: [{ t: "Str", c: caption }] }]], body],
+    });
+    const ast = {
+      meta: {
+        figureTitle: { t: "MetaInlines", c: [{ t: "Str", c: "图" }] },
+        tableTitle: { t: "MetaInlines", c: [{ t: "Str", c: "表" }] },
+        chapDelim: { t: "MetaString", c: delimiter },
+      },
+      blocks: [
+        figure("fig:single", `图 3${delimiter}1 Single`),
+        figure("fig:svg", `图 3${delimiter}2 SVG`),
+        figure("fig:panels", `图 3${delimiter}3 Panels`, [figure("fig:left", "(a) Left"), figure("fig:right", "(b) Right")]),
+        { t: "Table", c: [["tbl:values", [], []], [null, [{ t: "Plain", c: [{ t: "Str", c: `表 3${delimiter}4 Values` }] }]], [], [], [], []] },
+      ],
+    };
+    assert.deepEqual(collectPandocCrossReferenceNumbers(ast, parsed).map(({ label, number, displayText }) => ({ label, number, displayText })), [
+      { label: "fig:single", number: `3${delimiter}1`, displayText: `图 3${delimiter}1` },
+      { label: "fig:svg", number: `3${delimiter}2`, displayText: `图 3${delimiter}2` },
+      { label: "fig:panels", number: `3${delimiter}3`, displayText: `图 3${delimiter}3` },
+      { label: "tbl:values", number: `3${delimiter}4`, displayText: `表 3${delimiter}4` },
+    ]);
+  }
+}
+
 test("maps processed cross-reference numbers to Markdown inlay positions", mapsProcessedNumbersToMarkdownPositions);
 test("preserves built caption prefixes and spacing", preservesBuiltCaptionPrefixes);
 test("preserves explicitly empty caption prefixes", preservesEmptyCaptionPrefix);
 test("ignores unnumbered sections and malformed AST values", ignoresUnnumberedAndMalformedAstEntries);
+test("preserves chapter numbers for figures, subfigure parents and tables", preservesChapterCaptionNumbers);

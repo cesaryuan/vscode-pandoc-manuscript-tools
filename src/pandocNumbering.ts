@@ -41,14 +41,14 @@ export function collectPandocCrossReferenceNumbers(ast: unknown, parsed: ParsedP
       figures.push({
         node,
         label: getAttributeId(content?.[0]),
-        ...getCaptionNumber(content?.[1], metadata.figureTitle),
+        ...getCaptionNumber(content?.[1], metadata.figureTitle, metadata.chapDelim),
       });
     } else if (node.t === "Table") {
       const content = asArray(node.c);
       tables.push({
         node,
         label: getAttributeId(content?.[0]),
-        ...getCaptionNumber(content?.[1], metadata.tableTitle),
+        ...getCaptionNumber(content?.[1], metadata.tableTitle, metadata.chapDelim),
       });
     } else if (node.t === "Math" && isDisplayMath(node.c)) {
       equations.push({ node, label: parentLabel, number: getEquationNumber(node.c) });
@@ -154,8 +154,9 @@ function isUnnumberedHeader(node: PandocNode): boolean {
  *
  * @param value Caption pair containing a short caption and long caption blocks.
  * @param titleValue Pandoc metadata for `figureTitle` or `tableTitle`.
+ * @param chapterDelimiterValue Configured separator between chapter and item numbers.
  */
-function getCaptionNumber(value: unknown, titleValue: unknown): CaptionNumber | undefined {
+function getCaptionNumber(value: unknown, titleValue: unknown, chapterDelimiterValue: unknown): CaptionNumber | undefined {
   const caption = asArray(value);
   const blocks = Array.isArray(caption?.[1]) ? caption[1] : Array.isArray(caption?.[0]) ? caption[0] : [];
   const captionText = normalizeWhitespace(flattenAstText(blocks)).trimStart();
@@ -166,7 +167,11 @@ function getCaptionNumber(value: unknown, titleValue: unknown): CaptionNumber | 
   }
 
   const remainder = captionText.slice(title.length).trimStart();
-  const number = remainder.match(/^((?:\d+(?:\.\d+)*|[ivxlcdm]+)(?:\s*\([a-z0-9]+\))?)/i)?.[1];
+  // Chinese defaults use chapDelim="-"; matching only dots truncated 3-1, 3-2 and 3-3 to 3.
+  const chapterDelimiter = normalizeWhitespace(flattenAstText(chapterDelimiterValue));
+  const escapedDelimiter = chapterDelimiter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const separator = escapedDelimiter ? `(?:\\.|${escapedDelimiter})` : "\\.";
+  const number = remainder.match(new RegExp(`^((?:\\d+(?:${separator}\\d+)*|[ivxlcdm]+)(?:\\s*\\([a-z0-9]+\\))?)`, "i"))?.[1];
   if (!number) {
     return undefined;
   }
@@ -188,7 +193,7 @@ function flattenAstText(value: unknown): string {
     return "";
   }
 
-  if (node.t === "Str" || node.t === "Math") {
+  if (node.t === "Str" || node.t === "MetaString" || node.t === "Math") {
     return typeof node.c === "string" ? node.c : "";
   }
   if (node.t === "Space" || node.t === "SoftBreak" || node.t === "LineBreak") {
