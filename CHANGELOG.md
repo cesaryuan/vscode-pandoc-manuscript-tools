@@ -6,6 +6,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Show both Image Caption and Figure style settings actions when hovering over an image.
 - Extend configuration completion and hover help to leading Markdown/MDX YAML headers, including manuscript metadata, author lists and `papperSettings` overrides.
 - Add source-element style hover buttons that fill missing heading, body, table-text and image-caption settings with inline descriptions in the current Markdown YAML header, using actual reference DOCX defaults with persistent caching and preservation of existing overrides.
 - Add extra style actions for Pandoc spans and fenced Divs with `custom-style`, including nested elements; span actions use character-style defaults and omit paragraph-only settings while retaining contextual inheritance.

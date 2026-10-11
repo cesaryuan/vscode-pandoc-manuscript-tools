@@ -157,7 +157,9 @@ export class ManuscriptStyleController implements vscode.HoverProvider {
       && (position.line !== entry.endLine || position.character <= entry.endCharacter));
     if (!matching.length || token.isCancellationRequested) return undefined;
     const base = [...matching].reverse().find((entry) => !entry.custom);
-    const actions = [...(base ? [base] : []), ...matching.filter((entry) => entry.custom)];
+    // Images use separate caption and figure paragraph styles; expose both within the same image hover range.
+    const baseActions = base ? (base.name === "Image Caption" ? [base, { ...base, name: "Figure" }] : [base]) : [];
+    const actions = [...baseActions, ...matching.filter((entry) => entry.custom)];
     const unique = actions.filter((entry, index) => actions.findIndex((candidate) => candidate.name === entry.name && candidate.type === entry.type) === index);
     const markdown = new vscode.MarkdownString();
     markdown.isTrusted = { enabledCommands: [SET_MANUSCRIPT_STYLE_COMMAND] };

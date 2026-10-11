@@ -166,6 +166,30 @@ function showsOnlyStyleButton(): void {
   assert.deepEqual(JSON.parse(decodeURIComponent(button[3])), ["file:///paper.md", "标题 1"]);
 }
 
+/** Verifies image hovers offer both paragraph actions, retain custom styles and stay scoped to the image. */
+function showsBothImageStyleButtons(): void {
+  for (const image of ["![caption](figure.png)", "![caption][figure]", '<img src="figure.png" alt="caption">']) {
+    const hover = renderStyleHover(image, 0, 5);
+    const buttons = [...hover.markdown.matchAll(/\[设置 ([^\]]+) 的样式\]\(command:[^?]+\?([^\n]+?)\)/g)];
+    assert.deepEqual(buttons.map((button) => button[1]), ["Image Caption", "Figure"]);
+    for (const button of buttons) {
+      assert.deepEqual(JSON.parse(decodeURIComponent(button[2])), ["file:///paper.md", button[1]]);
+    }
+    assert.equal(hover.markdown.split("Papper:").length - 1, 1);
+    assert.ok(!hover.markdown.includes("\n"));
+  }
+  const image = "![caption](figure.png)";
+  const text = `::: {custom-style="Quote"}\nBefore ${image} after\n:::`;
+  const hover = renderStyleHover(text, 1, 10);
+  assert.deepEqual([...hover.markdown.matchAll(/\[设置 ([^\]]+) 的样式\]/g)].map((button) => button[1]), ["Image Caption", "Figure", "Quote"]);
+  assert.deepEqual(hover.range, [1, 7, 1, 7 + image.length]);
+  assert.ok(!renderStyleHover(text, 1, 2).markdown.includes("Figure"));
+  assert.ok(!renderStyleHover(text, 1, 7 + image.length + 1).markdown.includes("Image Caption"));
+  assert.ok(!renderStyleHover(`Literal \`${image}\``, 0, 12).markdown.includes("Figure"));
+  const nested = renderStyleHover(`::: {custom-style="Figure"}\n${image}\n:::`, 1, 5);
+  assert.equal([...nested.markdown.matchAll(/\[设置 Figure 的样式\]/g)].length, 1);
+}
+
 /** Confirms inline reference defaults and inserted YAML contain only explicitly inherited character typography. */
 function insertsCharacterFormattingOnly(): void {
   const styles = readReferenceStyles(referenceDocx());
@@ -379,6 +403,7 @@ test("style action preserves metadata, body, aliases, overrides and indentation 
 test("style action rejects malformed or unsafe existing metadata", rejectsInvalidMetadata);
 test("style hovers identify source elements and ignore literal/hidden blocks", detectsMarkdownElements);
 test("source hover shows only a button without launching Papper", showsOnlyStyleButton);
+test("image hovers show caption and figure actions without losing custom styles or scope", showsBothImageStyleButtons);
 test("inline custom styles insert character properties and preserve contextual inheritance", insertsCharacterFormattingOnly);
 test("styled spans and Divs add scoped character and paragraph buttons", addsCustomStyleButtons);
 test("missing reference styles inherit body defaults without errors or lost overrides", createsStylesAbsentFromReference);
