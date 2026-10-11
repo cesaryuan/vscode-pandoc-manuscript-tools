@@ -208,10 +208,9 @@ function toInlayHint(number: CrossReferenceNumber, uriText: string, ast: unknown
   const hint = new vscode.InlayHint(new vscode.Position(number.line, number.character), label);
   hint.paddingLeft = true;
   const tooltip = new vscode.MarkdownString();
-  tooltip.appendText(`Number produced by Papper's Pandoc cross-reference build${number.label ? ` for ${number.label}` : ""}.`);
   const fields: InlayMetadataField[] = number.kind === "figure" ? ["figureTitle"] : number.kind === "table" ? ["tableTitle"] : [];
   appendInlayMetadataActions(tooltip, uriText, fields, ast);
-  hint.tooltip = tooltip;
+  if (fields.length) hint.tooltip = tooltip;
   return hint;
 }
 
