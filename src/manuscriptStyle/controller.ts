@@ -195,7 +195,13 @@ export class ManuscriptStyleController implements vscode.HoverProvider {
       const style = findReferenceStyle(styles, requested, type)
         ?? findReferenceStyle(styles, "正文文本") ?? findReferenceStyle(styles, "正文");
       if (!style) throw new Error("当前 reference DOCX 缺少正文默认样式，无法读取继承配置");
-      const editor = await vscode.window.showTextDocument(document, { preview: false });
+      // A preview can own focus while a source hover is clicked; reuse the source group instead of opening a duplicate there.
+      const sourceEditor = vscode.window.visibleTextEditors.find((candidate) => candidate.document.uri.toString() === document.uri.toString());
+      const editor = await vscode.window.showTextDocument(document, {
+        viewColumn: sourceEditor?.viewColumn ?? vscode.ViewColumn.One,
+        preserveFocus: false,
+        preview: false,
+      });
       if (originalHeader !== getYamlHeader(document.getText())?.content) throw new Error("读取期间 YAML header 已改变，请重新点击样式按钮");
       const before = document.getText();
       const result = addManuscriptStyle(before, requested, style.values, type);

@@ -28,6 +28,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Fixed
 
+- Reuse the visible Markdown source editor when a style hover action is clicked with preview focus, revealing the YAML style settings without opening a duplicate source tab in the preview group.
 - Keep the latest HTML preview request when switching documents, and reject obsolete results after asynchronous resource processing or panel disposal.
 - Refresh expired Microsoft translation tokens and retry rejected authorization once.
 - Decode local HTML resource paths while preserving query strings, fragments, and attribute escaping.

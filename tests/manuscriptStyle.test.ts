@@ -239,7 +239,7 @@ function addsCustomStyleButtons(): void {
   assert.ok(!getManuscriptStyleTargets('[bad]{custom-style="One" custom-style="Two"}').some((entry) => entry.custom));
 }
 
-/** Verifies missing styles inherit actual body defaults, filter character fields and preserve existing overrides. */
+/** Verifies style edits preserve defaults/overrides and return to the source group even when a preview owns focus. */
 async function createsStylesAbsentFromReference(): Promise<void> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "pmt-missing-style-test-"));
   try {
@@ -247,6 +247,9 @@ async function createsStylesAbsentFromReference(): Promise<void> {
     await writeFile(executable, "fixture");
     let text = '---\npapperSettings:\n  docxStyle:\n    Emphatically: {}\n---\n[Example]{custom-style="Emphatically"}\n';
     const errors: string[] = [];
+    let activeGroup = 2;
+    let duplicateTabs = 0;
+    let revealed: OffsetRange | undefined;
     /** Models source positions as offsets so the production frontmatter edit can be applied exactly. */
     class OffsetRange {
       /** Retains the replacement or selection offsets used by the command. */
@@ -265,6 +268,8 @@ async function createsStylesAbsentFromReference(): Promise<void> {
       positionAt: (offset: number) => offset,
     };
     const editor = {
+      document,
+      viewColumn: 1,
       selection: undefined as OffsetRange | undefined,
       /** Applies the real requested text replacement to the editor buffer. */
       edit: async (callback: (edit: { replace: (range: OffsetRange, replacement: string) => void }) => void) => {
@@ -274,8 +279,8 @@ async function createsStylesAbsentFromReference(): Promise<void> {
         });
         return true;
       },
-      /** Accepts navigation after the style has been created. */
-      revealRange: () => {},
+      /** Records the source range revealed after the style has been created. */
+      revealRange: (range: OffsetRange) => { revealed = range; },
     };
     const { ManuscriptStyleController } = new SourceModuleFixture({
       vscode: {
@@ -287,15 +292,28 @@ async function createsStylesAbsentFromReference(): Promise<void> {
         Selection: OffsetRange,
         ProgressLocation: { Notification: 1 },
         TextEditorRevealType: { InCenterIfOutsideViewport: 1 },
+        ViewColumn: { One: 1 },
         workspace: {
           /** Returns the current unsaved document for the command. */
           openTextDocument: async () => document,
         },
         window: {
+          activeTextEditor: undefined,
+          // An unrelated visible editor must not determine where the clicked document opens.
+          visibleTextEditors: [{ document: { uri: {
+            /** Identifies a different document that must not receive the style action. */
+            toString: () => "file:///other.md",
+          } }, viewColumn: 4 }, editor],
           /** Runs the style export through the usual progress boundary. */
           withProgress: async (_options: unknown, task: () => Promise<unknown>) => task(),
-          /** Provides an editable buffer after reference lookup. */
-          showTextDocument: async () => editor,
+          /** Models host routing: omitted columns open a duplicate Markdown tab in the focused preview group. */
+          showTextDocument: async (_document: unknown, options: { viewColumn?: number; preserveFocus?: boolean }) => {
+            const targetGroup = options.viewColumn ?? activeGroup;
+            if (!options.preserveFocus) activeGroup = targetGroup;
+            if (targetGroup === editor.viewColumn) return editor;
+            duplicateTabs += 1;
+            return { ...editor, viewColumn: targetGroup };
+          },
           /** Captures user-facing failures for the missing-style regression. */
           showErrorMessage: (message: string) => { errors.push(message); },
         },
@@ -316,7 +334,12 @@ async function createsStylesAbsentFromReference(): Promise<void> {
       appendLine: () => {},
     } as never);
     for (const [name, type] of [["Emphatically", "character"], ["New Div Style", "paragraph"]]) {
+      // The source may live outside the first group; the preview remains focused before each action.
+      editor.viewColumn = type === "character" ? 1 : 3;
+      activeGroup = 2;
       await controller.setStyle(document.uri.toString(), name, type);
+      assert.equal(duplicateTabs, 0, "Style actions must reuse the visible source tab");
+      assert.equal(activeGroup, editor.viewColumn, "Style actions must focus the source group");
       const inserted = parse(getYamlHeader(text).content).papperSettings.docxStyle[name];
       if (type === "character") {
         assert.deepEqual(inserted, {
@@ -328,13 +351,20 @@ async function createsStylesAbsentFromReference(): Promise<void> {
         assert.deepEqual(inserted.paragraphSpacing, { before: "0pt", after: "0pt" });
       }
       assert.equal(text.slice(editor.selection.start, editor.selection.end), name);
+      assert.equal(revealed, editor.selection);
+      assert.ok(editor.selection.end <= getYamlHeader(text).end, "The selected style must be inside YAML frontmatter");
     }
     // The previously empty entry retains flow-map formatting, so preserve its separator when simulating a user edit.
     text = text.replace(/fontSize: 12pt(,)?[^\r\n]*/, "fontSize: 11pt$1 # keep my override");
     assert.equal(parse(getYamlHeader(text).content).papperSettings.docxStyle.Emphatically.fontSize, "11pt");
     assert.ok(text.includes("# keep my override"));
     const configured = text;
+    activeGroup = 2;
     await controller.setStyle(document.uri.toString(), "Emphatically", "character");
+    assert.equal(duplicateTabs, 0);
+    assert.equal(activeGroup, editor.viewColumn);
+    assert.equal(text.slice(editor.selection.start, editor.selection.end), "Emphatically");
+    assert.equal(revealed, editor.selection);
     assert.equal(text, configured);
     assert.ok(text.endsWith('[Example]{custom-style="Emphatically"}\n'));
     assert.deepEqual(errors, []);
@@ -406,5 +436,5 @@ test("source hover shows only a button without launching Papper", showsOnlyStyle
 test("image hovers show caption and figure actions without losing custom styles or scope", showsBothImageStyleButtons);
 test("inline custom styles insert character properties and preserve contextual inheritance", insertsCharacterFormattingOnly);
 test("styled spans and Divs add scoped character and paragraph buttons", addsCustomStyleButtons);
-test("missing reference styles inherit body defaults without errors or lost overrides", createsStylesAbsentFromReference);
+test("style actions reuse and reveal the source editor with preview focus while preserving defaults and overrides", createsStylesAbsentFromReference);
 test("reference export is cached across body edits and extension sessions", cachesOnlyFormattingInputs);
