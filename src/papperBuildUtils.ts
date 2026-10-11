@@ -15,11 +15,12 @@ export type RunProcessOptions = {
 let cachedPapperExecutable: string | undefined;
 let papperResolutionPromise: Promise<string> | undefined;
 
-/** Finds the nearest Papper manuscript project containing a Markdown file. */
-export async function findPandocManuscriptProject(markdownUri: vscode.Uri): Promise<PandocManuscriptProject | undefined> {
+/** Resolves the nearest style.yml project, falling back to the source directory for standalone Markdown. */
+export async function findPandocManuscriptProject(markdownUri: vscode.Uri): Promise<PandocManuscriptProject> {
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(markdownUri);
   const stopAtPath = workspaceFolder ? workspaceFolder.uri.fsPath : undefined;
-  let currentPath = path.dirname(markdownUri.fsPath);
+  const sourceDirectory = path.dirname(markdownUri.fsPath);
+  let currentPath = sourceDirectory;
 
   while (true) {
     const project = await readPandocManuscriptProject(vscode.Uri.file(currentPath));
@@ -28,15 +29,18 @@ export async function findPandocManuscriptProject(markdownUri: vscode.Uri): Prom
     }
 
     if (stopAtPath && isSameFsPath(currentPath, stopAtPath)) {
-      return undefined;
+      break;
     }
 
     const parentPath = path.dirname(currentPath);
     if (parentPath === currentPath) {
-      return undefined;
+      break;
     }
     currentPath = parentPath;
   }
+
+  // Missing style.yml must not disable builds; all callers share the same standalone root.
+  return { rootUri: vscode.Uri.file(sourceDirectory) };
 }
 
 /**

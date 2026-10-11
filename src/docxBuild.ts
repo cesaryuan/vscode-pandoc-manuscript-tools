@@ -51,8 +51,7 @@ export class PandocBuildRunner {
       },
       /** Keeps progress indeterminate until preparation, conversion, and opening finish. */
       async () => {
-        const project = await findPandocManuscriptProject(document.uri)
-          || { rootUri: vscode.Uri.file(path.dirname(document.uri.fsPath)) };
+        const project = await findPandocManuscriptProject(document.uri);
         await this.runDocxBuild(project, document);
       },
     );
@@ -73,9 +72,6 @@ export class PandocBuildRunner {
     }
 
     const project = await findPandocManuscriptProject(document.uri);
-    if (!project) {
-      return undefined;
-    }
 
     const papperExecutable = await findExistingPapperExecutable();
     if (!papperExecutable) {

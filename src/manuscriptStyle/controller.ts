@@ -26,7 +26,7 @@ export class ReferenceStyleCache {
     const text = document.getText();
     const header = getYamlHeader(text)?.content ?? "";
     const project = await findPandocManuscriptProject(document.uri);
-    const root = project?.rootUri.fsPath ?? path.dirname(document.uri.fsPath);
+    const root = project.rootUri.fsPath;
     const executable = await findExistingPapperExecutable();
     if (!executable) throw new Error("未找到 Papper，请先执行 Papper Tools: Install or Update Papper");
     const styles = process.env.PMT_STYLE_FILE ? [path.resolve(root, process.env.PMT_STYLE_FILE)]

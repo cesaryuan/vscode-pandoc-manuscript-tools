@@ -78,7 +78,7 @@ export class PapperMarkdownPreviewController {
       return;
     }
 
-    const project = await resolveHtmlPreviewProject(document.uri);
+    const project = await findPandocManuscriptProject(document.uri);
 
     if (!(await isPapperBuildAvailable())) {
       vscode.window.showErrorMessage("Cannot build HTML preview because `papper` is not on PATH and `uv` is not available to install it.");
@@ -338,7 +338,7 @@ export class PapperMarkdownPreviewController {
       this.htmlPreviewRefreshPending = undefined;
       const buildId = this.htmlPreviewBuildId;
       try {
-        const resolvedProject = project || await resolveHtmlPreviewProject(document.uri);
+        const resolvedProject = project || await findPandocManuscriptProject(document.uri);
         if (buildId !== this.htmlPreviewBuildId || !this.htmlPreviewPanel || !this.htmlPreviewDocumentUri
           || !isSameUri(this.htmlPreviewDocumentUri, document.uri)) continue;
         await this.runHtmlBuild(resolvedProject, document);
@@ -426,16 +426,6 @@ export class PapperMarkdownPreviewController {
       this.scrollSync.syncFromEditor(this.htmlPreviewPanel, this.htmlPreviewDocumentUri, sourceEditor);
     }
   }
-}
-
-/** Keeps configured projects intact and gives other saved Markdown a preview root. */
-async function resolveHtmlPreviewProject(markdownUri: vscode.Uri): Promise<PandocManuscriptProject> {
-  const project = await findPandocManuscriptProject(markdownUri);
-  if (project) {
-    return project;
-  }
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(markdownUri);
-  return { rootUri: workspaceFolder?.uri || vscode.Uri.file(path.dirname(markdownUri.fsPath)) };
 }
 
 /** Compares two file URIs using platform-aware filesystem path rules. */
