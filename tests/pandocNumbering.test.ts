@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parsePandocDocument } from "../src/parser";
-import { collectPandocCrossReferenceNumbers } from "../src/pandocNumbering";
+import { collectPandocCrossReferenceNumbers } from "../src/inlayHints/numbering";
 
 const markdown = [
   "# Introduction {#sec:intro}",

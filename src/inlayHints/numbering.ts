@@ -1,4 +1,5 @@
-import type { HeadingEntry, LabelEntry, MathBlockEntry, ParsedPandocDocument } from "./parser";
+import type { HeadingEntry, LabelEntry, MathBlockEntry, ParsedPandocDocument } from "../parser";
+import { asArray, asRecord, flattenAstText, getAttributeId, normalizeWhitespace, walkAst, type PandocNode } from "./ast";
 
 export type CrossReferenceNumber = {
   kind: "section" | "figure" | "table" | "equation";
@@ -9,7 +10,6 @@ export type CrossReferenceNumber = {
   character: number;
 };
 
-type PandocNode = { t?: string; c?: unknown };
 type CaptionNumber = { number: string; displayText: string };
 type AstNumberTarget = { node: PandocNode; label?: string; number?: string; displayText?: string };
 
@@ -85,43 +85,6 @@ export function collectPandocCrossReferenceNumbers(ast: unknown, parsed: ParsedP
 }
 
 /**
- * Visits Pandoc nodes under the document blocks while carrying a surrounding span label.
- *
- * @param value Current AST value.
- * @param parentLabel Label inherited from a surrounding span.
- * @param visit Callback for each Pandoc node.
- */
-function walkAst(value: unknown, parentLabel: string | undefined, visit: (node: PandocNode, parentLabel?: string) => void): void {
-  if (Array.isArray(value)) {
-    for (const child of value) {
-      walkAst(child, parentLabel, visit);
-    }
-    return;
-  }
-
-  const record = asRecord(value);
-  if (!record) {
-    return;
-  }
-
-  const node = record as PandocNode;
-  const nextLabel = node.t === "Span" ? getAttributeId(asArray(node.c)?.[0]) || parentLabel : parentLabel;
-  if (typeof node.t === "string") {
-    visit(node, parentLabel);
-  }
-  walkAst(node.c, nextLabel, visit);
-}
-
-/**
- * Returns the identifier from a Pandoc Attr triple.
- *
- * @param value Pandoc `[identifier, classes, attributes]` tuple.
- */
-function getAttributeId(value: unknown): string | undefined {
-  return Array.isArray(value) && typeof value[0] === "string" && value[0] ? value[0] : undefined;
-}
-
-/**
  * Reads the generated section number at the start of a Header's inline content.
  *
  * @param value Header inline list.
@@ -176,46 +139,6 @@ function getCaptionNumber(value: unknown, titleValue: unknown, chapterDelimiterV
     return undefined;
   }
   return { number, displayText: captionText.slice(0, captionText.length - remainder.length + number.length) };
-}
-
-/**
- * Flattens caption inline content without including links, attributes, or target URLs.
- *
- * @param value Pandoc metadata, inline, or caption block value.
- */
-function flattenAstText(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map(flattenAstText).join("");
-  }
-
-  const node = asRecord(value);
-  if (!node || typeof node.t !== "string") {
-    return "";
-  }
-
-  if (node.t === "Str" || node.t === "MetaString" || node.t === "Math") {
-    return typeof node.c === "string" ? node.c : "";
-  }
-  if (node.t === "Space" || node.t === "SoftBreak" || node.t === "LineBreak") {
-    return " ";
-  }
-  if (node.t === "Code" || node.t === "RawInline") {
-    const content = asArray(node.c);
-    return typeof content?.[1] === "string" ? content[1] : "";
-  }
-  if (node.t === "Link" || node.t === "Image" || node.t === "Span") {
-    return flattenAstText(asArray(node.c)?.[1]);
-  }
-  return flattenAstText(node.c);
-}
-
-/**
- * Normalizes whitespace to compare caption title prefixes across Pandoc output.
- *
- * @param value Caption or title text.
- */
-function normalizeWhitespace(value: string): string {
-  return value.replace(/\u00a0/g, " ").replace(/\s+/g, " ");
 }
 
 /**
@@ -352,22 +275,3 @@ function getMetaBoolean(value: unknown): boolean {
   return meta?.t === "MetaBool" && meta.c === true;
 }
 
-/**
- * Narrows an arbitrary value to a record.
- *
- * @param value Candidate JSON value.
- */
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
-/**
- * Narrows an arbitrary value to an array.
- *
- * @param value Candidate JSON value.
- */
-function asArray(value: unknown): unknown[] | undefined {
-  return Array.isArray(value) ? value : undefined;
-}

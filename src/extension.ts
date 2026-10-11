@@ -16,7 +16,7 @@ import { getConfiguration } from "./configuration";
 import { isBuildableMarkdownDocument, isPandocDocument } from "./vscodeUtils";
 import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocFoldingRangeProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
-import { NumberingInlayHints } from "./numberingInlayHints";
+import { PandocInlayHints } from "./inlayHints";
 import { PapperUpdateChecker } from "./papperUpdateChecker";
 import { installOrUpdatePapper } from "./papperBuildUtils";
 import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationHoverProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
   const metafilePreviewEditorProvider = new MetafilePreviewCustomEditorProvider(imagePreviewRenderer, output);
   const buildRunner = new PandocBuildRunner(output);
   const markdownPreview = new PapperMarkdownPreviewController(output);
-  const numberingInlayHints = new NumberingInlayHints(buildRunner, output);
+  const inlayHints = new PandocInlayHints(output);
   const papperUpdateChecker = new PapperUpdateChecker(context.globalState);
   let papperMaintenanceRunning = false;
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
@@ -82,7 +82,7 @@ export function activate(context: vscode.ExtensionContext) {
   }));
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(PANDOC_SELECTOR, new PandocFoldingRangeProvider(index)));
-  context.subscriptions.push(vscode.languages.registerInlayHintsProvider(PANDOC_SELECTOR, numberingInlayHints));
+  context.subscriptions.push(vscode.languages.registerInlayHintsProvider(PANDOC_SELECTOR, inlayHints));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
   context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));
@@ -96,7 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => markdownPreview.dispose() });
   context.subscriptions.push({ dispose: () => fencedDivHighlighter.dispose() });
   context.subscriptions.push({ dispose: () => inlineFoldController.dispose() });
-  context.subscriptions.push(numberingInlayHints);
+  context.subscriptions.push(inlayHints);
   context.subscriptions.push(papperUpdateChecker);
   papperUpdateChecker.start();
 
@@ -146,7 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
         },
       );
       await markdownPreview.refreshContext();
-      numberingInlayHints.refreshOpenDocuments();
+      inlayHints.refreshOpenDocuments();
       void vscode.window.showInformationMessage("Papper 已安装或更新。");
     } catch (error) {
       output.appendLine(`[Papper] Installation or update failed: ${String(error)}`);
@@ -218,7 +218,7 @@ export function activate(context: vscode.ExtensionContext) {
       inlineFoldController.updateVisibleEditors();
     }
     if (event.affectsConfiguration("pandocManuscriptTools.enableNumberInlayHints")) {
-      numberingInlayHints.refreshOpenDocuments();
+      inlayHints.refreshOpenDocuments();
     }
   }));
 
@@ -226,7 +226,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (isPandocDocument(document)) {
       await index.prepareDocument(document);
       updateDiagnostics(document, index, diagnostics);
-      numberingInlayHints.scheduleRefresh(document);
+      inlayHints.scheduleRefresh(document);
       void markdownPreview.refreshContext();
     }
   }));
@@ -234,7 +234,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
     if (isPandocDocument(event.document)) {
       index.updateDocument(event.document);
-      numberingInlayHints.scheduleRefresh(event.document);
+      inlayHints.scheduleRefresh(event.document);
       if (index.isDefinitionSourceForOpenReviewerReply(event.document)) {
         updateDiagnosticsForOpenDocuments(index, diagnostics);
       } else {
@@ -252,7 +252,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (document) => {
     if (isPandocDocument(document)) {
       index.updateDocument(document);
-      numberingInlayHints.scheduleRefresh(document, 0);
+      inlayHints.scheduleRefresh(document, 0);
       await index.refreshWorkspace();
       updateDiagnosticsForOpenDocuments(index, diagnostics);
     }
@@ -260,7 +260,7 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument((document) => {
-    numberingInlayHints.closeDocument(document);
+    inlayHints.closeDocument(document);
   }));
 
   // Closed manuscript files can change or disappear outside the editor. Refresh
@@ -293,7 +293,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   void index.refreshWorkspace().then(() => updateDiagnosticsForOpenDocuments(index, diagnostics));
   for (const document of vscode.workspace.textDocuments) {
-    numberingInlayHints.scheduleRefresh(document);
+    inlayHints.scheduleRefresh(document);
   }
   void markdownPreview.refreshContext();
   fencedDivHighlighter.updateVisibleEditors();

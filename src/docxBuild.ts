@@ -4,7 +4,7 @@ import * as crypto from "crypto";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { findExistingPapperExecutable, findPandocManuscriptProject, isPapperBuildAvailable, preparePapperEnvironment, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "./papperBuildUtils";
+import { findPandocManuscriptProject, isPapperBuildAvailable, resolvePapperExecutable, runProcess, type PandocManuscriptProject } from "./papperBuildUtils";
 import { isBuildableMarkdownDocument } from "./vscodeUtils";
 import { openWindowsDocx } from "./windowsDocxOpener";
 
@@ -13,7 +13,7 @@ type DocxDownloadServer = { uri: vscode.Uri; dispose: () => void };
 export class PandocBuildRunner {
   declare output: import("vscode").OutputChannel;
 
-  /** Creates the Papper build runner used by DOCX and inlay-hint commands. */
+  /** Creates the Papper build runner used by DOCX commands. */
   constructor(output: vscode.OutputChannel) {
     this.output = output;
   }
@@ -55,52 +55,6 @@ export class PandocBuildRunner {
         await this.runDocxBuild(project, document);
       },
     );
-  }
-
-  /**
-   * Builds and reads PMT's processed JSON AST for the current editor buffer.
-   *
-   * The Markdown mirror and AST share an OS temporary directory. This path
-   * only uses an installed Papper executable and never auto-installs a CLI
-   * during ordinary editor hint refreshes.
-   *
-   * @param document Markdown document to build.
-   */
-  async buildJsonAstForDocument(document: vscode.TextDocument): Promise<unknown | undefined> {
-    if (!isBuildableMarkdownDocument(document)) {
-      return undefined;
-    }
-
-    const project = await findPandocManuscriptProject(document.uri);
-
-    const papperExecutable = await findExistingPapperExecutable();
-    if (!papperExecutable) {
-      return undefined;
-    }
-
-    const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pmt-numbering-"));
-    const markdownMirrorPath = path.join(outputDirectory, path.basename(document.uri.fsPath));
-    const astPath = path.join(outputDirectory, "ast.json");
-
-    try {
-      await fs.writeFile(markdownMirrorPath, document.getText(), "utf8");
-      const environment = await preparePapperEnvironment(papperExecutable);
-      const jsonBuildStartedAt = Date.now();
-      this.output.appendLine(`[Inlay hints][timing] Papper JSON build started: ${path.basename(document.uri.fsPath)} version=${document.version}`);
-      try {
-        await runProcess(papperExecutable, ["build", "json", markdownMirrorPath, "--output-file", astPath], {
-          cwd: project.rootUri.fsPath,
-          env: environment.env,
-        });
-      } finally {
-        this.output.appendLine(`[Inlay hints][timing] Papper JSON build ended: ${path.basename(document.uri.fsPath)} version=${document.version} duration=${Date.now() - jsonBuildStartedAt} ms`);
-      }
-      return JSON.parse(await fs.readFile(astPath, "utf8")) as unknown;
-    } finally {
-      await fs.rm(outputDirectory, { recursive: true, force: true }).catch((error) => {
-        this.output.appendLine(`[Inlay hints] Could not remove temporary build directory: ${String(error)}`);
-      });
-    }
   }
 
   /**
