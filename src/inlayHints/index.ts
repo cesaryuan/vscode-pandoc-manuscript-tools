@@ -1,2 +1,4 @@
 export { PandocInlayHints } from "./provider";
-export { InlayMetadataController, SET_INLAY_METADATA_COMMAND } from "./actions";
+export { InlayMetadataController } from "./actions";
+export { SET_INLAY_METADATA_COMMAND, SET_CSL_STYLE_COMMAND } from "./commands";
+export { CslStyleController } from "./csl/controller";

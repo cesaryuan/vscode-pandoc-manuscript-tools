@@ -222,6 +222,7 @@ function toReferenceInlayHint(reference: ReferenceHint, uriText: string, ast: un
   const tooltip = new vscode.MarkdownString();
   const prefixes: Record<string, InlayMetadataField> = { fig: "figPrefix", tbl: "tblPrefix", eq: "eqnPrefix", sec: "secPrefix" };
   const fields = [...new Set(reference.labels.map((label) => prefixes[label.split(":")[0]]).filter((field) => field !== undefined))];
+  if (reference.labels.some((label) => !/^(?:fig|tbl|eq|sec):/.test(label))) fields.push("csl");
   appendInlayMetadataActions(tooltip, uriText, fields, ast);
   if (fields.length) hint.tooltip = tooltip;
   return hint;

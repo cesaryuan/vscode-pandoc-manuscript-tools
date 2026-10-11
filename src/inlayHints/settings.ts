@@ -9,6 +9,7 @@ export const INLAY_METADATA_FIELDS = {
   secPrefix: "章节引用 prefix",
   figureTitle: "图题注 title",
   tableTitle: "表题注 title",
+  csl: "参考文献 CSL",
 } as const;
 export type InlayMetadataField = keyof typeof INLAY_METADATA_FIELDS;
 export type InlayMetadataValue = string | string[];
