@@ -16,7 +16,7 @@ import { getConfiguration } from "./configuration";
 import { isBuildableMarkdownDocument, isPandocDocument } from "./vscodeUtils";
 import { PandocDefinitionProvider, PandocReferenceProvider, PandocHoverProvider, ImagePreviewHoverProvider, PandocDocumentSymbolProvider, PandocFoldingRangeProvider, PandocCompletionProvider, updateDiagnosticsForOpenDocuments, updateDiagnostics } from "./providers";
 import { CustomImagePreviewContext } from "./customImagePreviewContext";
-import { PandocInlayHints } from "./inlayHints";
+import { PandocInlayHints, InlayMetadataController, SET_INLAY_METADATA_COMMAND } from "./inlayHints";
 import { PapperUpdateChecker } from "./papperUpdateChecker";
 import { installOrUpdatePapper } from "./papperBuildUtils";
 import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationHoverProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
@@ -43,6 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
   const buildRunner = new PandocBuildRunner(output);
   const markdownPreview = new PapperMarkdownPreviewController(output);
   const inlayHints = new PandocInlayHints(output);
+  const inlayMetadata = new InlayMetadataController(output);
   const papperUpdateChecker = new PapperUpdateChecker(context.globalState);
   let papperMaintenanceRunning = false;
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
@@ -83,6 +84,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(PANDOC_SELECTOR, new PandocDocumentSymbolProvider(index), { label: EXTENSION_NAME }));
   context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(PANDOC_SELECTOR, new PandocFoldingRangeProvider(index)));
   context.subscriptions.push(vscode.languages.registerInlayHintsProvider(PANDOC_SELECTOR, inlayHints));
+  context.subscriptions.push(vscode.commands.registerCommand(SET_INLAY_METADATA_COMMAND,
+    /** Edits the document encoded in the hint, even if another editor has focus. */
+    (uriText: unknown, field: unknown, value: unknown) => inlayMetadata.setMetadata(uriText, field, value)));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
   context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));

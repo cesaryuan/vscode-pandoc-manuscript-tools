@@ -5,6 +5,8 @@ import { InlayHintBuilder } from "./build";
 import { isBuildableMarkdownDocument, isPandocDocument } from "../vscodeUtils";
 import { parsePandocDocument } from "../parser";
 import type { ReferenceHint } from "./references";
+import { appendInlayMetadataActions } from "./actions";
+import type { InlayMetadataField } from "./settings";
 
 type CachedInlayHints = { version: number; hints: vscode.InlayHint[] };
 type RefreshState = { document: vscode.TextDocument; timer?: NodeJS.Timeout; running: boolean; rerun: boolean };
@@ -171,7 +173,10 @@ export class PandocInlayHints implements vscode.InlayHintsProvider, vscode.Dispo
       }
 
       const numbers = result ? collectPandocCrossReferenceNumbers(result.ast, parsePandocDocument(document.getText(), uriText)) : [];
-      const hints = [...numbers.map(toInlayHint), ...(result?.references.map(toReferenceInlayHint) ?? [])];
+      const hints = [
+        ...numbers.map((number) => toInlayHint(number, uriText, result?.ast)),
+        ...(result?.references.map((reference) => toReferenceInlayHint(reference, uriText, result.ast)) ?? []),
+      ];
       hints.sort((left, right) => left.position.compareTo(right.position));
       this.cache.set(uriText, { version, hints });
       this.changed.fire();
@@ -196,21 +201,29 @@ export class PandocInlayHints implements vscode.InlayHintsProvider, vscode.Dispo
  *
  * @param number AST-derived number and Markdown source position.
  */
-function toInlayHint(number: CrossReferenceNumber): vscode.InlayHint {
+function toInlayHint(number: CrossReferenceNumber, uriText: string, ast: unknown): vscode.InlayHint {
   const label = number.kind === "section"
     ? `§ ${number.number}`
     : number.displayText ?? number.number;
   const hint = new vscode.InlayHint(new vscode.Position(number.line, number.character), label);
   hint.paddingLeft = true;
-  hint.tooltip = new vscode.MarkdownString(`Number produced by Papper's Pandoc cross-reference build${number.label ? ` for \`${number.label}\`` : ""}.`);
+  const tooltip = new vscode.MarkdownString();
+  tooltip.appendText(`Number produced by Papper's Pandoc cross-reference build${number.label ? ` for ${number.label}` : ""}.`);
+  const fields: InlayMetadataField[] = number.kind === "figure" ? ["figureTitle"] : number.kind === "table" ? ["tableTitle"] : [];
+  appendInlayMetadataActions(tooltip, uriText, fields, ast);
+  hint.tooltip = tooltip;
   return hint;
 }
 
 /** Displays the built text once after each source reference expression, including grouped citations. */
-function toReferenceInlayHint(reference: ReferenceHint): vscode.InlayHint {
+function toReferenceInlayHint(reference: ReferenceHint, uriText: string, ast: unknown): vscode.InlayHint {
   const hint = new vscode.InlayHint(new vscode.Position(reference.line, reference.character), reference.displayText);
   hint.paddingLeft = true;
   hint.paddingRight = true;
-  hint.tooltip = new vscode.MarkdownString(`Reference text produced by Papper for ${reference.labels.map((label) => `\`${label}\``).join(", ")}.`);
+  const tooltip = new vscode.MarkdownString();
+  const prefixes: Record<string, InlayMetadataField> = { fig: "figPrefix", tbl: "tblPrefix", eq: "eqnPrefix", sec: "secPrefix" };
+  const fields = [...new Set(reference.labels.map((label) => prefixes[label.split(":")[0]]).filter((field) => field !== undefined))];
+  appendInlayMetadataActions(tooltip, uriText, fields, ast);
+  if (fields.length) hint.tooltip = tooltip;
   return hint;
 }
