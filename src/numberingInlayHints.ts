@@ -197,11 +197,7 @@ export class NumberingInlayHints implements vscode.InlayHintsProvider, vscode.Di
 function toInlayHint(number: CrossReferenceNumber): vscode.InlayHint {
   const label = number.kind === "section"
     ? `§ ${number.number}`
-    : number.kind === "figure"
-      ? `Fig. ${number.number}`
-      : number.kind === "table"
-        ? `Table ${number.number}`
-        : number.number;
+    : number.displayText ?? number.number;
   const hint = new vscode.InlayHint(new vscode.Position(number.line, number.character), label);
   hint.paddingLeft = true;
   hint.tooltip = new vscode.MarkdownString(`Number produced by Papper's Pandoc cross-reference build${number.label ? ` for \`${number.label}\`` : ""}.`);

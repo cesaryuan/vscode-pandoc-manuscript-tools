@@ -4,12 +4,14 @@ export type CrossReferenceNumber = {
   kind: "section" | "figure" | "table" | "equation";
   label?: string;
   number: string;
+  displayText?: string;
   line: number;
   character: number;
 };
 
 type PandocNode = { t?: string; c?: unknown };
-type AstNumberTarget = { node: PandocNode; label?: string; number?: string };
+type CaptionNumber = { number: string; displayText: string };
+type AstNumberTarget = { node: PandocNode; label?: string; number?: string; displayText?: string };
 
 /**
  * Maps Pandoc-crossref numbers in a processed AST back to source positions.
@@ -39,14 +41,14 @@ export function collectPandocCrossReferenceNumbers(ast: unknown, parsed: ParsedP
       figures.push({
         node,
         label: getAttributeId(content?.[0]),
-        number: getCaptionNumber(content?.[1], metadata.figureTitle),
+        ...getCaptionNumber(content?.[1], metadata.figureTitle),
       });
     } else if (node.t === "Table") {
       const content = asArray(node.c);
       tables.push({
         node,
         label: getAttributeId(content?.[0]),
-        number: getCaptionNumber(content?.[1], metadata.tableTitle),
+        ...getCaptionNumber(content?.[1], metadata.tableTitle),
       });
     } else if (node.t === "Math" && isDisplayMath(node.c)) {
       equations.push({ node, label: parentLabel, number: getEquationNumber(node.c) });
@@ -147,22 +149,28 @@ function isUnnumberedHeader(node: PandocNode): boolean {
 }
 
 /**
- * Reads a figure or table number from the processed caption and its Pandoc-crossref title.
+ * Reads a figure or table number and its rendered prefix from the processed caption.
+ * Preserve the caption's prefix and spacing to fix hints that previously hard-coded `Fig.` and `Table`.
  *
  * @param value Caption pair containing a short caption and long caption blocks.
  * @param titleValue Pandoc metadata for `figureTitle` or `tableTitle`.
  */
-function getCaptionNumber(value: unknown, titleValue: unknown): string | undefined {
+function getCaptionNumber(value: unknown, titleValue: unknown): CaptionNumber | undefined {
   const caption = asArray(value);
   const blocks = Array.isArray(caption?.[1]) ? caption[1] : Array.isArray(caption?.[0]) ? caption[0] : [];
-  const captionText = normalizeWhitespace(flattenAstText(blocks));
+  const captionText = normalizeWhitespace(flattenAstText(blocks)).trimStart();
   const title = normalizeWhitespace(flattenAstText(titleValue)).trim();
-  if (!title || !captionText.toLocaleLowerCase().startsWith(title.toLocaleLowerCase())) {
+  // An explicitly empty title produces bare numbers; absent metadata cannot establish a caption prefix.
+  if (titleValue === undefined || !captionText.toLocaleLowerCase().startsWith(title.toLocaleLowerCase())) {
     return undefined;
   }
 
   const remainder = captionText.slice(title.length).trimStart();
-  return remainder.match(/^((?:\d+(?:\.\d+)*|[ivxlcdm]+)(?:\s*\([a-z0-9]+\))?)/i)?.[1];
+  const number = remainder.match(/^((?:\d+(?:\.\d+)*|[ivxlcdm]+)(?:\s*\([a-z0-9]+\))?)/i)?.[1];
+  if (!number) {
+    return undefined;
+  }
+  return { number, displayText: captionText.slice(0, captionText.length - remainder.length + number.length) };
 }
 
 /**
@@ -235,6 +243,7 @@ function appendLabeledBlockNumbers(
       kind,
       label: source.label,
       number: target.number,
+      displayText: target.displayText,
       line: source.fullRange.end.line,
       character: source.fullRange.end.character,
     });

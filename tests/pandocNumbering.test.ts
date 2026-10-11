@@ -66,6 +66,43 @@ function mapsProcessedNumbersToMarkdownPositions(): void {
     { kind: "table", label: "tbl:values", number: "1", line: 8 },
     { kind: "equation", label: "eq:x", number: "(1)", line: 12 },
   ]);
+  assert.deepEqual(numbers.filter(({ kind }) => kind === "figure" || kind === "table").map(({ displayText }) => displayText), ["Figure 1", "Table 1"]);
+}
+
+/** Prevents hints from replacing localized prefixes or inserting spaces absent from built captions. */
+function preservesBuiltCaptionPrefixes(): void {
+  const parsed = parsePandocDocument(markdown, "file:///manuscript.md");
+  const ast: { meta: unknown; blocks: unknown[] } = {
+    meta: {
+      figureTitle: { t: "MetaInlines", c: [{ t: "Strong", c: [{ t: "Str", c: "图" }] }] },
+      tableTitle: { t: "MetaInlines", c: [{ t: "Str", c: "表" }] },
+    },
+    blocks: [
+      { t: "Figure", c: [["fig:trend", [], []], [null, [{ t: "Plain", c: [
+        { t: "Strong", c: [{ t: "Str", c: "图" }] }, { t: "Str", c: "2.3(a)：结果" },
+      ] }]], []] },
+      { t: "Table", c: [["tbl:values", [], []], [null, [{ t: "Plain", c: [
+        { t: "Str", c: "表" }, { t: "Space" }, { t: "Str", c: "IV:" }, { t: "Space" }, { t: "Str", c: "Values" },
+      ] }]], [], [], [], []] },
+    ],
+  };
+  assert.deepEqual(collectPandocCrossReferenceNumbers(ast, parsed).map(({ number, displayText }) => ({ number, displayText })), [
+    { number: "2.3(a)", displayText: "图2.3(a)" },
+    { number: "IV", displayText: "表 IV" },
+  ]);
+}
+
+/** An explicitly empty caption title must produce a bare number rather than an invented English prefix. */
+function preservesEmptyCaptionPrefix(): void {
+  const parsed = parsePandocDocument(markdown, "file:///manuscript.md");
+  const ast: { meta: unknown; blocks: unknown[] } = {
+    meta: { figureTitle: { t: "MetaInlines", c: [] } },
+    blocks: [{ t: "Figure", c: [["fig:trend", [], []], [null, [{ t: "Plain", c: [
+      { t: "Str", c: "7:" }, { t: "Space" }, { t: "Str", c: "A figure." },
+    ] }]], []] }],
+  };
+  assert.equal(collectPandocCrossReferenceNumbers(ast, parsed)[0]?.displayText, "7");
+  assert.deepEqual(collectPandocCrossReferenceNumbers({ ...ast, meta: {} }, parsed), []);
 }
 
 /**
@@ -83,4 +120,6 @@ function ignoresUnnumberedAndMalformedAstEntries(): void {
 }
 
 test("maps processed cross-reference numbers to Markdown inlay positions", mapsProcessedNumbersToMarkdownPositions);
+test("preserves built caption prefixes and spacing", preservesBuiltCaptionPrefixes);
+test("preserves explicitly empty caption prefixes", preservesEmptyCaptionPrefix);
 test("ignores unnumbered sections and malformed AST values", ignoresUnnumberedAndMalformedAstEntries);
