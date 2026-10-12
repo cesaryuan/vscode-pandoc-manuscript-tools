@@ -22,6 +22,7 @@ import { installOrUpdatePapper } from "./papperBuildUtils";
 import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationHoverProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
 import { ManuscriptStyleController, SET_MANUSCRIPT_STYLE_COMMAND } from "./manuscriptStyle";
 import { MarkdownYamlHeaderCompletionProvider, MarkdownYamlHeaderHoverProvider } from "./markdownYamlHeader";
+import { PapperSettingsController, OPEN_PAPPER_SETTINGS_COMMAND } from "./papperSettings/controller";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -45,6 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
   const inlayHints = new PandocInlayHints(output);
   const inlayMetadata = new InlayMetadataController(output);
   const cslStyles = new CslStyleController(output);
+  const papperSettings = new PapperSettingsController(output, cslStyles);
   const papperUpdateChecker = new PapperUpdateChecker(context.globalState);
   let papperMaintenanceRunning = false;
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
@@ -89,8 +91,11 @@ export function activate(context: vscode.ExtensionContext) {
     /** Edits the document encoded in the hint, even if another editor has focus. */
     (uriText: unknown, field: unknown, value: unknown) => inlayMetadata.setMetadata(uriText, field, value)));
   context.subscriptions.push(vscode.commands.registerCommand(SET_CSL_STYLE_COMMAND,
-    /** Uses an explicit hover target, or the active document when invoked from the command palette. */
-    (uriText: unknown, fieldPath: unknown) => cslStyles.setCsl(uriText, fieldPath)));
+    /** Opens the shared settings window at the bibliography section, preserving an explicit hover scope. */
+    (uriText: unknown, fieldPath: unknown) => papperSettings.open(uriText, "bibliography", fieldPath)));
+  context.subscriptions.push(papperSettings, vscode.commands.registerCommand(OPEN_PAPPER_SETTINGS_COMMAND,
+    /** Opens the settings window for the active source or the last settings source. */
+    (uriText: unknown) => papperSettings.open(uriText)));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
   context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));

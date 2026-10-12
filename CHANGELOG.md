@@ -6,6 +6,8 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Add a unified **Papper: 打开设置** window with formula/MathType, table, named DOCX style, bibliography, image, page-layout and cross-reference sections; edit manuscript/project and reply scopes with apply/reset controls and protection against stale configuration edits.
+- Route **设置参考文献样式** commands and hover actions to the unified settings window's bibliography section, retaining Zotero search/previews and downloading only on confirmation without closing the settings window.
 - Expose **Papper: 设置参考文献样式** in the Command Palette and on YAML `csl` key/value hovers in manuscript headers and project style files; update and reveal the selected metadata scope, including reply overrides.
 - Replace the CSL quick picker with a searchable journal page containing Zotero's formatted Citations and Bibliography previews; support hover/keyboard comparison, explicit confirmation and cancellation of obsolete preview requests.
 - Add a bibliography inlay-hint action to search Zotero's journal styles, download a usable local CSL into the manuscript workspace, and set/reveal its `csl` header path; remove build-explanation text from number-hint tooltips.

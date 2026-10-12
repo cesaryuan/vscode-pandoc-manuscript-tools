@@ -104,13 +104,12 @@ class PickerFixture {
 test("journal search ranks exact names and abbreviations and discards loading results after cancel", async () => {
   const picker = new PickerFixture();
   const fixture = new SourceModuleFixture({ vscode: { ViewColumn: { Active: -1 }, window: { createWebviewPanel: () => picker } } });
-  const { pickZoteroStyle, searchZoteroStyles } = fixture.load<{
-    pickZoteroStyle(repository: unknown): Promise<ZoteroStyle | undefined>;
-    searchZoteroStyles(styles: ZoteroStyle[], query: string): ZoteroStyle[];
-  }>("src/inlayHints/csl/picker.ts");
+  const { attachZoteroSearch, searchZoteroStyles } = fixture.load<typeof import("../src/inlayHints/csl/picker")>("src/inlayHints/csl/picker.ts");
   let complete: (styles: ZoteroStyle[]) => void;
   const loaded = new Promise<ZoteroStyle[]>((resolve) => { complete = resolve; });
-  const selected = pickZoteroStyle({ getStyles: () => loaded });
+  let selected: ZoteroStyle;
+  const bridge = attachZoteroSearch(picker.webview as any, { getStyles: () => loaded } as any,
+    (style) => { selected = style; }, () => {}, () => {});
   picker.send({ type: "ready" });
   picker.send({ type: "search", query: "J Test", revision: 1 });
   complete([{ name: "journal", title: "Journal of Testing", titleShort: "J Test", format: "numeric" }]);
@@ -120,15 +119,15 @@ test("journal search ranks exact names and abbreviations and discards loading re
   assert.equal(results.styles[0].title, "Journal of Testing");
   assert.match(results.styles[0].description, /J Test/);
   picker.send({ type: "select", name: "journal" });
-  assert.equal((await selected).name, "journal");
-  assert(picker.disposed);
+  assert.equal(selected.name, "journal");
+  bridge.dispose();
   const cancelled = new PickerFixture();
   const cancelledFixture = new SourceModuleFixture({ vscode: { ViewColumn: { Active: -1 }, window: { createWebviewPanel: () => cancelled } } });
-  const pickerModule = cancelledFixture.load<{ pickZoteroStyle(repository: unknown): Promise<unknown> }>("src/inlayHints/csl/picker.ts");
+  const pickerModule = cancelledFixture.load<typeof import("../src/inlayHints/csl/picker")>("src/inlayHints/csl/picker.ts");
   let late: (styles: ZoteroStyle[]) => void;
-  const pending = pickerModule.pickZoteroStyle({ getStyles: () => new Promise<ZoteroStyle[]>((resolve) => { late = resolve; }) });
-  cancelled.dispose();
-  assert.equal(await pending, undefined);
+  const pending = pickerModule.attachZoteroSearch(cancelled.webview as any,
+    { getStyles: () => new Promise<ZoteroStyle[]>((resolve) => { late = resolve; }) } as any, () => {}, () => {}, () => {});
+  pending.dispose();
   late([{ name: "late", title: "Late" }]);
   await Promise.resolve();
   assert.equal(cancelled.messages.length, 0);
@@ -147,7 +146,6 @@ test("selected journal downloads into its own workspace, sets a build-relative C
   let text = "---\ntitle: Manuscript # keep\n---\nSee @paper\n";
   let selected: { start: { offset: number }; end: { offset: number } };
   let revealed: typeof selected;
-  const errors: string[] = [];
   const document = { uri: { scheme: "file", fsPath, toString: () => uriText }, languageId: "markdown", getText: () => text,
     positionAt: (offset: number) => ({ offset }) };
   /** Keeps the offsets used by the editor selection and edit range. */
@@ -166,7 +164,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       return true;
     },
   };
-  let picker = new PickerFixture();
+  let cancelDownload = false;
   const fixture = new SourceModuleFixture({
     "src/papperBuildUtils.ts": { findPandocManuscriptProject: async () => ({ rootUri: { fsPath: projectRoot } }) },
     vscode: {
@@ -174,25 +172,24 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       Uri: { parse: () => document.uri },
       workspace: { openTextDocument: async () => document, getWorkspaceFolder: () => ({ uri: { fsPath: root } }) },
       window: {
-        createWebviewPanel: () => { picker = new PickerFixture(); return picker; }, visibleTextEditors: [editor], activeTextEditor: editor,
+        visibleTextEditors: [editor], activeTextEditor: editor,
         showTextDocument: async (shown: typeof document) => { assert.equal(shown, document); return editor; },
         withProgress: async (_options: unknown, callback: (progress: unknown, token: unknown) => Promise<unknown>) => callback({}, {
-          isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }),
+          isCancellationRequested: cancelDownload, onCancellationRequested: () => ({ dispose() {} }),
         }),
-        showErrorMessage: (message: string) => errors.push(message),
       },
     },
   });
-  const { CslStyleController } = fixture.load<{ CslStyleController: new (output: unknown, repository: unknown) => { setCsl(uri?: string, keys?: string[]): Promise<void> } }>("src/inlayHints/csl/controller.ts");
+  const { CslStyleController } = fixture.load<typeof import("../src/inlayHints/csl/controller")>("src/inlayHints/csl/controller.ts");
+  const { getCslSettingPath, getCslConfigurationContent } = fixture.load<typeof import("../src/inlayHints/csl/configuration")>("src/inlayHints/csl/configuration.ts");
   const repository = { getStyles: async () => [{ name: "journal", title: "Journal" }], downloadStyle: async () => csl() };
-  const controller = new CslStyleController({ appendLine() {} }, repository);
+  const controller = new CslStyleController({ appendLine() {} } as any, repository as any);
+  /** Applies the chosen style using the displayed source snapshot and exact field scope. */
+  function choose(keys?: string[]) {
+    return controller.applyStyle(document as any, getCslSettingPath(document as any, keys), { name: "journal", title: "Journal" }, getCslConfigurationContent(document as any));
+  }
   try {
-    const pending = controller.setCsl(uriText);
-    // Let the source open and cached index populate before simulating the user's journal selection.
-    await new Promise((resolve) => setImmediate(resolve));
-    picker.send({ type: "select", name: "journal" });
-    await pending;
-    assert.deepEqual(errors, []);
+    await choose();
     const metadata = parse(getYamlHeader(text).content);
     const filename = path.resolve(projectRoot, metadata.csl);
     assert.equal(filename, path.join(root, "pandoc", "csl", "journal.csl"));
@@ -204,23 +201,17 @@ test("selected journal downloads into its own workspace, sets a build-relative C
     const configured = text;
     const files = await readdir(path.join(root, "pandoc", "csl"));
     repository.downloadStyle = async () => { throw new Error("Download failed"); };
-    const failed = controller.setCsl(uriText);
-    await new Promise((resolve) => setImmediate(resolve));
-    picker.send({ type: "select", name: "journal" });
-    await failed;
-    assert.match(errors[0], /Download failed/);
+    await assert.rejects(choose(), /Download failed/);
     assert.equal(text, configured);
     assert.deepEqual(await readdir(path.join(root, "pandoc", "csl")), files);
 
-    const cancelled = controller.setCsl(uriText);
-    await new Promise((resolve) => setImmediate(resolve));
-    picker.dispose();
-    await cancelled;
-    assert.equal(errors.length, 1);
+    cancelDownload = true;
+    assert.equal(await choose(), false);
+    cancelDownload = false;
     assert.equal(text, configured);
 
     repository.downloadStyle = async () => csl();
-    // Palette calls have no URI; hover calls carry an exact nested scope, including its spelling.
+    // Settings navigation retains the exact selected scope, including its spelling.
     for (const scenario of [
       { source: "---\ncsl: # fill this\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: undefined, scope: ["csl"] },
       { source: "# project defaults\nmathtype: false\n", language: "yaml", filename: "style.yml", keys: undefined, scope: ["pandocMetadata", "csl"] },
@@ -231,11 +222,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       text = scenario.source;
       document.languageId = scenario.language;
       document.uri.fsPath = path.join(projectRoot, scenario.filename);
-      const setting = controller.setCsl(scenario.keys ? uriText : undefined, scenario.keys);
-      await new Promise((resolve) => setImmediate(resolve));
-      picker.send({ type: "select", name: "journal" });
-      await setting;
-      assert.equal(errors.length, 1, errors.join("\n"));
+      await choose(scenario.keys);
       const configuredYaml = parse(scenario.language === "yaml" ? text : getYamlHeader(text).content);
       const selectedPath = scenario.scope.reduce((node, key) => node[key], configuredYaml);
       assert.equal(path.resolve(projectRoot, selectedPath), path.join(root, "pandoc", "csl", "journal.csl"));
@@ -252,13 +239,10 @@ test("selected journal downloads into its own workspace, sets a build-relative C
     text = "pandocMetadata:\n  csl: initial.csl\n";
     document.languageId = "yaml";
     document.uri.fsPath = path.join(projectRoot, "style.yml");
-    const racing = controller.setCsl();
-    await new Promise((resolve) => setImmediate(resolve));
+    const original = getCslConfigurationContent(document as any);
     text = "pandocMetadata:\n  csl: concurrent.csl\n";
-    picker.send({ type: "select", name: "journal" });
-    await racing;
+    await assert.rejects(controller.applyStyle(document as any, ["pandocMetadata", "csl"], { name: "journal", title: "Journal" }, original), /配置已改变/);
     assert.equal(parse(text).pandocMetadata.csl, "concurrent.csl");
-    assert.match(errors.at(-1), /配置已改变/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -340,10 +324,10 @@ test("preview preserves citation typography, bibliography indents and text while
 test("switching and closing a preview prevents obsolete responses from replacing the current journal", async () => {
   const picker = new PickerFixture();
   const fixture = new SourceModuleFixture({ vscode: { ViewColumn: { Active: -1 }, window: { createWebviewPanel: () => picker } } });
-  const { pickZoteroStyle } = fixture.load<{ pickZoteroStyle(repository: unknown): Promise<unknown> }>("src/inlayHints/csl/picker.ts");
+  const { attachZoteroSearch } = fixture.load<typeof import("../src/inlayHints/csl/picker")>("src/inlayHints/csl/picker.ts");
   const pending = new Map<string, { resolve: (value: unknown) => void; signal: AbortSignal }>();
-  const choosing = pickZoteroStyle({ getStyles: async () => [{ name: "first", title: "First" }, { name: "second", title: "Second" }],
-    getPreview: (style: ZoteroStyle, signal: AbortSignal) => new Promise((resolve) => pending.set(style.name, { resolve, signal })) });
+  const choosing = attachZoteroSearch(picker.webview as any, { getStyles: async () => [{ name: "first", title: "First" }, { name: "second", title: "Second" }],
+    getPreview: (style: ZoteroStyle, signal: AbortSignal) => new Promise((resolve) => pending.set(style.name, { resolve, signal })) } as any, () => {}, () => {}, () => {});
   picker.send({ type: "ready" });
   await Promise.resolve();
   picker.send({ type: "preview", name: "first" });
@@ -360,8 +344,7 @@ test("switching and closing a preview prevents obsolete responses from replacing
   assert.equal(previews[0].name, "second");
   picker.send({ type: "preview", name: "first" });
   await new Promise((resolve) => setTimeout(resolve, 200));
-  picker.dispose();
-  assert.equal(await choosing, undefined);
+  choosing.dispose();
   pending.get("first").resolve({ citations: ["late"], bibliography: "late" });
   await Promise.resolve();
   assert.equal(picker.messages.filter((message) => message.type === "preview").length, 1);

@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
 
+export type PickerShell = { styles: string; before: string; after: string; script: string };
+
 /** Builds the CSL search page; the extension supplies results and safe previews through the webview message bridge. */
-export function buildCslPickerHtml(): string {
+export function buildCslPickerHtml(shell?: PickerShell): string {
   const nonce = randomBytes(18).toString("base64");
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-<title>设置参考文献样式</title>
+<title>${shell ? "Papper 设置" : "设置参考文献样式"}</title>
 <style>
 * { box-sizing: border-box; } body { margin:0; color:var(--vscode-foreground); background:var(--vscode-editor-background); font:var(--vscode-font-size,13px) var(--vscode-font-family,sans-serif); }
 .page { display:flex; flex-direction:column; height:100vh; padding:24px; gap:18px; }
@@ -30,13 +32,15 @@ button:hover { background:var(--vscode-button-hoverBackground); } button:focus-v
 #sample .csl-entry > .csl-right-inline { float:none !important; width:auto !important; margin-left:0 !important; }
 .notice { font:var(--vscode-font-size,13px) var(--vscode-font-family,sans-serif); color:var(--vscode-descriptionForeground); } footer { display:flex; justify-content:space-between; gap:12px; align-items:center; }
 @media(max-width:650px) { .page { padding:14px; } .content { grid-template-columns:1fr; grid-template-rows:minmax(140px,38%) minmax(0,1fr); gap:14px; } .preview { padding:14px; } footer { align-items:flex-start; } }
-</style></head><body><main class="page">
+${shell?.styles ?? ""}
+</style></head><body>${shell?.before ?? ""}<main class="page" id="bibliography">
 <header><h1>设置参考文献样式</h1><p class="muted">搜索期刊名称或缩写，查看引用和参考文献的格式</p></header>
-<div class="toolbar"><input id="search" type="search" aria-label="搜索期刊名称或缩写" placeholder="例如 Nature、PLOS ONE" autocomplete="off"><button id="cancel" class="secondary">取消</button></div>
+<div id="csl-config"></div>
+<div class="toolbar"><input id="search" type="search" aria-label="搜索期刊名称或缩写" placeholder="例如 Nature、PLOS ONE" autocomplete="off"><button id="cancel" class="secondary">${shell ? "清空搜索" : "取消"}</button></div>
 <div class="content"><div class="results"><div id="count" class="muted" role="status">正在加载 Zotero 样式库…</div><div id="list" role="listbox" aria-label="期刊样式"></div></div>
 <article class="preview" aria-label="样式预览"><h2 id="style-title">样式预览</h2><p id="style-format" class="muted"></p><div id="sample" aria-live="polite"><p class="notice">将鼠标移到期刊名称，或使用方向键查看 Citations 和 Bibliography</p></div></article></div>
 <footer><span class="muted">Zotero 示例文献 · 确认后下载并更新参考文献样式配置</span><button id="apply" disabled>使用此样式</button></footer>
-</main><script nonce="${nonce}">
+</main>${shell?.after ?? ""}<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const search = document.getElementById('search');
 const list = document.getElementById('list');
@@ -68,13 +72,15 @@ function accept() { if (active) vscode.postMessage({type:'select', name:active.n
 function requestSearch() { revision++; vscode.postMessage({type:'search', query:search.value, revision}); }
 search.addEventListener('input', () => { clearTimeout(searchTimer); active = undefined; results = []; apply.disabled = true; count.textContent = '正在搜索…'; list.replaceChildren(); notice('搜索后选择期刊查看预览'); revision++; searchTimer = setTimeout(requestSearch, 120); });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') { event.preventDefault(); vscode.postMessage({type:'cancel'}); }
+  if (document.getElementById('bibliography').hidden) return;
+  if (!document.getElementById('search').contains(event.target) && !list.contains(event.target) && event.target !== apply && event.target !== document.getElementById('cancel')) return;
+  if (event.key === 'Escape') { event.preventDefault(); ${shell ? "search.value = ''; requestSearch();" : "vscode.postMessage({type:'cancel'});"} }
   if (event.key === 'Enter' && event.target !== document.getElementById('cancel')) { event.preventDefault(); accept(); }
   if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && results.length) {
     event.preventDefault(); const current = results.findIndex(style => style.name === active?.name); const next = Math.max(0, Math.min(results.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1))); activate(results[next], true);
   }
 });
-document.getElementById('cancel').addEventListener('click', () => vscode.postMessage({type:'cancel'}));
+document.getElementById('cancel').addEventListener('click', () => { ${shell ? "search.value = ''; requestSearch(); search.focus();" : "vscode.postMessage({type:'cancel'});"} });
 apply.addEventListener('click', accept);
 window.addEventListener('message', (event) => {
   const message = event.data;
@@ -87,7 +93,9 @@ window.addEventListener('message', (event) => {
   } else if (message.type === 'preview' && message.name === active?.name) { sample.innerHTML = message.html; }
   else if (message.type === 'previewError' && message.name === active?.name) { notice(message.error + '。仍可使用此样式，或切换其他期刊'); }
   else if (message.type === 'ready') { requestSearch(); }
+  else if (message.type === 'indexError') { count.textContent = message.error + '，修改搜索词以重试'; }
+  else if (message.type === 'cslBusy') { apply.disabled = message.busy || !active; }
 });
-search.focus(); vscode.postMessage({type:'ready'});
+${shell ? shell.script : "search.focus(); vscode.postMessage({type:'ready'});"}
 </script></body></html>`;
 }
