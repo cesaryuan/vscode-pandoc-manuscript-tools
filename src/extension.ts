@@ -89,8 +89,8 @@ export function activate(context: vscode.ExtensionContext) {
     /** Edits the document encoded in the hint, even if another editor has focus. */
     (uriText: unknown, field: unknown, value: unknown) => inlayMetadata.setMetadata(uriText, field, value)));
   context.subscriptions.push(vscode.commands.registerCommand(SET_CSL_STYLE_COMMAND,
-    /** Searches citation styles for the manuscript encoded in the bibliography hint. */
-    (uriText: unknown) => cslStyles.setCsl(uriText)));
+    /** Uses an explicit hover target, or the active document when invoked from the command palette. */
+    (uriText: unknown, fieldPath: unknown) => cslStyles.setCsl(uriText, fieldPath)));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
   context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));

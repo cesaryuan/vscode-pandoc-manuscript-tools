@@ -22,7 +22,7 @@ export function searchZoteroStyles(styles: ZoteroStyle[], query: string): Zotero
 
 /** Shows searchable journal results and rich previews in one page; explicit confirmation alone chooses a style. */
 export function pickZoteroStyle(repository: ZoteroStyleRepository): Promise<ZoteroStyle | undefined> {
-  const panel = vscode.window.createWebviewPanel("pandocManuscriptTools.cslPicker", "CSL 样式搜索与预览", vscode.ViewColumn.Active,
+  const panel = vscode.window.createWebviewPanel("pandocManuscriptTools.cslPicker", "设置参考文献样式", vscode.ViewColumn.Active,
     { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
   return new Promise((resolve, reject) => {
     let closed = false;

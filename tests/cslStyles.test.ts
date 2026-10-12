@@ -174,7 +174,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       Uri: { parse: () => document.uri },
       workspace: { openTextDocument: async () => document, getWorkspaceFolder: () => ({ uri: { fsPath: root } }) },
       window: {
-        createWebviewPanel: () => { picker = new PickerFixture(); return picker; }, visibleTextEditors: [editor],
+        createWebviewPanel: () => { picker = new PickerFixture(); return picker; }, visibleTextEditors: [editor], activeTextEditor: editor,
         showTextDocument: async (shown: typeof document) => { assert.equal(shown, document); return editor; },
         withProgress: async (_options: unknown, callback: (progress: unknown, token: unknown) => Promise<unknown>) => callback({}, {
           isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }),
@@ -183,7 +183,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       },
     },
   });
-  const { CslStyleController } = fixture.load<{ CslStyleController: new (output: unknown, repository: unknown) => { setCsl(uri: string): Promise<void> } }>("src/inlayHints/csl/controller.ts");
+  const { CslStyleController } = fixture.load<{ CslStyleController: new (output: unknown, repository: unknown) => { setCsl(uri?: string, keys?: string[]): Promise<void> } }>("src/inlayHints/csl/controller.ts");
   const repository = { getStyles: async () => [{ name: "journal", title: "Journal" }], downloadStyle: async () => csl() };
   const controller = new CslStyleController({ appendLine() {} }, repository);
   try {
@@ -218,7 +218,90 @@ test("selected journal downloads into its own workspace, sets a build-relative C
     await cancelled;
     assert.equal(errors.length, 1);
     assert.equal(text, configured);
+
+    repository.downloadStyle = async () => csl();
+    // Palette calls have no URI; hover calls carry an exact nested scope, including its spelling.
+    for (const scenario of [
+      { source: "---\ncsl: # fill this\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: undefined, scope: ["csl"] },
+      { source: "# project defaults\nmathtype: false\n", language: "yaml", filename: "style.yml", keys: undefined, scope: ["pandocMetadata", "csl"] },
+      { source: "pandoc-metadata:\n  csl: old.csl # keep\n", language: "yaml", filename: "style.yml", keys: undefined, scope: ["pandoc-metadata", "csl"] },
+      { source: "pandocMetadata:\n  csl: main.csl\nreply:\n  pandoc-metadata:\n    csl: old.csl # keep\n", language: "yaml", filename: "style.yaml", keys: ["reply", "pandoc-metadata", "csl"], scope: ["reply", "pandoc-metadata", "csl"] },
+      { source: "---\ncsl: main.csl\npapper-settings:\n  pandocMetadata:\n    csl: old.csl # keep\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: ["papper-settings", "pandocMetadata", "csl"], scope: ["papper-settings", "pandocMetadata", "csl"] },
+    ]) {
+      text = scenario.source;
+      document.languageId = scenario.language;
+      document.uri.fsPath = path.join(projectRoot, scenario.filename);
+      const setting = controller.setCsl(scenario.keys ? uriText : undefined, scenario.keys);
+      await new Promise((resolve) => setImmediate(resolve));
+      picker.send({ type: "select", name: "journal" });
+      await setting;
+      assert.equal(errors.length, 1, errors.join("\n"));
+      const configuredYaml = parse(scenario.language === "yaml" ? text : getYamlHeader(text).content);
+      const selectedPath = scenario.scope.reduce((node, key) => node[key], configuredYaml);
+      assert.equal(path.resolve(projectRoot, selectedPath), path.join(root, "pandoc", "csl", "journal.csl"));
+      assert.equal(parse(text.slice(selected.start.offset, selected.end.offset)), selectedPath);
+      assert.equal(revealed, selected);
+      if (scenario.source.includes("main.csl")) assert.equal((configuredYaml.csl ?? configuredYaml.pandocMetadata.csl), "main.csl");
+      if (scenario.source.includes("# keep")) assert(text.includes("# keep"));
+      if (scenario.language === "markdown") assert.equal(text.slice(getYamlHeader(text).bodyStart), "Body\n");
+      else assert(!text.startsWith("---"), "A style file must remain a plain configuration document");
+      if (scenario.scope[0] === "pandoc-metadata") assert.equal(configuredYaml.pandocMetadata, undefined);
+    }
+
+    // Project edits during search must survive without applying a stale selected style.
+    text = "pandocMetadata:\n  csl: initial.csl\n";
+    document.languageId = "yaml";
+    document.uri.fsPath = path.join(projectRoot, "style.yml");
+    const racing = controller.setCsl();
+    await new Promise((resolve) => setImmediate(resolve));
+    text = "pandocMetadata:\n  csl: concurrent.csl\n";
+    picker.send({ type: "select", name: "journal" });
+    await racing;
+    assert.equal(parse(text).pandocMetadata.csl, "concurrent.csl");
+    assert.match(errors.at(-1), /配置已改变/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("CSL key and path hovers offer style selection for their own source and metadata scope", () => {
+  /** Models hover markdown so the test can follow the actual command URI presented to users. */
+  class MarkdownString {
+    value = "";
+    isTrusted: unknown;
+    /** Adds field help text. */
+    appendText(text: string) { this.value += text; }
+    /** Adds the rendered command link. */
+    appendMarkdown(text: string) { this.value += text; }
+  }
+  /** Retains hover contents and range as the VS Code host would. */
+  class Hover {
+    /** Exposes rendered help for key and value hover interactions. */
+    constructor(public contents: MarkdownString, public range: unknown) {}
+  }
+  /** Carries offsets through the hover API. */
+  class Range {
+    /** Stores both token endpoints. */
+    constructor(public start: number, public end: number) {}
+  }
+  const fixture = new SourceModuleFixture({ vscode: { MarkdownString, Hover, Range } });
+  const { MarkdownYamlHeaderHoverProvider } = fixture.load<typeof import("../src/markdownYamlHeader")>("src/markdownYamlHeader.ts");
+  const { StyleConfigurationHoverProvider } = fixture.load<typeof import("../src/styleConfiguration")>("src/styleConfiguration.ts");
+  for (const scenario of [
+    { text: "---\ncsl: chosen.csl\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: ["csl"] },
+    { text: "---\npapper-settings:\n  pandocMetadata: { csl: chosen.csl }\n---\n", language: "markdown", filename: "manuscript.md", keys: ["papper-settings", "pandocMetadata", "csl"] },
+    { text: "reply:\n  pandoc-metadata:\n    csl: chosen.csl\n", language: "yaml", filename: "style.yml", keys: ["reply", "pandoc-metadata", "csl"] },
+  ]) {
+    const uri = `file:///${scenario.filename}`;
+    const document = { version: 1, uri: { scheme: "file", fsPath: scenario.filename, toString: () => uri }, languageId: scenario.language,
+      getText: () => scenario.text, positionAt: (offset: number) => offset, offsetAt: (position: number) => position };
+    const provider = scenario.language === "yaml" ? new StyleConfigurationHoverProvider() : new MarkdownYamlHeaderHoverProvider();
+    for (const offset of [scenario.text.indexOf("csl:"), scenario.text.indexOf("chosen.csl")]) {
+      const hover = provider.provideHover(document as any, offset as any, { isCancellationRequested: false } as any) as unknown as Hover;
+      const link = /\[设置参考文献样式\]\(command:([^?]+)\?([^)]*)\)/.exec(hover.contents.value);
+      assert(link, "Both the CSL key and file path should offer selection");
+      assert.deepEqual(JSON.parse(decodeURIComponent(link[2])), [uri, scenario.keys]);
+      assert.deepEqual(hover.contents.isTrusted, { enabledCommands: [link[1]] });
+    }
+  }
 });
 
 test("Zotero preview fetches independent and dependent samples and retries failures without caching them", async () => {

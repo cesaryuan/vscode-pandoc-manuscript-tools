@@ -72,6 +72,10 @@
   "contributes": {
     "commands": [
       {
+        "command": "pandocManuscriptTools.setCitationStyle",
+        "title": "Papper: 设置参考文献样式"
+      },
+      {
         "command": "pandocManuscriptTools.mergeStyleExample",
         "title": "Papper Tools: Merge Style Example"
       },

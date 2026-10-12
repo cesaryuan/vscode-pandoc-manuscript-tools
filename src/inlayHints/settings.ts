@@ -9,7 +9,7 @@ export const INLAY_METADATA_FIELDS = {
   secPrefix: "章节引用 prefix",
   figureTitle: "图题注 title",
   tableTitle: "表题注 title",
-  csl: "参考文献 CSL",
+  csl: "参考文献样式",
 } as const;
 export type InlayMetadataField = keyof typeof INLAY_METADATA_FIELDS;
 export type InlayMetadataValue = string | string[];
@@ -53,6 +53,8 @@ export function getManuscriptMetadataValue(text: string, field: InlayMetadataFie
   const { root } = parseEditableHeader(text);
   if (!root.has(field)) return undefined;
   const node: unknown = root.get(field, true);
+  // An empty CSL field is a common configuration placeholder and can be filled by the style picker.
+  if (field === "csl" && isScalar(node) && node.value === null && !node.anchor) return undefined;
   if (isAlias(node) || ((isScalar(node) || isSeq(node)) && node.anchor)) throw new Error(`${field} 使用了 YAML anchor 或 alias，请先展开后设置`);
   if (isSeq(node) && node.items.some((item) => isAlias(item) || (isScalar(item) && item.anchor))) {
     throw new Error(`${field} 列表使用了 YAML anchor 或 alias，请先展开后设置`);

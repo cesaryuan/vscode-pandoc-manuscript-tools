@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { isMap, isScalar, isSeq, isAlias, YAMLMap, parseDocument, visit } from "yaml";
 import { DOCX_STYLE_FIELDS, type StyleField } from "./manuscriptStyle/fields";
+import { appendCslConfigurationAction } from "./inlayHints/csl/configuration";
 
 /**
  * Provides completion, hover help and example-configuration editing for Papper `style.yml` files.
@@ -42,7 +43,7 @@ export const PANDOC_METADATA_FIELDS: Record<string, StyleField> = {
   subfigureTemplate: { description: "父图题注模板，$$i$$ 为编号，$$t$$ 为文字" },
   "reference-section-title": { description: "参考文献章节标题" },
   "link-citations": { description: "是否将引文链接到参考文献", values: BOOLEAN_VALUES },
-  csl: { description: "CSL 引用样式文件路径" },
+  csl: { description: "参考文献样式文件路径（CSL）" },
   lang: { description: "文档语言，例如 zh-CN 或 en-US" },
 };
 
@@ -362,6 +363,7 @@ export function createConfigurationHover(document: vscode.TextDocument, info: St
   markdown.appendMarkdown("**Papper 配置帮助**\n\n");
   markdown.appendText(info.description);
   if (info.values?.length) markdown.appendText(`\n\n取值提示：${info.values.join(" / ")}`);
+  if (info.path.at(-1)?.toLowerCase() === "csl") appendCslConfigurationAction(markdown, document, info.path);
   return new vscode.Hover(markdown, new vscode.Range(document.positionAt(info.start), document.positionAt(info.end)));
 }
 

@@ -6,7 +6,7 @@ export function buildCslPickerHtml(): string {
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-<title>CSL 样式搜索与预览</title>
+<title>设置参考文献样式</title>
 <style>
 * { box-sizing: border-box; } body { margin:0; color:var(--vscode-foreground); background:var(--vscode-editor-background); font:var(--vscode-font-size,13px) var(--vscode-font-family,sans-serif); }
 .page { display:flex; flex-direction:column; height:100vh; padding:24px; gap:18px; }
@@ -31,11 +31,11 @@ button:hover { background:var(--vscode-button-hoverBackground); } button:focus-v
 .notice { font:var(--vscode-font-size,13px) var(--vscode-font-family,sans-serif); color:var(--vscode-descriptionForeground); } footer { display:flex; justify-content:space-between; gap:12px; align-items:center; }
 @media(max-width:650px) { .page { padding:14px; } .content { grid-template-columns:1fr; grid-template-rows:minmax(140px,38%) minmax(0,1fr); gap:14px; } .preview { padding:14px; } footer { align-items:flex-start; } }
 </style></head><body><main class="page">
-<header><h1>选择参考文献 CSL</h1><p class="muted">搜索期刊名称或缩写，查看引用和参考文献的格式</p></header>
+<header><h1>设置参考文献样式</h1><p class="muted">搜索期刊名称或缩写，查看引用和参考文献的格式</p></header>
 <div class="toolbar"><input id="search" type="search" aria-label="搜索期刊名称或缩写" placeholder="例如 Nature、PLOS ONE" autocomplete="off"><button id="cancel" class="secondary">取消</button></div>
 <div class="content"><div class="results"><div id="count" class="muted" role="status">正在加载 Zotero 样式库…</div><div id="list" role="listbox" aria-label="期刊样式"></div></div>
 <article class="preview" aria-label="样式预览"><h2 id="style-title">样式预览</h2><p id="style-format" class="muted"></p><div id="sample" aria-live="polite"><p class="notice">将鼠标移到期刊名称，或使用方向键查看 Citations 和 Bibliography</p></div></article></div>
-<footer><span class="muted">Zotero 示例文献 · 确认后下载并设置当前稿件</span><button id="apply" disabled>使用此样式</button></footer>
+<footer><span class="muted">Zotero 示例文献 · 确认后下载并更新参考文献样式配置</span><button id="apply" disabled>使用此样式</button></footer>
 </main><script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const search = document.getElementById('search');
