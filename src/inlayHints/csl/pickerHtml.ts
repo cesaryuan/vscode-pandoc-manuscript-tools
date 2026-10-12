@@ -24,6 +24,10 @@ button:hover { background:var(--vscode-button-hoverBackground); } button:focus-v
 #style-title { font-size:18px; line-height:1.4; margin:0 0 6px; } #style-format { margin:0 0 20px; }
 #sample h2 { font-family:var(--vscode-font-family,sans-serif); font-size:15px; margin:22px 0 12px; font-weight:600; }
 #sample { font:16px/1.65 "Times New Roman",serif; overflow-wrap:anywhere; } #sample .csl-entry { margin-bottom:14px; } #sample .csl-bib-body::after { content:""; display:block; clear:both; }
+/* Zotero's fixed float widths can wrap or overlap longer labels; size the number column to its contents. */
+#sample .csl-entry:has(> .csl-left-margin) { display:grid; grid-template-columns:minmax(3ch,max-content) minmax(0,1fr); column-gap:.65em; }
+#sample .csl-entry > .csl-left-margin { float:none !important; width:auto !important; white-space:nowrap; overflow-wrap:normal; }
+#sample .csl-entry > .csl-right-inline { float:none !important; width:auto !important; margin-left:0 !important; }
 .notice { font:var(--vscode-font-size,13px) var(--vscode-font-family,sans-serif); color:var(--vscode-descriptionForeground); } footer { display:flex; justify-content:space-between; gap:12px; align-items:center; }
 @media(max-width:650px) { .page { padding:14px; } .content { grid-template-columns:1fr; grid-template-rows:minmax(140px,38%) minmax(0,1fr); gap:14px; } .preview { padding:14px; } footer { align-items:flex-start; } }
 </style></head><body><main class="page">
