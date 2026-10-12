@@ -419,15 +419,27 @@ function scanPandocSpans(line: ParsedLine, uriText: string): SpanEntry[] {
 /**
  * Finds the closing brace for one inline attribute block.
  *
- * Escaped braces are kept literal so `\}` inside an attribute value does not
- * prematurely end the span decoration.
+ * Bug fix: quoted headers/footers may contain nested spans such as `[]{t="pageNum"}`;
+ * their braces must stay literal until the attribute quote closes. Escaped
+ * quotes and braces also stay literal, preserving the outer decoration range.
  *
  * @param text Line text.
  * @param start First character after the opening `{`.
  */
 function findClosingAttributeBrace(text: string, start: number): number {
+  let quote: string | undefined;
   for (let index = start; index < text.length; index += 1) {
-    if (text[index] === "}" && !isEscaped(text, index)) {
+    if (isEscaped(text, index)) {
+      continue;
+    }
+    const character = text[index];
+    if (quote) {
+      if (character === quote) {
+        quote = undefined;
+      }
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "}") {
       return index;
     }
   }

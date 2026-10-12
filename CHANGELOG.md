@@ -40,6 +40,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Fixed
 
+- Keep bracketed-span highlights through the complete attribute block when quoted headers or footers contain nested page-number spans, braces or escaped quotes.
 - Let CSL bibliography preview number columns grow with their labels, preventing long or bracketed numbers from wrapping or overlapping the reference text.
 - Preserve configured chapter separators in figure/table numbering hints, so Chinese captions such as `图 3-1`, `图 3-2` and `图 3-3` no longer collapse to `图 3`.
 - Resolve Papper project roots centrally for DOCX, HTML preview, numbering hints and style actions, using the source directory when no `style.yml` is found.

@@ -57,6 +57,48 @@ test("supports multi-backtick Line annotations", verifiesMultiBacktickLineExcerp
 test("parses the Revision Char attribute fold range", verifiesRevisionCharAttributeRange);
 test("folds only the exact Revision Char custom style", verifiesRevisionCharStyleBoundary);
 
+/** Section headers and footers can contain page-number spans without ending the outer highlight. */
+function preservesQuotedSpanAttributeBoundaries(): void {
+  const examples = [
+    String.raw`[]{t="sectionBreak" pageStart="1" header="**\*\*Methods header\*\***" footer='Section page []{t="pageNum"}' headerAlignment="left" footerAlignment="right"}`,
+    String.raw`[]{t="sectionBreak" footer="Section page []{t='pageNum'}" footerAlignment="right"}`,
+    String.raw`[]{t="sectionBreak" footer="A \"quoted\" } page []{t='pageNum'}" footerAlignment="right"}`,
+    String.raw`[]{t="sectionBreak" footer='A \'quoted\' } page []{t="pageNum"}' footerAlignment="right"}`,
+    String.raw`[]{t="sectionBreak" footer="Trailing slash \\" footerAlignment="right"}`,
+    String.raw`[text]{note=escaped\}brace}`,
+  ];
+
+  for (const example of examples) {
+    const prefix = "Before ";
+    const text = prefix + example + " after [next]{.other}";
+    const spans = parsePandocDocument(text).spans;
+    assert.equal(spans.length, 2, example);
+    const span = spans[0];
+    assert.equal(text.slice(span.offset, span.endOffset), example);
+    assert.deepEqual(span.range, {
+      start: { line: 0, character: prefix.length },
+      end: { line: 0, character: prefix.length + example.length },
+    });
+    assert.equal(text.slice(span.attributeRange.start.character, span.attributeRange.end.character), example.slice(example.indexOf("]{") + 1));
+    assert.equal(text.slice(spans[1].offset, spans[1].endOffset), "[next]{.other}");
+  }
+}
+
+/** An unfinished quoted footer must not create a truncated highlight at an embedded closing brace. */
+function ignoresUnfinishedQuotedSpanAttributes(): void {
+  for (const text of [
+    String.raw`[]{t="sectionBreak" footer='Section page []{t="pageNum"}}`,
+    String.raw`[]{t="sectionBreak" footer="Section page []{t='pageNum'}}`,
+  ]) {
+    for (const span of parsePandocDocument(text).spans) {
+      assert.notEqual(span.offset, 0);
+    }
+  }
+}
+
+test("keeps quoted braces inside the complete span highlight", preservesQuotedSpanAttributeBoundaries);
+test("does not truncate the outer highlight at a brace inside an unfinished quote", ignoresUnfinishedQuotedSpanAttributes);
+
 /** Embedded short fences and invalid closing lines must keep literal examples out of language features. */
 function respectsCodeFenceClosingBoundaries(): void {
   for (const marker of ["`", "~"]) {
