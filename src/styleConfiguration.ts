@@ -24,12 +24,6 @@ export { STYLE_FIELDS, PANDOC_METADATA_FIELDS } from "./configurationContract";
 
 const COMMON_DOCX_STYLES = ["Normal", "Body Text", "Heading 1", "Heading 2", "Heading 3", "Title", "Subtitle", "Caption", "Revision Char", "正文", "正文文本", "标题 1", "标题 2", "标题 3"];
 
-/** Resolves supported camelCase, kebab-case and snake_case Papper field spellings. */
-function canonicalField(key: string, fields: Record<string, StyleField>): string {
-  return Object.keys(fields).find((field) => fields[field].aliases?.includes(key)
-    || field.replace(/[-_]/g, "").toLowerCase() === key.replace(/[-_]/g, "").toLowerCase()) ?? key;
-}
-
 /** Checks whether a document is one of the supported style configuration files. */
 export function isStyleConfigurationDocument(document: vscode.TextDocument): boolean {
   return document.uri.scheme === "file" && STYLE_FILE_NAMES.has(path.basename(document.uri.fsPath).toLowerCase());
@@ -40,7 +34,7 @@ function fieldsAtPath(pathParts: string[], rootFields: Record<string, StyleField
   let fields: Record<string, StyleField> | undefined = rootFields;
   for (let index = 0; index < pathParts.length; index += 1) {
     if (!fields) return undefined;
-    const field = fields[canonicalField(pathParts[index], fields)];
+    const field = fields[pathParts[index]];
     if (field?.dynamicChildren) {
       if (index === pathParts.length - 1) {
         return Object.fromEntries(COMMON_DOCX_STYLES.map((name) => [name, { description: "Word 内置或常用样式；也可输入任意自定义样式名" }]));
@@ -153,45 +147,44 @@ export function getStyleSuggestions(text: string, offset: number, rootFields: Re
   if (!fields) return [];
   const prefix = segment.prefix.toLowerCase();
   if (context.key) {
-    const field = fields[canonicalField(context.key, fields)];
+    const field = fields[context.key];
     return (field?.values ?? []).filter((value) => value.replace(/^["']/, "").toLowerCase().startsWith(prefix)).map((value) => ({
       ...segment, label: value, insertText: (needsSpace ? " " : "") + value, description: field.description, values: field.values,
     }));
   }
-  const existing = new Set(context.map.items.flatMap((pair) => isScalar(pair.key) ? [canonicalField(String(pair.key.value), fields)] : []));
+  const existing = new Set(context.map.items.flatMap((pair) => isScalar(pair.key) ? [String(pair.key.value)] : []));
   const blocked = new Set<string>();
   for (const rule of getConfigurationContract().rules) {
     for (const candidate of rule.paths) {
       const parentPath = candidate.slice(0, -1);
       if (parentPath.length && parentPath.some((key, index) =>
-        (context.path[context.path.length - parentPath.length + index] ?? "").replace(/[-_]/g, "").toLowerCase()
-          !== key.replace(/[-_]/g, "").toLowerCase())) continue;
+        (context.path[context.path.length - parentPath.length + index] ?? "") !== key)) continue;
       const ownerPath = parentPath.length ? context.path.slice(0, -parentPath.length) : context.path;
-      const ownerIsTextStyle = ownerPath.length >= 2 && ownerPath.at(-2).replace(/[-_]/g, "").toLowerCase() === "docxstyle";
+      const ownerIsTextStyle = ownerPath.length >= 2 && ownerPath.at(-2) === "docxStyle";
       if (rule.scope === "docxTextStyle" && !ownerIsTextStyle) continue;
-      if (rule.scope === "style" && ownerPath.length && !["reply", "pappersettings"].includes(
-        ownerPath.at(-1).replace(/[-_]/g, "").toLowerCase())) continue;
+      if (rule.scope === "style" && ownerPath.length && !["reply", "papperSettings"].includes(ownerPath.at(-1))) continue;
       const owner = parsed.getIn(ownerPath, true);
       if (!isMap(owner)) continue;
       if (rule.paths.some((other) => other !== candidate && hasRulePath(owner, other))) blocked.add(candidate.at(-1));
     }
   }
   return Object.entries(fields)
-    .filter(([key]) => key.replace(/[-_]/g, "").toLowerCase().startsWith(prefix.replace(/[-_]/g, "")) && !existing.has(key) && !blocked.has(key))
+    .filter(([key]) => key.toLowerCase().startsWith(prefix) && !existing.has(key) && !blocked.has(key))
     .map(([key, field]) => ({ ...segment, label: key, insertText: key + (segment.hasColon ? "" : ": "), description: field.description, values: field.values }));
 }
 
-/** Finds configured constraint members through accepted YAML field aliases. */
+/** Finds configured constraint members by exact public field names. */
 function hasRulePath(root: YAMLMap, parts: string[]): boolean {
   let node: unknown = root;
   for (const key of parts) {
     if (!isMap(node)) return false;
     const pair = node.items.find((entry) => isScalar(entry.key)
-      && String(entry.key.value).replace(/[-_]/g, "").toLowerCase() === key.replace(/[-_]/g, "").toLowerCase());
+      && String(entry.key.value) === key);
     if (!pair) return false;
     node = pair.value;
   }
-  return true;
+  // Explicit null clears a control and must not suppress alternative settings.
+  return !(isScalar(node) && node.value === null);
 }
 
 /** Provides key and enum-value suggestions for style YAML. */
@@ -235,10 +228,10 @@ export type StyleHoverInfo = {
 /** Resolves a field's documentation, including arbitrary names under docxStyle. */
 function hoverField(pathParts: string[], key: string, rootFields: Record<string, StyleField>): StyleField | undefined {
   const fields = fieldsAtPath(pathParts, rootFields);
-  const field = fields?.[canonicalField(key, fields)];
+  const field = fields?.[key];
   if (field) return field;
   const ownerFields = fieldsAtPath(pathParts.slice(0, -1), rootFields);
-  const owner = ownerFields?.[canonicalField(pathParts.at(-1) ?? "", ownerFields)];
+  const owner = ownerFields?.[pathParts.at(-1) ?? ""];
   if (owner?.dynamicChildren) {
     return { description: "DOCX 段落或字符样式；按精确样式名称应用，可在本节设置字体、对齐、缩进和段落间距" };
   }
@@ -344,14 +337,14 @@ function mergeYamlMaps(target: YAMLMap, source: YAMLMap, fields: Record<string, 
   for (const sourcePair of source.items) {
     if (!isScalar(sourcePair.key)) continue;
     const key = String(sourcePair.key.value);
-    const targetPair = target.items.find((pair) => isScalar(pair.key) && canonicalField(String(pair.key.value), fields) === canonicalField(key, fields));
+    const targetPair = target.items.find((pair) => isScalar(pair.key) && String(pair.key.value) === key);
     if (!targetPair) {
       target.add(sourcePair.clone());
       added += 1;
       continue;
     }
     if (isMap(targetPair.value) && isMap(sourcePair.value)) {
-      added += mergeYamlMaps(targetPair.value, sourcePair.value, fields[canonicalField(key, fields)]?.children);
+      added += mergeYamlMaps(targetPair.value, sourcePair.value, fields[key]?.children);
     }
   }
   return added;

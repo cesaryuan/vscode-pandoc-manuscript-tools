@@ -47,7 +47,7 @@ function completesNamedAndInlineStyles(): void {
 /** Verifies replacement of partial values, quoted values and text to the right of the caret. */
 function acceptsValidScalarCompletions(): void {
   assert.equal(parse(acceptCompletion("mathtype:<cursor>\n", "true")).mathtype, true);
-  assert.equal(parse(acceptCompletion("reply:\n  mathtype-conversion-method: r<cursor>ust\n", "rust")).reply["mathtype-conversion-method"], "rust");
+  assert.equal(parse(acceptCompletion("reply:\n  mathtypeConversionMethod: r<cursor>ust\n", "rust")).reply["mathtypeConversionMethod"], "rust");
   assert.equal(parse(acceptCompletion('docxStyle: { Body Text: { alignment: "cen<cursor>ter" } }', "center")).docxStyle["Body Text"].alignment, "center");
   assert.equal(parse(acceptCompletion("docxStyle:\n  Revision Char:\n    fontColor: <cursor>\n", '"#FF0000"')).docxStyle["Revision Char"].fontColor, "#FF0000");
 }
@@ -60,24 +60,23 @@ function ignoresNonConfigurationContent(): void {
   assert.deepEqual(suggestions("pandocMetadata:\n  custom:\n    - docx<cursor>"), []);
 }
 
-/** Suppresses duplicate aliases and conflicting controls while permitting compatible indents. */
+/** Suppresses duplicate canonical fields and conflicting controls while permitting compatible indents. */
 function avoidsDuplicateAndConflictingSuggestions(): void {
-  assert.ok(!suggestions("docx-show-page-numbers: false\ndocxShow<cursor>").some((item) => item.label === "docxShowPageNumbers"));
+  assert.ok(!suggestions("docxShowPageNumbers: false\ndocxShow<cursor>").some((item) => item.label === "docxShowPageNumbers"));
   assert.ok(!suggestions("docxSvgToPngWidth: 1600\ndocxSvgToPng<cursor>").some((item) => item.label === "docxSvgToPngScale"));
   const indentation = suggestions("docxStyle:\n  Body Text:\n    firstLineIndentChars: 2\n    indentation:\n      <cursor>");
   assert.ok(indentation.some((item) => item.label === "left"));
   assert.ok(!indentation.some((item) => item.label === "hanging"));
 }
 
-/** Preserves overrides, explicit nulls, aliases and notes while filling nested missing fields. */
+/** Preserves overrides, explicit nulls and notes while filling nested missing fields. */
 function mergesWithoutOverwritingUserSettings(): void {
-  const original = "# Project notes\r\nmathtype: false # Use native Word\r\ndocx-show-page-numbers: null\r\nmathtypeTypstMathFont:\r\n    font: Custom Math\r\ncustom: &custom { number: 1, values: [a, b] }\r\ncopy: *custom\r\n";
+  const original = "# Project notes\r\nmathtype: false # Use native Word\r\ndocxShowPageNumbers: null\r\nmathtypeTypstMathFont:\r\n    font: Custom Math\r\ncustom: &custom { number: 1, values: [a, b] }\r\ncopy: *custom\r\n";
   const example = "mathtype: true\ndocxShowPageNumbers: true\nmathtypeTypstMathFont:\n  font: XITS Math\n  calligraphicFont: New Computer Modern Math\ntableAutofit: none\n# Optional setting stays disabled\n# docxSvgToPngWidth: 1600\n";
   const merged = mergeStyleExample(original, example);
   const config = parse(merged.text);
   assert.equal(config.mathtype, false);
-  assert.equal(config["docx-show-page-numbers"], null);
-  assert.ok(!("docxShowPageNumbers" in config));
+  assert.equal(config["docxShowPageNumbers"], null);
   assert.deepEqual(config.mathtypeTypstMathFont, { font: "Custom Math", calligraphicFont: "New Computer Modern Math" });
   assert.deepEqual(config.copy, config.custom);
   assert.equal(config.tableAutofit, "none");
@@ -130,13 +129,13 @@ function hoverAt(markedText: string) {
 
 /** Ensures filled keys and scalar values resolve to the same help with precise token ranges. */
 function hoversExistingKeysAndValues(): void {
-  const key = hoverAt("reply:\r\n  mathtype-conversion-<cursor>method: rust # backend\r\n");
-  const value = hoverAt("reply:\r\n  mathtype-conversion-method: r<cursor>ust # backend\r\n");
+  const key = hoverAt("reply:\r\n  mathtypeConversion<cursor>Method: rust # backend\r\n");
+  const value = hoverAt("reply:\r\n  mathtypeConversionMethod: r<cursor>ust # backend\r\n");
   assert.ok(key.entry);
   assert.ok(value.entry);
-  assert.equal(key.token, "mathtype-conversion-method");
+  assert.equal(key.token, "mathtypeConversionMethod");
   assert.equal(value.token, "rust");
-  assert.deepEqual(key.entry.path, ["reply", "mathtype-conversion-method"]);
+  assert.deepEqual(key.entry.path, ["reply", "mathtypeConversionMethod"]);
   assert.equal(key.entry.currentValue, "rust");
   assert.equal(key.entry.description, value.entry.description);
   assert.deepEqual(key.entry.values, value.entry.values);
@@ -175,7 +174,7 @@ test("completes the correct nested style configuration domain", completesNestedD
 test("completes arbitrary style names and inline mappings", completesNamedAndInlineStyles);
 test("accepts scalar suggestions as valid YAML without duplicate suffixes", acceptsValidScalarCompletions);
 test("does not complete comments, multiline text or sequence items", ignoresNonConfigurationContent);
-test("avoids duplicate aliases and incompatible controls", avoidsDuplicateAndConflictingSuggestions);
+test("avoids duplicate fields and incompatible controls", avoidsDuplicateAndConflictingSuggestions);
 test("merges missing settings while preserving overrides and comments", mergesWithoutOverwritingUserSettings);
 test("merges the shipped starter and is idempotent", mergesTheShippedStarter);
 test("rejects invalid style files and preserves existing scalar overrides", rejectsInvalidMerges);

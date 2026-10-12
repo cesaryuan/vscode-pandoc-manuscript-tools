@@ -79,10 +79,10 @@ function editsFrontmatterWithoutLosingContent(): void {
   checkInlineHelp(createdStyle);
   assert.match(created, /firstLineIndentChars: 2 #[^\r\n]+/);
   assert.match(created, /before: 0pt #[^\r\n]+/);
-  const original = "---\r\ntitle: Paper # keep title\r\npapperSettings:\r\n  docx-style:\r\n    Body Text:\r\n      fontSize: 10.5pt # keep size\r\n      paragraphSpacing: {before: 8pt}\r\n      indentation: {hanging: 0.5cm}\r\n...\r\n\r\n# Body\r\nUntouched  text\r\n";
+  const original = "---\r\ntitle: Paper # keep title\r\npapperSettings:\r\n  docxStyle:\r\n    Body Text:\r\n      fontSize: 10.5pt # keep size\r\n      paragraphSpacing: {before: 8pt}\r\n      indentation: {hanging: 0.5cm}\r\n...\r\n\r\n# Body\r\nUntouched  text\r\n";
   const merged = addManuscriptStyle(original, "正文文本", defaults);
   const header = getYamlHeader(merged.text);
-  const body = parse(header.content)["papperSettings"]["docx-style"]["Body Text"];
+  const body = parse(header.content)["papperSettings"]["docxStyle"]["Body Text"];
   assert.equal(merged.styleName, "Body Text");
   assert.equal(body.fontSize, "10.5pt");
   assert.equal(body.paragraphSpacing.before, "8pt");
@@ -90,7 +90,7 @@ function editsFrontmatterWithoutLosingContent(): void {
   assert.equal(body.indentation.hanging, "0.5cm");
   assert.equal(body.firstLineIndentChars, undefined);
   assert.ok(merged.text.includes("# keep title") && merged.text.includes("# keep size"));
-  const mergedSize = parseDocument(header.content).getIn(["papperSettings", "docx-style", "Body Text", "fontSize"], true);
+  const mergedSize = parseDocument(header.content).getIn(["papperSettings", "docxStyle", "Body Text", "fontSize"], true);
   assert.ok(isScalar(mergedSize));
   assert.equal(mergedSize.comment?.trim(), "keep size");
   assert.equal(merged.text.slice(header.bodyStart), original.slice(getYamlHeader(original).bodyStart));
@@ -429,7 +429,7 @@ async function cachesOnlyFormattingInputs(): Promise<void> {
 
 test("reference defaults resolve inheritance, translated styles and Word units", readsEffectiveReferenceFormatting);
 test("Word-only defaults are described without adding inaccurate Papper values", preservesUnrepresentableWordFormatting);
-test("style action preserves metadata, body, aliases, overrides and indentation alternatives", editsFrontmatterWithoutLosingContent);
+test("style action preserves metadata, body, overrides and indentation alternatives", editsFrontmatterWithoutLosingContent);
 test("style action rejects malformed or unsafe existing metadata", rejectsInvalidMetadata);
 test("style hovers identify source elements and ignore literal/hidden blocks", detectsMarkdownElements);
 test("source hover shows only a button without launching Papper", showsOnlyStyleButton);

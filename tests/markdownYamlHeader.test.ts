@@ -44,11 +44,11 @@ function completesMetadataWithoutChangingBody(): void {
   assert.deepEqual(suggestions("---\nmathtype<cursor>\n---\n"), []);
 }
 
-/** Reuses style configuration rules under both spellings of per-manuscript Papper settings. */
+/** Reuses style configuration rules under canonical per-manuscript Papper settings. */
 function completesPerManuscriptSettings(): void {
-  const source = "---\npapper-settings:\n  reply:\n    docx-style:\n      My Style:\n        paragraphSpacing: { be<cursor>: 6pt, after: 0pt }\n---\n# Body";
+  const source = "---\npapperSettings:\n  reply:\n    docxStyle:\n      My Style:\n        paragraphSpacing: { be<cursor>: 6pt, after: 0pt }\n---\n# Body";
   const accepted = acceptCompletion(source, "before");
-  assert.equal(parse(getYamlHeader(accepted).content)["papper-settings"].reply["docx-style"]["My Style"].paragraphSpacing.before, "6pt");
+  assert.equal(parse(getYamlHeader(accepted).content)["papperSettings"].reply["docxStyle"]["My Style"].paragraphSpacing.before, "6pt");
   const boolean = acceptCompletion("---\npapperSettings:\n  mathtype: f<cursor>alse\n---\n", "false");
   assert.equal(parse(getYamlHeader(boolean).content).papperSettings.mathtype, false);
   assert.ok(suggestions("---\npapperSettings:\n  pandocMetadata:\n    fig<cursor>\n---\n")?.some((item) => item.label === "figureTitle"));

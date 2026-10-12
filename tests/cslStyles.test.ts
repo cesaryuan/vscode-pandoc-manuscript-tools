@@ -313,9 +313,9 @@ test("selected journal downloads into its own workspace, sets a build-relative C
     for (const scenario of [
       { source: "---\ncsl: # fill this\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: undefined, scope: ["csl"] },
       { source: "# project defaults\nmathtype: false\n", language: "yaml", filename: "style.yml", keys: undefined, scope: ["pandocMetadata", "csl"] },
-      { source: "pandoc-metadata:\n  csl: old.csl # keep\n", language: "yaml", filename: "style.yml", keys: undefined, scope: ["pandoc-metadata", "csl"] },
-      { source: "pandocMetadata:\n  csl: main.csl\nreply:\n  pandoc-metadata:\n    csl: old.csl # keep\n", language: "yaml", filename: "style.yaml", keys: ["reply", "pandoc-metadata", "csl"], scope: ["reply", "pandoc-metadata", "csl"] },
-      { source: "---\ncsl: main.csl\npapper-settings:\n  pandocMetadata:\n    csl: old.csl # keep\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: ["papper-settings", "pandocMetadata", "csl"], scope: ["papper-settings", "pandocMetadata", "csl"] },
+      { source: "pandocMetadata:\n  csl: old.csl # keep\n", language: "yaml", filename: "style.yml", keys: undefined, scope: ["pandocMetadata", "csl"] },
+      { source: "pandocMetadata:\n  csl: main.csl\nreply:\n  pandocMetadata:\n    csl: old.csl # keep\n", language: "yaml", filename: "style.yaml", keys: ["reply", "pandocMetadata", "csl"], scope: ["reply", "pandocMetadata", "csl"] },
+      { source: "---\ncsl: main.csl\npapperSettings:\n  pandocMetadata:\n    csl: old.csl # keep\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: ["papperSettings", "pandocMetadata", "csl"], scope: ["papperSettings", "pandocMetadata", "csl"] },
     ]) {
       text = scenario.source;
       document.languageId = scenario.language;
@@ -330,7 +330,6 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       if (scenario.source.includes("# keep")) assert(text.includes("# keep"));
       if (scenario.language === "markdown") assert.equal(text.slice(getYamlHeader(text).bodyStart), "Body\n");
       else assert(!text.startsWith("---"), "A style file must remain a plain configuration document");
-      if (scenario.scope[0] === "pandoc-metadata") assert.equal(configuredYaml.pandocMetadata, undefined);
     }
 
     // Project edits during search must survive without applying a stale selected style.
@@ -369,8 +368,8 @@ test("CSL key and path hovers offer style selection for their own source and met
   const { StyleConfigurationHoverProvider } = fixture.load<typeof import("../src/styleConfiguration")>("src/styleConfiguration.ts");
   for (const scenario of [
     { text: "---\ncsl: chosen.csl\n---\nBody\n", language: "markdown", filename: "manuscript.md", keys: ["csl"] },
-    { text: "---\npapper-settings:\n  pandocMetadata: { csl: chosen.csl }\n---\n", language: "markdown", filename: "manuscript.md", keys: ["papper-settings", "pandocMetadata", "csl"] },
-    { text: "reply:\n  pandoc-metadata:\n    csl: chosen.csl\n", language: "yaml", filename: "style.yml", keys: ["reply", "pandoc-metadata", "csl"] },
+    { text: "---\npapperSettings:\n  pandocMetadata: { csl: chosen.csl }\n---\n", language: "markdown", filename: "manuscript.md", keys: ["papperSettings", "pandocMetadata", "csl"] },
+    { text: "reply:\n  pandocMetadata:\n    csl: chosen.csl\n", language: "yaml", filename: "style.yml", keys: ["reply", "pandocMetadata", "csl"] },
   ]) {
     const uri = `file:///${scenario.filename}`;
     const document = { version: 1, uri: { scheme: "file", fsPath: scenario.filename, toString: () => uri }, languageId: scenario.language,

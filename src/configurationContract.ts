@@ -4,7 +4,7 @@ import type { StyleField } from "./manuscriptStyle/fields";
 
 type Schema = { description?: string; type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>;
   items?: Schema; additionalProperties?: boolean | Schema; required?: string[];
-  "x-papper-suggestions"?: string[]; "x-papper-aliases"?: string[]; "x-papper-section"?: string };
+  "x-papper-suggestions"?: string[]; "x-papper-section"?: string };
 export type ConfigurationRule = { scope: "style" | "docxTextStyle"; kind: "atMostOne"; paths: string[][] };
 export type ConfigurationContract = { contractVersion: number; papperVersion: string;
   schemas: Record<"style" | "pandocMetadata" | "docxTextStyle" | "manuscriptFrontmatter", Schema>;
@@ -62,9 +62,7 @@ function fieldsFromSchema(schema: Schema, depth = 0): Record<string, StyleField>
     const types = definition.type === undefined ? [] : Array.isArray(definition.type) ? definition.type : [definition.type];
     if (types.some((type) => typeof type !== "string")) throw new Error(`Invalid field types for ${key}`);
     const suggestions = definition["x-papper-suggestions"] ?? [];
-    const aliases = definition["x-papper-aliases"] ?? [];
     if (!Array.isArray(suggestions) || suggestions.some((value) => typeof value !== "string")
-      || !Array.isArray(aliases) || aliases.some((value) => typeof value !== "string")
       || definition["x-papper-section"] !== undefined && typeof definition["x-papper-section"] !== "string"
       || definition.enum !== undefined && (!Array.isArray(definition.enum)
         || definition.enum.some((value) => value !== null && !["string", "number", "boolean"].includes(typeof value)))) {
@@ -78,7 +76,7 @@ function fieldsFromSchema(schema: Schema, depth = 0): Record<string, StyleField>
     const childrenSchema = dynamic?.properties ? dynamic : definition.items?.properties ? definition.items : definition;
     const children = childrenSchema.properties ? fieldsFromSchema(childrenSchema, depth + 1) : undefined;
     const field: StyleField = { description: definition.description ?? key, values: values.length ? values : undefined,
-      enumValues: definition.enum, valueTypes: types, aliases: definition["x-papper-aliases"], section: definition["x-papper-section"],
+      enumValues: definition.enum, valueTypes: types, section: definition["x-papper-section"],
       children, dynamicChildren: dynamic?.properties ? true : undefined,
       sequenceItems: definition.items?.properties ? true : undefined, dynamicValueDescription: dynamic?.description };
     return [key, field];
@@ -108,7 +106,7 @@ export function applyConfigurationContract(value: unknown): void {
   replaceFields(DOCX_STYLE_FIELDS, text);
   replaceFields(MANUSCRIPT_FIELDS, manuscript);
   replaceFields(CHARACTER_STYLE_FIELDS, Object.fromEntries(
-    ["fontFamily", "fontName", "fontSize", "fontColor", "bold", "font"].filter((key) => text[key]).map((key) => [key, text[key]])));
+    ["fontFamily", "fontSize", "fontColor", "bold"].filter((key) => text[key]).map((key) => [key, text[key]])));
   currentContract = contract;
   revision += 1;
 }

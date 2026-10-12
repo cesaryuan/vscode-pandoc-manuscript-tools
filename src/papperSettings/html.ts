@@ -109,7 +109,7 @@ export function buildPapperSettingsHtml(): string {
         const key = JSON.stringify(row.path);
         const label = document.createElement('label'); label.textContent = labels[row.title] ?? row.description;
         // Shared leaf names such as left/right mean indentation inside a Word style, not page margins.
-        if (row.path.some(part => normalize(part) === 'indentation')) label.textContent = {left:'左缩进',right:'右缩进'}[row.title] ?? label.textContent;
+        if (row.path.some(part => part === 'indentation')) label.textContent = {left:'左缩进',right:'右缩进'}[row.title] ?? label.textContent;
         if (section === 'docx' && row.title === 'font') label.textContent = '旧版字体对象';
         const inputId = 'setting-' + row.path.map(encodeURIComponent).join('-'); label.htmlFor = inputId;
         const badge = document.createElement('span'); badge.className = 'setting-badge' + (row.configured ? ' configured' : ''); badge.textContent = row.configured ? '已设置' : row.inherited !== undefined ? '继承' : '默认';
@@ -140,8 +140,6 @@ export function buildPapperSettingsHtml(): string {
         const actions = document.createElement('div'); actions.className = 'setting-actions'; actions.append(save,reset);
         controls.append(input,actions); container.append(heading,controls,note); return container;
       }
-      /** Matches schema group keys to existing camelCase, kebab-case or snake_case source paths. */
-      function normalize(key) { return key.replace(/[-_]/g,'').toLowerCase(); }
       /** Keeps structured YAML editors accessible without competing with their individual leaf controls. */
       function fieldCards(rows) {
         return rows.map(row => {
@@ -159,7 +157,7 @@ export function buildPapperSettingsHtml(): string {
         const fieldIndex = Math.min(...rows.map(row => row.path.length)) - 1;
         const definitions = [...(groups[section] ?? []),{title:'其他设置',keys:[]}];
         for (const definition of definitions) {
-          const selected = [...remaining].filter(row => !definition.keys.length || definition.keys.some(field => normalize(field) === normalize(row.path[fieldIndex])));
+          const selected = [...remaining].filter(row => !definition.keys.length || definition.keys.some(field => field === row.path[fieldIndex]));
           if (!selected.length) continue;
           selected.forEach(row => remaining.delete(row));
           const group = document.createElement(definition.collapsed ? 'details' : 'section'); group.className = 'setting-group' + (definition.collapsed ? ' advanced-settings' : '');

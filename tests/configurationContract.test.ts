@@ -61,16 +61,33 @@ test("unsupported or damaged exports preserve the active template, help and edit
   assert.equal(api.completion.mergeStyleExample(merged.text, before.templates.styleProject).text, merged.text);
 });
 
-test("exported rules suppress conflicting alias spellings without suppressing unrelated indentation", () => {
+test("exported rules suppress conflicting controls without suppressing unrelated indentation", () => {
   const api = fixture();
-  const text = "docx-style:\n  Journal:\n    indentation: { first-line: 0.5cm }\n    ";
+  const text = "docxStyle:\n  Journal:\n    indentation: { firstLine: 0.5cm }\n    ";
   assert(!suggestions(api, text).some((item) => item.label === "firstLineIndentChars"));
-  const nested = "docxStyle:\n  Journal:\n    first-line-indent-chars: 2\n    indentation:\n      ";
+  const nested = "docxStyle:\n  Journal:\n    firstLineIndentChars: 2\n    indentation:\n      ";
   const keys = suggestions(api, nested).map((item) => item.label);
   assert(!keys.includes("firstLine") && !keys.includes("hanging"));
   assert(keys.includes("left") && keys.includes("right"));
-  const pixels = "docx-svg-to-png-width: 1200\n";
+  const pixels = "docxSvgToPngWidth: 1200\n";
   assert(!suggestions(api, pixels).some((item) => item.label === "docxSvgToPngDpi" || item.label === "docxSvgToPngScale"));
+  assert(suggestions(api, "docxSvgToPngWidth: null\n").some((item) => item.label === "docxSvgToPngScale"));
+  assert(suggestions(api, "docxStyle:\n  Journal:\n    indentation: { hanging: null }\n    ").some((item) => item.label === "firstLineIndentChars"));
+});
+
+test("completion, hover and settings edits recognize only exact canonical Papper keys", () => {
+  const api = fixture();
+  assert(suggestions(api, "docxPageWidth: ").some((item) => item.label === "null"));
+  for (const name of ["docx-page-width", "docx_page_width", "docxpagewidth", "DocxPageWidth"]) {
+    assert.deepEqual(suggestions(api, `${name}: `), []);
+    assert.deepEqual(api.completion.getStyleHoverEntries(`${name}: 21cm\n`), []);
+    assert.throws(() => api.settings.createSettingsEdit("", true, [name], "21cm"), /不支持/);
+  }
+  assert.deepEqual(suggestions(api, "docx-style:\n  Body Text:\n    fontSize: "), []);
+  assert.deepEqual(api.header.getMarkdownHeaderHoverEntries("---\npapper-settings:\n  docxPageWidth: 21cm\n---\nBody\n"), []);
+  assert.throws(() => api.settings.createSettingsEdit("Body\n", false, ["papper-settings", "docxPageWidth"], "21cm"), /不支持/);
+  const native = "pandocMetadata:\n  link-citations: ";
+  assert(suggestions(api, native).some((item) => item.label === "true"));
 });
 
 test("footer and page-width edits preserve explicit null, empty content, source comments and manuscript text", () => {

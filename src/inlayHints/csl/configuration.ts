@@ -6,34 +6,20 @@ import { SET_CSL_STYLE_COMMAND } from "../commands";
 
 const STYLE_NAMES = new Set(["style.yml", "style.yaml", "style-project.yml", "style-project.yaml"]);
 
-/** Compares Papper's camelCase, kebab-case and snake_case configuration spellings. */
-function normalizeCslKey(key: string): string {
-  return key.replace(/[-_]/g, "").toLowerCase();
-}
-
 /** Recognizes supported local project style files without depending on the configuration hover provider. */
 export function isCslStyleDocument(document: vscode.TextDocument): boolean {
   return document.uri.scheme === "file" && STYLE_NAMES.has(path.basename(document.uri.fsPath).toLowerCase());
 }
 
-/** Validates the metadata scope while retaining actual YAML key spellings for edits. */
+/** Validates the metadata scope using exact public field names. */
 export function getCslSettingPath(document: vscode.TextDocument, requested?: unknown): string[] {
   const style = isCslStyleDocument(document);
   if (!style && !["markdown", "mdx"].includes(document.languageId)) throw new Error("请先打开稿件或 style.yml，再设置参考文献样式");
   const keys = requested === undefined ? (style ? ["pandocMetadata", "csl"] : ["csl"]) : requested;
   if (!Array.isArray(keys) || !keys.every((key) => typeof key === "string")) throw new Error("无效的参考文献样式字段");
-  const normalized = keys.map(normalizeCslKey).join(".");
-  const valid = style ? /^(reply\.)?pandocmetadata\.csl$/ : /^(csl|pappersettings\.(reply\.)?pandocmetadata\.csl)$/;
-  if (!valid.test(normalized)) throw new Error("无效的参考文献样式配置范围");
-  if (requested === undefined) {
-    let node: unknown = parseDocument(getCslConfigurationContent(document) ?? "").contents;
-    // Palette calls must reuse existing alias spellings rather than creating a second metadata map.
-    return keys.map((key) => {
-      const pair = isMap(node) ? node.items.find((item) => isScalar(item.key) && normalizeCslKey(String(item.key.value)) === normalizeCslKey(key)) : undefined;
-      node = pair?.value;
-      return pair && isScalar(pair.key) ? String(pair.key.value) : key;
-    });
-  }
+  const settingPath = keys.join(".");
+  const valid = style ? /^(reply\.)?pandocMetadata\.csl$/ : /^(csl|papperSettings\.(reply\.)?pandocMetadata\.csl)$/;
+  if (!valid.test(settingPath)) throw new Error("无效的参考文献样式配置范围");
   return keys;
 }
 

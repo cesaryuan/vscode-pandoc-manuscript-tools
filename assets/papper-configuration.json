@@ -14,8 +14,7 @@
           "x-papper-section": "math",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": []
+          ]
         },
         "mathtypeConversionMethod": {
           "description": "MathType 转换后端",
@@ -23,10 +22,6 @@
           "x-papper-section": "math",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "mathtype-conversion-method",
-            "mathtype_conversion_method"
           ],
           "enum": [
             "rust",
@@ -36,11 +31,12 @@
             "both"
           ],
           "x-papper-value-aliases": {
-            "set-data": "mathtype",
-            "setdata": "mathtype",
-            "set_data": "mathtype",
+            "mathtype-rust": "rust",
+            "mtef": "rust",
             "sdk": "rust-sdk",
-            "sdk-xform-ole": "rust-sdk"
+            "sdk-xform-ole": "rust-sdk",
+            "set-data": "mathtype",
+            "setdata": "mathtype"
           }
         },
         "mathtypeSvgBackend": {
@@ -50,10 +46,6 @@
           "x-papper-targets": [
             "docx"
           ],
-          "x-papper-aliases": [
-            "mathtype-svg-backend",
-            "mathtype_svg_backend"
-          ],
           "enum": [
             "ratex",
             "typst"
@@ -61,50 +53,46 @@
         },
         "mathtypeTypstMathFont": {
           "description": "Typst 数学字体名称或字体文件路径",
-          "type": [
-            "string",
-            "object"
-          ],
-          "properties": {
-            "font": {
-              "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
-              "type": "string",
-              "x-papper-suggestions": [
-                "XITS Math",
-                "STIX Two Math",
-                "New Computer Modern Math"
-              ],
-              "minLength": 1
-            },
-            "calligraphicFont": {
-              "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
-              "type": "string",
-              "x-papper-suggestions": [
-                "XITS Math",
-                "STIX Two Math",
-                "New Computer Modern Math"
-              ],
-              "minLength": 1
-            }
-          },
-          "additionalProperties": false,
           "x-papper-suggestions": [
             "XITS Math",
             "STIX Two Math",
             "New Computer Modern Math"
           ],
+          "type": [
+            "string",
+            "object"
+          ],
           "x-papper-section": "math",
           "x-papper-targets": [
             "docx"
           ],
-          "x-papper-aliases": [
-            "mathtype-typst-math-font",
-            "mathtype_typst_math_font"
-          ],
+          "properties": {
+            "font": {
+              "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
+              "x-papper-suggestions": [
+                "XITS Math",
+                "STIX Two Math",
+                "New Computer Modern Math"
+              ],
+              "type": "string",
+              "minLength": 1
+            },
+            "calligraphicFont": {
+              "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
+              "x-papper-suggestions": [
+                "XITS Math",
+                "STIX Two Math",
+                "New Computer Modern Math"
+              ],
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "required": [
             "font",
             "calligraphicFont"
           ],
+          "additionalProperties": false,
           "minLength": 1
         },
         "docxNativeCrossref": {
@@ -113,10 +101,6 @@
           "x-papper-section": "references",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-native-crossref",
-            "docx_native_crossref"
           ]
         },
         "tableAutofit": {
@@ -126,10 +110,6 @@
           "x-papper-targets": [
             "html",
             "docx"
-          ],
-          "x-papper-aliases": [
-            "table-autofit",
-            "table_autofit"
           ],
           "enum": [
             "window",
@@ -144,12 +124,6 @@
           "x-papper-section": "images",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-embed-svg-images",
-            "docx_embed_svg_images",
-            "embed-svg-images",
-            "embedSvgImages"
           ]
         },
         "docxConvertSvgToPng": {
@@ -158,50 +132,41 @@
           "x-papper-section": "images",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "convert-svg-to-png",
-            "convertSvgToPng",
-            "docx-convert-svg-to-png",
-            "docx_convert_svg_to_png"
           ]
         },
         "docxSvgToPngWidth": {
           "description": "SVG 转 PNG 的像素宽度",
-          "type": "integer",
+          "type": [
+            "integer",
+            "null"
+          ],
           "x-papper-section": "images",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-svg-to-png-width",
-            "docx_svg_to_png_width"
           ],
           "exclusiveMinimum": 0
         },
         "docxSvgToPngDpi": {
           "description": "SVG 转 PNG 的 DPI",
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "x-papper-section": "images",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-svg-to-png-dpi",
-            "docx_svg_to_png_dpi"
           ],
           "exclusiveMinimum": 0
         },
         "docxSvgToPngScale": {
           "description": "SVG 转 PNG 的缩放比例",
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "x-papper-section": "images",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-svg-to-png-scale",
-            "docx_svg_to_png_scale"
           ],
           "exclusiveMinimum": 0
         },
@@ -216,18 +181,10 @@
             "html",
             "docx",
             "latex"
-          ],
-          "x-papper-aliases": [
-            "citation-number-range-delimiter",
-            "citation_number_range_delimiter"
           ]
         },
         "docxShowLineNumbers": {
           "description": "DOCX 行号模式",
-          "type": [
-            "boolean",
-            "string"
-          ],
           "x-papper-suggestions": [
             "true",
             "false",
@@ -239,16 +196,13 @@
             "每节",
             "关闭"
           ],
+          "type": [
+            "boolean",
+            "string"
+          ],
           "x-papper-section": "layout",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-show-line-numbers",
-            "docx_show_line_numbers",
-            "show-line-numbers",
-            "showLineNumbers",
-            "show_line_numbers"
           ]
         },
         "docxShowPageNumbers": {
@@ -257,21 +211,9 @@
             "boolean",
             "null"
           ],
-          "x-papper-suggestions": [
-            "true",
-            "false",
-            "null"
-          ],
           "x-papper-section": "layout",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-show-page-numbers",
-            "docx_show_page_numbers",
-            "show-page-numbers",
-            "showPageNumbers",
-            "show_page_numbers"
           ]
         },
         "docxFooter": {
@@ -279,6 +221,10 @@
           "type": [
             "object",
             "null"
+          ],
+          "x-papper-section": "layout",
+          "x-papper-targets": [
+            "docx"
           ],
           "properties": {
             "content": {
@@ -295,21 +241,44 @@
               ]
             }
           },
-          "additionalProperties": false,
+          "additionalProperties": false
+        },
+        "docxHeader": {
+          "description": "DOCX 页眉；null 保留参考文档页眉，空 content 清空页眉",
+          "type": [
+            "object",
+            "null"
+          ],
           "x-papper-section": "layout",
           "x-papper-targets": [
             "docx"
           ],
-          "x-papper-aliases": [
-            "docx-footer",
-            "docx_footer"
-          ]
+          "properties": {
+            "content": {
+              "description": "页眉 Markdown 内容；例如 []{t=\"pageNum\" format=\"upperRoman\"} 插入页码",
+              "type": "string"
+            },
+            "alignment": {
+              "description": "页眉对齐方式",
+              "type": "string",
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ]
+            }
+          },
+          "additionalProperties": false
         },
         "docxPageMargins": {
           "description": "DOCX 页面边距",
           "type": [
             "object",
             "null"
+          ],
+          "x-papper-section": "layout",
+          "x-papper-targets": [
+            "docx"
           ],
           "properties": {
             "top": {
@@ -339,34 +308,9 @@
                 "string",
                 "number"
               ]
-            },
-            "inside": {
-              "description": "左侧边距别名",
-              "type": [
-                "string",
-                "number"
-              ]
-            },
-            "outside": {
-              "description": "右侧边距别名",
-              "type": [
-                "string",
-                "number"
-              ]
             }
           },
-          "additionalProperties": true,
-          "x-papper-suggestions": [
-            "null"
-          ],
-          "x-papper-section": "layout",
-          "x-papper-targets": [
-            "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-page-margins",
-            "docx_page_margins"
-          ]
+          "additionalProperties": false
         },
         "docxPageWidth": {
           "description": "DOCX 页面宽度，例如 21cm；null 保留参考文档宽度",
@@ -378,10 +322,6 @@
           "x-papper-section": "layout",
           "x-papper-targets": [
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-page-width",
-            "docx_page_width"
           ]
         },
         "docxStyle": {
@@ -394,10 +334,6 @@
           "x-papper-targets": [
             "html",
             "docx"
-          ],
-          "x-papper-aliases": [
-            "docx-style",
-            "docx_style"
           ],
           "additionalProperties": {
             "type": "object",
@@ -418,18 +354,10 @@
                     "type": "string"
                   }
                 },
-                "additionalProperties": true
-              },
-              "fontName": {
-                "description": "兼容旧配置的字体名称",
-                "type": "string"
+                "additionalProperties": false
               },
               "fontSize": {
                 "description": "字体大小，例如 10.5pt、小五或四号；也可输入其他正磅值",
-                "type": [
-                  "string",
-                  "number"
-                ],
                 "x-papper-suggestions": [
                   "10.5pt",
                   "12pt",
@@ -439,18 +367,22 @@
                   "四号",
                   "小三",
                   "三号"
+                ],
+                "type": [
+                  "string",
+                  "number"
                 ]
               },
               "fontColor": {
                 "description": "字体颜色，例如 #000000、rgb(0, 0, 0) 或 [0, 0, 0]；十六进制颜色必须加引号",
-                "type": [
-                  "string",
-                  "array"
-                ],
                 "x-papper-suggestions": [
                   "\"#000000\"",
                   "\"#FF0000\"",
                   "\"#0000FF\""
+                ],
+                "type": [
+                  "string",
+                  "array"
                 ]
               },
               "bold": {
@@ -459,21 +391,20 @@
               },
               "lineSpacing": {
                 "description": "行距倍数、single、one-half、double 或精确磅值",
-                "type": [
-                  "string",
-                  "number"
-                ],
                 "x-papper-suggestions": [
                   "single",
                   "one-half",
                   "double",
                   "1.5",
                   "18pt"
+                ],
+                "type": [
+                  "string",
+                  "number"
                 ]
               },
               "alignment": {
                 "description": "段落对齐方式",
-                "type": "string",
                 "x-papper-suggestions": [
                   "left",
                   "center",
@@ -481,7 +412,8 @@
                   "justify",
                   "distribute",
                   "centre"
-                ]
+                ],
+                "type": "string"
               },
               "firstLineIndentChars": {
                 "description": "Word 字符数形式的首行缩进",
@@ -523,7 +455,7 @@
                     ]
                   }
                 },
-                "additionalProperties": true
+                "additionalProperties": false
               },
               "paragraphSpacing": {
                 "description": "段前和段后间距",
@@ -544,75 +476,17 @@
                     ]
                   }
                 },
-                "additionalProperties": true
-              },
-              "font": {
-                "description": "兼容旧配置的字体对象",
-                "type": "object",
-                "properties": {
-                  "family": {
-                    "description": "兼容旧配置的字体名称",
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": true
+                "additionalProperties": false
               }
             },
-            "additionalProperties": true
+            "additionalProperties": false
           }
         },
         "pandocMetadata": {
           "type": "object",
           "properties": {
-            "figureTitle": {
-              "description": "图题前缀",
-              "type": "string",
-              "x-papper-section": "references"
-            },
-            "tableTitle": {
-              "description": "表题前缀",
-              "type": "string",
-              "x-papper-section": "references"
-            },
-            "titleDelim": {
-              "description": "编号和题注之间的分隔符",
-              "type": "string",
-              "x-papper-section": "references"
-            },
-            "figPrefix": {
-              "description": "图引用前缀",
-              "type": [
-                "string",
-                "array"
-              ],
-              "x-papper-section": "references"
-            },
-            "tblPrefix": {
-              "description": "表引用前缀",
-              "type": [
-                "string",
-                "array"
-              ],
-              "x-papper-section": "references"
-            },
-            "secPrefix": {
-              "description": "章节引用前缀",
-              "type": [
-                "string",
-                "array"
-              ],
-              "x-papper-section": "references"
-            },
-            "eqnPrefix": {
-              "description": "公式引用前缀",
-              "type": [
-                "string",
-                "array"
-              ],
-              "x-papper-section": "references"
-            },
-            "linkReferences": {
-              "description": "是否将交叉引用转换为超链接",
+            "autoEqnLabels": {
+              "description": "是否自动为行间公式编号",
               "type": "boolean",
               "x-papper-section": "references"
             },
@@ -621,19 +495,9 @@
               "type": "boolean",
               "x-papper-section": "references"
             },
-            "autoEqnLabels": {
-              "description": "是否自动为行间公式编号",
-              "type": "boolean",
-              "x-papper-section": "references"
-            },
-            "numberSections": {
-              "description": "是否为章节编号",
-              "type": "boolean",
-              "x-papper-section": "references"
-            },
-            "sectionsDepth": {
-              "description": "章节编号深度",
-              "type": "integer",
+            "chapDelim": {
+              "description": "章节编号分隔符",
+              "type": "string",
               "x-papper-section": "references"
             },
             "chapters": {
@@ -646,9 +510,68 @@
               "type": "integer",
               "x-papper-section": "references"
             },
-            "chapDelim": {
-              "description": "章节编号分隔符",
+            "csl": {
+              "description": "参考文献样式文件路径（CSL）",
               "type": "string",
+              "x-papper-section": "bibliography"
+            },
+            "eqnPrefix": {
+              "description": "公式引用前缀",
+              "type": [
+                "string",
+                "array"
+              ],
+              "x-papper-section": "references"
+            },
+            "figPrefix": {
+              "description": "图引用前缀",
+              "type": [
+                "string",
+                "array"
+              ],
+              "x-papper-section": "references"
+            },
+            "figureTitle": {
+              "description": "图题前缀",
+              "type": "string",
+              "x-papper-section": "references"
+            },
+            "lang": {
+              "description": "文档语言，例如 zh-CN 或 en-US",
+              "type": "string",
+              "x-papper-section": "references"
+            },
+            "link-citations": {
+              "description": "是否将引文链接到参考文献",
+              "type": "boolean",
+              "x-papper-section": "bibliography"
+            },
+            "linkReferences": {
+              "description": "是否将交叉引用转换为超链接",
+              "type": "boolean",
+              "x-papper-section": "references"
+            },
+            "numberSections": {
+              "description": "是否为章节编号",
+              "type": "boolean",
+              "x-papper-section": "references"
+            },
+            "reference-section-title": {
+              "description": "参考文献章节标题",
+              "type": "string",
+              "x-papper-section": "bibliography"
+            },
+            "secPrefix": {
+              "description": "章节引用前缀",
+              "type": [
+                "string",
+                "array"
+              ],
+              "x-papper-section": "references"
+            },
+            "sectionsDepth": {
+              "description": "章节编号深度",
+              "type": "integer",
               "x-papper-section": "references"
             },
             "subfigGrid": {
@@ -666,23 +589,21 @@
               "type": "string",
               "x-papper-section": "references"
             },
-            "reference-section-title": {
-              "description": "参考文献章节标题",
+            "tableTitle": {
+              "description": "表题前缀",
               "type": "string",
-              "x-papper-section": "bibliography"
+              "x-papper-section": "references"
             },
-            "link-citations": {
-              "description": "是否将引文链接到参考文献",
-              "type": "boolean",
-              "x-papper-section": "bibliography"
+            "tblPrefix": {
+              "description": "表引用前缀",
+              "type": [
+                "string",
+                "array"
+              ],
+              "x-papper-section": "references"
             },
-            "csl": {
-              "description": "参考文献样式文件路径（CSL）",
-              "type": "string",
-              "x-papper-section": "bibliography"
-            },
-            "lang": {
-              "description": "文档语言，例如 zh-CN 或 en-US",
+            "titleDelim": {
+              "description": "编号和题注之间的分隔符",
               "type": "string",
               "x-papper-section": "references"
             }
@@ -691,7 +612,6 @@
           "description": "传给 Pandoc、pandoc-crossref 和 citeproc 的元数据；允许其他合法元数据"
         },
         "reply": {
-          "description": "审稿回复构建的覆盖配置；null 清除继承的回复配置",
           "type": [
             "object",
             "null"
@@ -703,8 +623,7 @@
               "x-papper-section": "math",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": []
+              ]
             },
             "mathtypeConversionMethod": {
               "description": "MathType 转换后端",
@@ -712,10 +631,6 @@
               "x-papper-section": "math",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "mathtype-conversion-method",
-                "mathtype_conversion_method"
               ],
               "enum": [
                 "rust",
@@ -725,11 +640,12 @@
                 "both"
               ],
               "x-papper-value-aliases": {
-                "set-data": "mathtype",
-                "setdata": "mathtype",
-                "set_data": "mathtype",
+                "mathtype-rust": "rust",
+                "mtef": "rust",
                 "sdk": "rust-sdk",
-                "sdk-xform-ole": "rust-sdk"
+                "sdk-xform-ole": "rust-sdk",
+                "set-data": "mathtype",
+                "setdata": "mathtype"
               }
             },
             "mathtypeSvgBackend": {
@@ -739,10 +655,6 @@
               "x-papper-targets": [
                 "docx"
               ],
-              "x-papper-aliases": [
-                "mathtype-svg-backend",
-                "mathtype_svg_backend"
-              ],
               "enum": [
                 "ratex",
                 "typst"
@@ -750,50 +662,46 @@
             },
             "mathtypeTypstMathFont": {
               "description": "Typst 数学字体名称或字体文件路径",
-              "type": [
-                "string",
-                "object"
-              ],
-              "properties": {
-                "font": {
-                  "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
-                  "type": "string",
-                  "x-papper-suggestions": [
-                    "XITS Math",
-                    "STIX Two Math",
-                    "New Computer Modern Math"
-                  ],
-                  "minLength": 1
-                },
-                "calligraphicFont": {
-                  "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
-                  "type": "string",
-                  "x-papper-suggestions": [
-                    "XITS Math",
-                    "STIX Two Math",
-                    "New Computer Modern Math"
-                  ],
-                  "minLength": 1
-                }
-              },
-              "additionalProperties": false,
               "x-papper-suggestions": [
                 "XITS Math",
                 "STIX Two Math",
                 "New Computer Modern Math"
               ],
+              "type": [
+                "string",
+                "object"
+              ],
               "x-papper-section": "math",
               "x-papper-targets": [
                 "docx"
               ],
-              "x-papper-aliases": [
-                "mathtype-typst-math-font",
-                "mathtype_typst_math_font"
-              ],
+              "properties": {
+                "font": {
+                  "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
+                  "x-papper-suggestions": [
+                    "XITS Math",
+                    "STIX Two Math",
+                    "New Computer Modern Math"
+                  ],
+                  "type": "string",
+                  "minLength": 1
+                },
+                "calligraphicFont": {
+                  "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
+                  "x-papper-suggestions": [
+                    "XITS Math",
+                    "STIX Two Math",
+                    "New Computer Modern Math"
+                  ],
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
               "required": [
                 "font",
                 "calligraphicFont"
               ],
+              "additionalProperties": false,
               "minLength": 1
             },
             "docxNativeCrossref": {
@@ -802,10 +710,6 @@
               "x-papper-section": "references",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-native-crossref",
-                "docx_native_crossref"
               ]
             },
             "tableAutofit": {
@@ -815,10 +719,6 @@
               "x-papper-targets": [
                 "html",
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "table-autofit",
-                "table_autofit"
               ],
               "enum": [
                 "window",
@@ -833,12 +733,6 @@
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-embed-svg-images",
-                "docx_embed_svg_images",
-                "embed-svg-images",
-                "embedSvgImages"
               ]
             },
             "docxConvertSvgToPng": {
@@ -847,50 +741,41 @@
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "convert-svg-to-png",
-                "convertSvgToPng",
-                "docx-convert-svg-to-png",
-                "docx_convert_svg_to_png"
               ]
             },
             "docxSvgToPngWidth": {
               "description": "SVG 转 PNG 的像素宽度",
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-svg-to-png-width",
-                "docx_svg_to_png_width"
               ],
               "exclusiveMinimum": 0
             },
             "docxSvgToPngDpi": {
               "description": "SVG 转 PNG 的 DPI",
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-svg-to-png-dpi",
-                "docx_svg_to_png_dpi"
               ],
               "exclusiveMinimum": 0
             },
             "docxSvgToPngScale": {
               "description": "SVG 转 PNG 的缩放比例",
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-svg-to-png-scale",
-                "docx_svg_to_png_scale"
               ],
               "exclusiveMinimum": 0
             },
@@ -905,18 +790,10 @@
                 "html",
                 "docx",
                 "latex"
-              ],
-              "x-papper-aliases": [
-                "citation-number-range-delimiter",
-                "citation_number_range_delimiter"
               ]
             },
             "docxShowLineNumbers": {
               "description": "DOCX 行号模式",
-              "type": [
-                "boolean",
-                "string"
-              ],
               "x-papper-suggestions": [
                 "true",
                 "false",
@@ -928,16 +805,13 @@
                 "每节",
                 "关闭"
               ],
+              "type": [
+                "boolean",
+                "string"
+              ],
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-show-line-numbers",
-                "docx_show_line_numbers",
-                "show-line-numbers",
-                "showLineNumbers",
-                "show_line_numbers"
               ]
             },
             "docxShowPageNumbers": {
@@ -946,21 +820,9 @@
                 "boolean",
                 "null"
               ],
-              "x-papper-suggestions": [
-                "true",
-                "false",
-                "null"
-              ],
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-show-page-numbers",
-                "docx_show_page_numbers",
-                "show-page-numbers",
-                "showPageNumbers",
-                "show_page_numbers"
               ]
             },
             "docxFooter": {
@@ -968,6 +830,10 @@
               "type": [
                 "object",
                 "null"
+              ],
+              "x-papper-section": "layout",
+              "x-papper-targets": [
+                "docx"
               ],
               "properties": {
                 "content": {
@@ -984,21 +850,44 @@
                   ]
                 }
               },
-              "additionalProperties": false,
+              "additionalProperties": false
+            },
+            "docxHeader": {
+              "description": "DOCX 页眉；null 保留参考文档页眉，空 content 清空页眉",
+              "type": [
+                "object",
+                "null"
+              ],
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
               ],
-              "x-papper-aliases": [
-                "docx-footer",
-                "docx_footer"
-              ]
+              "properties": {
+                "content": {
+                  "description": "页眉 Markdown 内容；例如 []{t=\"pageNum\" format=\"upperRoman\"} 插入页码",
+                  "type": "string"
+                },
+                "alignment": {
+                  "description": "页眉对齐方式",
+                  "type": "string",
+                  "enum": [
+                    "left",
+                    "center",
+                    "right"
+                  ]
+                }
+              },
+              "additionalProperties": false
             },
             "docxPageMargins": {
               "description": "DOCX 页面边距",
               "type": [
                 "object",
                 "null"
+              ],
+              "x-papper-section": "layout",
+              "x-papper-targets": [
+                "docx"
               ],
               "properties": {
                 "top": {
@@ -1028,34 +917,9 @@
                     "string",
                     "number"
                   ]
-                },
-                "inside": {
-                  "description": "左侧边距别名",
-                  "type": [
-                    "string",
-                    "number"
-                  ]
-                },
-                "outside": {
-                  "description": "右侧边距别名",
-                  "type": [
-                    "string",
-                    "number"
-                  ]
                 }
               },
-              "additionalProperties": true,
-              "x-papper-suggestions": [
-                "null"
-              ],
-              "x-papper-section": "layout",
-              "x-papper-targets": [
-                "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-page-margins",
-                "docx_page_margins"
-              ]
+              "additionalProperties": false
             },
             "docxPageWidth": {
               "description": "DOCX 页面宽度，例如 21cm；null 保留参考文档宽度",
@@ -1067,10 +931,6 @@
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-page-width",
-                "docx_page_width"
               ]
             },
             "docxStyle": {
@@ -1083,10 +943,6 @@
               "x-papper-targets": [
                 "html",
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-style",
-                "docx_style"
               ],
               "additionalProperties": {
                 "type": "object",
@@ -1107,18 +963,10 @@
                         "type": "string"
                       }
                     },
-                    "additionalProperties": true
-                  },
-                  "fontName": {
-                    "description": "兼容旧配置的字体名称",
-                    "type": "string"
+                    "additionalProperties": false
                   },
                   "fontSize": {
                     "description": "字体大小，例如 10.5pt、小五或四号；也可输入其他正磅值",
-                    "type": [
-                      "string",
-                      "number"
-                    ],
                     "x-papper-suggestions": [
                       "10.5pt",
                       "12pt",
@@ -1128,18 +976,22 @@
                       "四号",
                       "小三",
                       "三号"
+                    ],
+                    "type": [
+                      "string",
+                      "number"
                     ]
                   },
                   "fontColor": {
                     "description": "字体颜色，例如 #000000、rgb(0, 0, 0) 或 [0, 0, 0]；十六进制颜色必须加引号",
-                    "type": [
-                      "string",
-                      "array"
-                    ],
                     "x-papper-suggestions": [
                       "\"#000000\"",
                       "\"#FF0000\"",
                       "\"#0000FF\""
+                    ],
+                    "type": [
+                      "string",
+                      "array"
                     ]
                   },
                   "bold": {
@@ -1148,21 +1000,20 @@
                   },
                   "lineSpacing": {
                     "description": "行距倍数、single、one-half、double 或精确磅值",
-                    "type": [
-                      "string",
-                      "number"
-                    ],
                     "x-papper-suggestions": [
                       "single",
                       "one-half",
                       "double",
                       "1.5",
                       "18pt"
+                    ],
+                    "type": [
+                      "string",
+                      "number"
                     ]
                   },
                   "alignment": {
                     "description": "段落对齐方式",
-                    "type": "string",
                     "x-papper-suggestions": [
                       "left",
                       "center",
@@ -1170,7 +1021,8 @@
                       "justify",
                       "distribute",
                       "centre"
-                    ]
+                    ],
+                    "type": "string"
                   },
                   "firstLineIndentChars": {
                     "description": "Word 字符数形式的首行缩进",
@@ -1212,7 +1064,7 @@
                         ]
                       }
                     },
-                    "additionalProperties": true
+                    "additionalProperties": false
                   },
                   "paragraphSpacing": {
                     "description": "段前和段后间距",
@@ -1233,75 +1085,17 @@
                         ]
                       }
                     },
-                    "additionalProperties": true
-                  },
-                  "font": {
-                    "description": "兼容旧配置的字体对象",
-                    "type": "object",
-                    "properties": {
-                      "family": {
-                        "description": "兼容旧配置的字体名称",
-                        "type": "string"
-                      }
-                    },
-                    "additionalProperties": true
+                    "additionalProperties": false
                   }
                 },
-                "additionalProperties": true
+                "additionalProperties": false
               }
             },
             "pandocMetadata": {
               "type": "object",
               "properties": {
-                "figureTitle": {
-                  "description": "图题前缀",
-                  "type": "string",
-                  "x-papper-section": "references"
-                },
-                "tableTitle": {
-                  "description": "表题前缀",
-                  "type": "string",
-                  "x-papper-section": "references"
-                },
-                "titleDelim": {
-                  "description": "编号和题注之间的分隔符",
-                  "type": "string",
-                  "x-papper-section": "references"
-                },
-                "figPrefix": {
-                  "description": "图引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "tblPrefix": {
-                  "description": "表引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "secPrefix": {
-                  "description": "章节引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "eqnPrefix": {
-                  "description": "公式引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "linkReferences": {
-                  "description": "是否将交叉引用转换为超链接",
+                "autoEqnLabels": {
+                  "description": "是否自动为行间公式编号",
                   "type": "boolean",
                   "x-papper-section": "references"
                 },
@@ -1310,19 +1104,9 @@
                   "type": "boolean",
                   "x-papper-section": "references"
                 },
-                "autoEqnLabels": {
-                  "description": "是否自动为行间公式编号",
-                  "type": "boolean",
-                  "x-papper-section": "references"
-                },
-                "numberSections": {
-                  "description": "是否为章节编号",
-                  "type": "boolean",
-                  "x-papper-section": "references"
-                },
-                "sectionsDepth": {
-                  "description": "章节编号深度",
-                  "type": "integer",
+                "chapDelim": {
+                  "description": "章节编号分隔符",
+                  "type": "string",
                   "x-papper-section": "references"
                 },
                 "chapters": {
@@ -1335,9 +1119,68 @@
                   "type": "integer",
                   "x-papper-section": "references"
                 },
-                "chapDelim": {
-                  "description": "章节编号分隔符",
+                "csl": {
+                  "description": "参考文献样式文件路径（CSL）",
                   "type": "string",
+                  "x-papper-section": "bibliography"
+                },
+                "eqnPrefix": {
+                  "description": "公式引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
+                },
+                "figPrefix": {
+                  "description": "图引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
+                },
+                "figureTitle": {
+                  "description": "图题前缀",
+                  "type": "string",
+                  "x-papper-section": "references"
+                },
+                "lang": {
+                  "description": "文档语言，例如 zh-CN 或 en-US",
+                  "type": "string",
+                  "x-papper-section": "references"
+                },
+                "link-citations": {
+                  "description": "是否将引文链接到参考文献",
+                  "type": "boolean",
+                  "x-papper-section": "bibliography"
+                },
+                "linkReferences": {
+                  "description": "是否将交叉引用转换为超链接",
+                  "type": "boolean",
+                  "x-papper-section": "references"
+                },
+                "numberSections": {
+                  "description": "是否为章节编号",
+                  "type": "boolean",
+                  "x-papper-section": "references"
+                },
+                "reference-section-title": {
+                  "description": "参考文献章节标题",
+                  "type": "string",
+                  "x-papper-section": "bibliography"
+                },
+                "secPrefix": {
+                  "description": "章节引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
+                },
+                "sectionsDepth": {
+                  "description": "章节编号深度",
+                  "type": "integer",
                   "x-papper-section": "references"
                 },
                 "subfigGrid": {
@@ -1355,23 +1198,21 @@
                   "type": "string",
                   "x-papper-section": "references"
                 },
-                "reference-section-title": {
-                  "description": "参考文献章节标题",
+                "tableTitle": {
+                  "description": "表题前缀",
                   "type": "string",
-                  "x-papper-section": "bibliography"
+                  "x-papper-section": "references"
                 },
-                "link-citations": {
-                  "description": "是否将引文链接到参考文献",
-                  "type": "boolean",
-                  "x-papper-section": "bibliography"
+                "tblPrefix": {
+                  "description": "表引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
                 },
-                "csl": {
-                  "description": "参考文献样式文件路径（CSL）",
-                  "type": "string",
-                  "x-papper-section": "bibliography"
-                },
-                "lang": {
-                  "description": "文档语言，例如 zh-CN 或 en-US",
+                "titleDelim": {
+                  "description": "编号和题注之间的分隔符",
                   "type": "string",
                   "x-papper-section": "references"
                 }
@@ -1380,64 +1221,18 @@
               "description": "传给 Pandoc、pandoc-crossref 和 citeproc 的元数据；允许其他合法元数据"
             }
           },
-          "additionalProperties": true
+          "additionalProperties": false,
+          "description": "审稿回复构建的覆盖配置；null 清除继承的回复配置"
         }
       },
-      "additionalProperties": true,
+      "additionalProperties": false,
       "description": "本稿件的格式与构建覆盖配置，高于 style.yml；相对字体文件路径以当前 Markdown 所在目录为基准"
     },
     "pandocMetadata": {
       "type": "object",
       "properties": {
-        "figureTitle": {
-          "description": "图题前缀",
-          "type": "string",
-          "x-papper-section": "references"
-        },
-        "tableTitle": {
-          "description": "表题前缀",
-          "type": "string",
-          "x-papper-section": "references"
-        },
-        "titleDelim": {
-          "description": "编号和题注之间的分隔符",
-          "type": "string",
-          "x-papper-section": "references"
-        },
-        "figPrefix": {
-          "description": "图引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "tblPrefix": {
-          "description": "表引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "secPrefix": {
-          "description": "章节引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "eqnPrefix": {
-          "description": "公式引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "linkReferences": {
-          "description": "是否将交叉引用转换为超链接",
+        "autoEqnLabels": {
+          "description": "是否自动为行间公式编号",
           "type": "boolean",
           "x-papper-section": "references"
         },
@@ -1446,19 +1241,9 @@
           "type": "boolean",
           "x-papper-section": "references"
         },
-        "autoEqnLabels": {
-          "description": "是否自动为行间公式编号",
-          "type": "boolean",
-          "x-papper-section": "references"
-        },
-        "numberSections": {
-          "description": "是否为章节编号",
-          "type": "boolean",
-          "x-papper-section": "references"
-        },
-        "sectionsDepth": {
-          "description": "章节编号深度",
-          "type": "integer",
+        "chapDelim": {
+          "description": "章节编号分隔符",
+          "type": "string",
           "x-papper-section": "references"
         },
         "chapters": {
@@ -1471,9 +1256,68 @@
           "type": "integer",
           "x-papper-section": "references"
         },
-        "chapDelim": {
-          "description": "章节编号分隔符",
+        "csl": {
+          "description": "参考文献样式文件路径（CSL）",
           "type": "string",
+          "x-papper-section": "bibliography"
+        },
+        "eqnPrefix": {
+          "description": "公式引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "figPrefix": {
+          "description": "图引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "figureTitle": {
+          "description": "图题前缀",
+          "type": "string",
+          "x-papper-section": "references"
+        },
+        "lang": {
+          "description": "文档语言，例如 zh-CN 或 en-US",
+          "type": "string",
+          "x-papper-section": "references"
+        },
+        "link-citations": {
+          "description": "是否将引文链接到参考文献",
+          "type": "boolean",
+          "x-papper-section": "bibliography"
+        },
+        "linkReferences": {
+          "description": "是否将交叉引用转换为超链接",
+          "type": "boolean",
+          "x-papper-section": "references"
+        },
+        "numberSections": {
+          "description": "是否为章节编号",
+          "type": "boolean",
+          "x-papper-section": "references"
+        },
+        "reference-section-title": {
+          "description": "参考文献章节标题",
+          "type": "string",
+          "x-papper-section": "bibliography"
+        },
+        "secPrefix": {
+          "description": "章节引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "sectionsDepth": {
+          "description": "章节编号深度",
+          "type": "integer",
           "x-papper-section": "references"
         },
         "subfigGrid": {
@@ -1491,23 +1335,21 @@
           "type": "string",
           "x-papper-section": "references"
         },
-        "reference-section-title": {
-          "description": "参考文献章节标题",
+        "tableTitle": {
+          "description": "表题前缀",
           "type": "string",
-          "x-papper-section": "bibliography"
+          "x-papper-section": "references"
         },
-        "link-citations": {
-          "description": "是否将引文链接到参考文献",
-          "type": "boolean",
-          "x-papper-section": "bibliography"
+        "tblPrefix": {
+          "description": "表引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
         },
-        "csl": {
-          "description": "参考文献样式文件路径（CSL）",
-          "type": "string",
-          "x-papper-section": "bibliography"
-        },
-        "lang": {
-          "description": "文档语言，例如 zh-CN 或 en-US",
+        "titleDelim": {
+          "description": "编号和题注之间的分隔符",
           "type": "string",
           "x-papper-section": "references"
         }
@@ -1534,18 +1376,10 @@
               "type": "string"
             }
           },
-          "additionalProperties": true
-        },
-        "fontName": {
-          "description": "兼容旧配置的字体名称",
-          "type": "string"
+          "additionalProperties": false
         },
         "fontSize": {
           "description": "字体大小，例如 10.5pt、小五或四号；也可输入其他正磅值",
-          "type": [
-            "string",
-            "number"
-          ],
           "x-papper-suggestions": [
             "10.5pt",
             "12pt",
@@ -1555,18 +1389,22 @@
             "四号",
             "小三",
             "三号"
+          ],
+          "type": [
+            "string",
+            "number"
           ]
         },
         "fontColor": {
           "description": "字体颜色，例如 #000000、rgb(0, 0, 0) 或 [0, 0, 0]；十六进制颜色必须加引号",
-          "type": [
-            "string",
-            "array"
-          ],
           "x-papper-suggestions": [
             "\"#000000\"",
             "\"#FF0000\"",
             "\"#0000FF\""
+          ],
+          "type": [
+            "string",
+            "array"
           ]
         },
         "bold": {
@@ -1575,21 +1413,20 @@
         },
         "lineSpacing": {
           "description": "行距倍数、single、one-half、double 或精确磅值",
-          "type": [
-            "string",
-            "number"
-          ],
           "x-papper-suggestions": [
             "single",
             "one-half",
             "double",
             "1.5",
             "18pt"
+          ],
+          "type": [
+            "string",
+            "number"
           ]
         },
         "alignment": {
           "description": "段落对齐方式",
-          "type": "string",
           "x-papper-suggestions": [
             "left",
             "center",
@@ -1597,7 +1434,8 @@
             "justify",
             "distribute",
             "centre"
-          ]
+          ],
+          "type": "string"
         },
         "firstLineIndentChars": {
           "description": "Word 字符数形式的首行缩进",
@@ -1639,7 +1477,7 @@
               ]
             }
           },
-          "additionalProperties": true
+          "additionalProperties": false
         },
         "paragraphSpacing": {
           "description": "段前和段后间距",
@@ -1660,74 +1498,16 @@
               ]
             }
           },
-          "additionalProperties": true
-        },
-        "font": {
-          "description": "兼容旧配置的字体对象",
-          "type": "object",
-          "properties": {
-            "family": {
-              "description": "兼容旧配置的字体名称",
-              "type": "string"
-            }
-          },
-          "additionalProperties": true
+          "additionalProperties": false
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "manuscriptFrontmatter": {
       "type": "object",
       "properties": {
-        "figureTitle": {
-          "description": "图题前缀",
-          "type": "string",
-          "x-papper-section": "references"
-        },
-        "tableTitle": {
-          "description": "表题前缀",
-          "type": "string",
-          "x-papper-section": "references"
-        },
-        "titleDelim": {
-          "description": "编号和题注之间的分隔符",
-          "type": "string",
-          "x-papper-section": "references"
-        },
-        "figPrefix": {
-          "description": "图引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "tblPrefix": {
-          "description": "表引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "secPrefix": {
-          "description": "章节引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "eqnPrefix": {
-          "description": "公式引用前缀",
-          "type": [
-            "string",
-            "array"
-          ],
-          "x-papper-section": "references"
-        },
-        "linkReferences": {
-          "description": "是否将交叉引用转换为超链接",
+        "autoEqnLabels": {
+          "description": "是否自动为行间公式编号",
           "type": "boolean",
           "x-papper-section": "references"
         },
@@ -1736,19 +1516,9 @@
           "type": "boolean",
           "x-papper-section": "references"
         },
-        "autoEqnLabels": {
-          "description": "是否自动为行间公式编号",
-          "type": "boolean",
-          "x-papper-section": "references"
-        },
-        "numberSections": {
-          "description": "是否为章节编号",
-          "type": "boolean",
-          "x-papper-section": "references"
-        },
-        "sectionsDepth": {
-          "description": "章节编号深度",
-          "type": "integer",
+        "chapDelim": {
+          "description": "章节编号分隔符",
+          "type": "string",
           "x-papper-section": "references"
         },
         "chapters": {
@@ -1761,9 +1531,68 @@
           "type": "integer",
           "x-papper-section": "references"
         },
-        "chapDelim": {
-          "description": "章节编号分隔符",
+        "csl": {
+          "description": "参考文献样式文件路径（CSL）",
           "type": "string",
+          "x-papper-section": "bibliography"
+        },
+        "eqnPrefix": {
+          "description": "公式引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "figPrefix": {
+          "description": "图引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "figureTitle": {
+          "description": "图题前缀",
+          "type": "string",
+          "x-papper-section": "references"
+        },
+        "lang": {
+          "description": "文档语言，例如 zh-CN 或 en-US",
+          "type": "string",
+          "x-papper-section": "references"
+        },
+        "link-citations": {
+          "description": "是否将引文链接到参考文献",
+          "type": "boolean",
+          "x-papper-section": "bibliography"
+        },
+        "linkReferences": {
+          "description": "是否将交叉引用转换为超链接",
+          "type": "boolean",
+          "x-papper-section": "references"
+        },
+        "numberSections": {
+          "description": "是否为章节编号",
+          "type": "boolean",
+          "x-papper-section": "references"
+        },
+        "reference-section-title": {
+          "description": "参考文献章节标题",
+          "type": "string",
+          "x-papper-section": "bibliography"
+        },
+        "secPrefix": {
+          "description": "章节引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "sectionsDepth": {
+          "description": "章节编号深度",
+          "type": "integer",
           "x-papper-section": "references"
         },
         "subfigGrid": {
@@ -1781,126 +1610,34 @@
           "type": "string",
           "x-papper-section": "references"
         },
-        "reference-section-title": {
-          "description": "参考文献章节标题",
-          "type": "string",
-          "x-papper-section": "bibliography"
-        },
-        "link-citations": {
-          "description": "是否将引文链接到参考文献",
-          "type": "boolean",
-          "x-papper-section": "bibliography"
-        },
-        "csl": {
-          "description": "参考文献样式文件路径（CSL）",
-          "type": "string",
-          "x-papper-section": "bibliography"
-        },
-        "lang": {
-          "description": "文档语言，例如 zh-CN 或 en-US",
+        "tableTitle": {
+          "description": "表题前缀",
           "type": "string",
           "x-papper-section": "references"
         },
-        "title": {
-          "description": "稿件标题",
+        "tblPrefix": {
+          "description": "表引用前缀",
+          "type": [
+            "string",
+            "array"
+          ],
+          "x-papper-section": "references"
+        },
+        "titleDelim": {
+          "description": "编号和题注之间的分隔符",
+          "type": "string",
+          "x-papper-section": "references"
+        },
+        "abstract": {
+          "description": "稿件摘要，可使用 | 编写多行文本",
           "type": "string"
         },
-        "subtitle": {
-          "description": "稿件副标题",
-          "type": "string"
-        },
-        "authors": {
-          "description": "作者列表，每位作者使用包含 name 的对象，可填写机构、邮箱和通讯作者信息",
-          "type": "array",
-          "items": {
-            "description": "作者列表，每位作者使用包含 name 的对象，可填写机构、邮箱和通讯作者信息",
-            "type": "object",
-            "properties": {
-              "name": {
-                "description": "作者姓名，每位作者必须填写",
-                "type": "string"
-              },
-              "affiliation": {
-                "description": "作者所属机构名称或共享机构标识，可填写一个或多个",
-                "type": [
-                  "string",
-                  "array"
-                ]
-              },
-              "affiliations": {
-                "description": "作者所属机构名称或共享机构标识列表",
-                "type": [
-                  "string",
-                  "array"
-                ]
-              },
-              "email": {
-                "description": "作者邮箱，用于生成通讯作者脚注",
-                "type": "string"
-              },
-              "title": {
-                "description": "作者职称，显示在通讯作者脚注中",
-                "type": "string"
-              },
-              "corresponding": {
-                "description": "设为 true 生成默认通讯作者脚注，也可填写自定义脚注文本",
-                "type": [
-                  "string",
-                  "boolean"
-                ]
-              }
-            },
-            "additionalProperties": true,
-            "required": [
-              "name"
-            ]
-          }
-        },
-        "author": {
-          "description": "作者列表，authors 的兼容别名",
-          "type": "array",
-          "items": {
-            "description": "作者列表，authors 的兼容别名",
-            "type": "object",
-            "properties": {
-              "name": {
-                "description": "作者姓名，每位作者必须填写",
-                "type": "string"
-              },
-              "affiliation": {
-                "description": "作者所属机构名称或共享机构标识，可填写一个或多个",
-                "type": [
-                  "string",
-                  "array"
-                ]
-              },
-              "affiliations": {
-                "description": "作者所属机构名称或共享机构标识列表",
-                "type": [
-                  "string",
-                  "array"
-                ]
-              },
-              "email": {
-                "description": "作者邮箱，用于生成通讯作者脚注",
-                "type": "string"
-              },
-              "title": {
-                "description": "作者职称，显示在通讯作者脚注中",
-                "type": "string"
-              },
-              "corresponding": {
-                "description": "设为 true 生成默认通讯作者脚注，也可填写自定义脚注文本",
-                "type": [
-                  "string",
-                  "boolean"
-                ]
-              }
-            },
-            "additionalProperties": true,
-            "required": [
-              "name"
-            ]
+        "affiliation": {
+          "description": "共享机构映射，affiliations 的兼容别名",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "description": "共享机构名称，可在作者 affiliation 或 affiliations 中引用此标识"
           }
         },
         "affiliations": {
@@ -1911,21 +1648,97 @@
             "description": "共享机构名称，可在作者 affiliation 或 affiliations 中引用此标识"
           }
         },
-        "affiliation": {
-          "description": "共享机构映射，affiliations 的兼容别名",
-          "type": "object",
-          "additionalProperties": {
-            "type": "string",
-            "description": "共享机构名称，可在作者 affiliation 或 affiliations 中引用此标识"
+        "author": {
+          "description": "作者列表，authors 的兼容别名",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "affiliation": {
+                "description": "作者所属机构名称或共享机构标识，可填写一个或多个",
+                "type": [
+                  "string",
+                  "array"
+                ]
+              },
+              "affiliations": {
+                "description": "作者所属机构名称或共享机构标识列表",
+                "type": [
+                  "string",
+                  "array"
+                ]
+              },
+              "corresponding": {
+                "description": "设为 true 生成默认通讯作者脚注，也可填写自定义脚注文本",
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              },
+              "email": {
+                "description": "作者邮箱，用于生成通讯作者脚注",
+                "type": "string"
+              },
+              "name": {
+                "description": "作者姓名，每位作者必须填写",
+                "type": "string"
+              },
+              "title": {
+                "description": "作者职称，显示在通讯作者脚注中",
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "name"
+            ]
           }
         },
-        "abstract": {
-          "description": "稿件摘要，可使用 | 编写多行文本",
-          "type": "string"
-        },
-        "keywords": {
-          "description": "稿件关键词列表，例如 [sampling, evaluation]",
-          "type": "array"
+        "authors": {
+          "description": "作者列表，每位作者使用包含 name 的对象，可填写机构、邮箱和通讯作者信息",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "affiliation": {
+                "description": "作者所属机构名称或共享机构标识，可填写一个或多个",
+                "type": [
+                  "string",
+                  "array"
+                ]
+              },
+              "affiliations": {
+                "description": "作者所属机构名称或共享机构标识列表",
+                "type": [
+                  "string",
+                  "array"
+                ]
+              },
+              "corresponding": {
+                "description": "设为 true 生成默认通讯作者脚注，也可填写自定义脚注文本",
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              },
+              "email": {
+                "description": "作者邮箱，用于生成通讯作者脚注",
+                "type": "string"
+              },
+              "name": {
+                "description": "作者姓名，每位作者必须填写",
+                "type": "string"
+              },
+              "title": {
+                "description": "作者职称，显示在通讯作者脚注中",
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "name"
+            ]
+          }
         },
         "bibliography": {
           "description": "参考文献数据库路径，例如 references.bib；支持多个文件路径",
@@ -1934,21 +1747,25 @@
             "array"
           ]
         },
-        "nocite": {
-          "description": "额外列入参考文献的条目；填写 '@*' 可列入所有未引用条目",
-          "type": "string"
+        "classoption": {
+          "description": "LaTeX 文档类选项列表，例如 [preprint, 3p, authoryear]",
+          "type": "array"
         },
         "date": {
           "description": "稿件日期",
           "type": "string"
         },
-        "reply": {
-          "description": "审稿回复对应的稿件 Markdown 路径，例如 manuscript.md；用于行号和交叉引用",
+        "documentclass": {
+          "description": "LaTeX 文档类，例如 elsarticle、svjour3、WileyNJDv5 或 IEEEtran",
           "type": "string"
         },
-        "toc": {
-          "description": "是否生成目录",
-          "type": "boolean"
+        "header-includes": {
+          "description": "追加到输出文档头部的内容，例如 LaTeX 包或期刊信息",
+          "type": "string"
+        },
+        "keywords": {
+          "description": "稿件关键词列表，例如 [sampling, evaluation]",
+          "type": "array"
         },
         "lof": {
           "description": "是否生成图目录",
@@ -1958,17 +1775,25 @@
           "description": "是否生成表目录",
           "type": "boolean"
         },
-        "documentclass": {
-          "description": "LaTeX 文档类，例如 elsarticle、svjour3、WileyNJDv5 或 IEEEtran",
+        "nocite": {
+          "description": "额外列入参考文献的条目；填写 '@*' 可列入所有未引用条目",
           "type": "string"
         },
-        "classoption": {
-          "description": "LaTeX 文档类选项列表，例如 [preprint, 3p, authoryear]",
-          "type": "array"
-        },
-        "header-includes": {
-          "description": "追加到输出文档头部的内容，例如 LaTeX 包或期刊信息",
+        "reply": {
+          "description": "审稿回复对应的稿件 Markdown 路径，例如 manuscript.md；用于行号和交叉引用",
           "type": "string"
+        },
+        "subtitle": {
+          "description": "稿件副标题",
+          "type": "string"
+        },
+        "title": {
+          "description": "稿件标题",
+          "type": "string"
+        },
+        "toc": {
+          "description": "是否生成目录",
+          "type": "boolean"
         },
         "papperSettings": {
           "type": "object",
@@ -1979,8 +1804,7 @@
               "x-papper-section": "math",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": []
+              ]
             },
             "mathtypeConversionMethod": {
               "description": "MathType 转换后端",
@@ -1988,10 +1812,6 @@
               "x-papper-section": "math",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "mathtype-conversion-method",
-                "mathtype_conversion_method"
               ],
               "enum": [
                 "rust",
@@ -2001,11 +1821,12 @@
                 "both"
               ],
               "x-papper-value-aliases": {
-                "set-data": "mathtype",
-                "setdata": "mathtype",
-                "set_data": "mathtype",
+                "mathtype-rust": "rust",
+                "mtef": "rust",
                 "sdk": "rust-sdk",
-                "sdk-xform-ole": "rust-sdk"
+                "sdk-xform-ole": "rust-sdk",
+                "set-data": "mathtype",
+                "setdata": "mathtype"
               }
             },
             "mathtypeSvgBackend": {
@@ -2015,10 +1836,6 @@
               "x-papper-targets": [
                 "docx"
               ],
-              "x-papper-aliases": [
-                "mathtype-svg-backend",
-                "mathtype_svg_backend"
-              ],
               "enum": [
                 "ratex",
                 "typst"
@@ -2026,50 +1843,46 @@
             },
             "mathtypeTypstMathFont": {
               "description": "Typst 数学字体名称或字体文件路径",
-              "type": [
-                "string",
-                "object"
-              ],
-              "properties": {
-                "font": {
-                  "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
-                  "type": "string",
-                  "x-papper-suggestions": [
-                    "XITS Math",
-                    "STIX Two Math",
-                    "New Computer Modern Math"
-                  ],
-                  "minLength": 1
-                },
-                "calligraphicFont": {
-                  "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
-                  "type": "string",
-                  "x-papper-suggestions": [
-                    "XITS Math",
-                    "STIX Two Math",
-                    "New Computer Modern Math"
-                  ],
-                  "minLength": 1
-                }
-              },
-              "additionalProperties": false,
               "x-papper-suggestions": [
                 "XITS Math",
                 "STIX Two Math",
                 "New Computer Modern Math"
               ],
+              "type": [
+                "string",
+                "object"
+              ],
               "x-papper-section": "math",
               "x-papper-targets": [
                 "docx"
               ],
-              "x-papper-aliases": [
-                "mathtype-typst-math-font",
-                "mathtype_typst_math_font"
-              ],
+              "properties": {
+                "font": {
+                  "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
+                  "x-papper-suggestions": [
+                    "XITS Math",
+                    "STIX Two Math",
+                    "New Computer Modern Math"
+                  ],
+                  "type": "string",
+                  "minLength": 1
+                },
+                "calligraphicFont": {
+                  "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
+                  "x-papper-suggestions": [
+                    "XITS Math",
+                    "STIX Two Math",
+                    "New Computer Modern Math"
+                  ],
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
               "required": [
                 "font",
                 "calligraphicFont"
               ],
+              "additionalProperties": false,
               "minLength": 1
             },
             "docxNativeCrossref": {
@@ -2078,10 +1891,6 @@
               "x-papper-section": "references",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-native-crossref",
-                "docx_native_crossref"
               ]
             },
             "tableAutofit": {
@@ -2091,10 +1900,6 @@
               "x-papper-targets": [
                 "html",
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "table-autofit",
-                "table_autofit"
               ],
               "enum": [
                 "window",
@@ -2109,12 +1914,6 @@
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-embed-svg-images",
-                "docx_embed_svg_images",
-                "embed-svg-images",
-                "embedSvgImages"
               ]
             },
             "docxConvertSvgToPng": {
@@ -2123,50 +1922,41 @@
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "convert-svg-to-png",
-                "convertSvgToPng",
-                "docx-convert-svg-to-png",
-                "docx_convert_svg_to_png"
               ]
             },
             "docxSvgToPngWidth": {
               "description": "SVG 转 PNG 的像素宽度",
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-svg-to-png-width",
-                "docx_svg_to_png_width"
               ],
               "exclusiveMinimum": 0
             },
             "docxSvgToPngDpi": {
               "description": "SVG 转 PNG 的 DPI",
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-svg-to-png-dpi",
-                "docx_svg_to_png_dpi"
               ],
               "exclusiveMinimum": 0
             },
             "docxSvgToPngScale": {
               "description": "SVG 转 PNG 的缩放比例",
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "x-papper-section": "images",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-svg-to-png-scale",
-                "docx_svg_to_png_scale"
               ],
               "exclusiveMinimum": 0
             },
@@ -2181,18 +1971,10 @@
                 "html",
                 "docx",
                 "latex"
-              ],
-              "x-papper-aliases": [
-                "citation-number-range-delimiter",
-                "citation_number_range_delimiter"
               ]
             },
             "docxShowLineNumbers": {
               "description": "DOCX 行号模式",
-              "type": [
-                "boolean",
-                "string"
-              ],
               "x-papper-suggestions": [
                 "true",
                 "false",
@@ -2204,16 +1986,13 @@
                 "每节",
                 "关闭"
               ],
+              "type": [
+                "boolean",
+                "string"
+              ],
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-show-line-numbers",
-                "docx_show_line_numbers",
-                "show-line-numbers",
-                "showLineNumbers",
-                "show_line_numbers"
               ]
             },
             "docxShowPageNumbers": {
@@ -2222,21 +2001,9 @@
                 "boolean",
                 "null"
               ],
-              "x-papper-suggestions": [
-                "true",
-                "false",
-                "null"
-              ],
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-show-page-numbers",
-                "docx_show_page_numbers",
-                "show-page-numbers",
-                "showPageNumbers",
-                "show_page_numbers"
               ]
             },
             "docxFooter": {
@@ -2244,6 +2011,10 @@
               "type": [
                 "object",
                 "null"
+              ],
+              "x-papper-section": "layout",
+              "x-papper-targets": [
+                "docx"
               ],
               "properties": {
                 "content": {
@@ -2260,21 +2031,44 @@
                   ]
                 }
               },
-              "additionalProperties": false,
+              "additionalProperties": false
+            },
+            "docxHeader": {
+              "description": "DOCX 页眉；null 保留参考文档页眉，空 content 清空页眉",
+              "type": [
+                "object",
+                "null"
+              ],
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
               ],
-              "x-papper-aliases": [
-                "docx-footer",
-                "docx_footer"
-              ]
+              "properties": {
+                "content": {
+                  "description": "页眉 Markdown 内容；例如 []{t=\"pageNum\" format=\"upperRoman\"} 插入页码",
+                  "type": "string"
+                },
+                "alignment": {
+                  "description": "页眉对齐方式",
+                  "type": "string",
+                  "enum": [
+                    "left",
+                    "center",
+                    "right"
+                  ]
+                }
+              },
+              "additionalProperties": false
             },
             "docxPageMargins": {
               "description": "DOCX 页面边距",
               "type": [
                 "object",
                 "null"
+              ],
+              "x-papper-section": "layout",
+              "x-papper-targets": [
+                "docx"
               ],
               "properties": {
                 "top": {
@@ -2304,34 +2098,9 @@
                     "string",
                     "number"
                   ]
-                },
-                "inside": {
-                  "description": "左侧边距别名",
-                  "type": [
-                    "string",
-                    "number"
-                  ]
-                },
-                "outside": {
-                  "description": "右侧边距别名",
-                  "type": [
-                    "string",
-                    "number"
-                  ]
                 }
               },
-              "additionalProperties": true,
-              "x-papper-suggestions": [
-                "null"
-              ],
-              "x-papper-section": "layout",
-              "x-papper-targets": [
-                "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-page-margins",
-                "docx_page_margins"
-              ]
+              "additionalProperties": false
             },
             "docxPageWidth": {
               "description": "DOCX 页面宽度，例如 21cm；null 保留参考文档宽度",
@@ -2343,10 +2112,6 @@
               "x-papper-section": "layout",
               "x-papper-targets": [
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-page-width",
-                "docx_page_width"
               ]
             },
             "docxStyle": {
@@ -2359,10 +2124,6 @@
               "x-papper-targets": [
                 "html",
                 "docx"
-              ],
-              "x-papper-aliases": [
-                "docx-style",
-                "docx_style"
               ],
               "additionalProperties": {
                 "type": "object",
@@ -2383,18 +2144,10 @@
                         "type": "string"
                       }
                     },
-                    "additionalProperties": true
-                  },
-                  "fontName": {
-                    "description": "兼容旧配置的字体名称",
-                    "type": "string"
+                    "additionalProperties": false
                   },
                   "fontSize": {
                     "description": "字体大小，例如 10.5pt、小五或四号；也可输入其他正磅值",
-                    "type": [
-                      "string",
-                      "number"
-                    ],
                     "x-papper-suggestions": [
                       "10.5pt",
                       "12pt",
@@ -2404,18 +2157,22 @@
                       "四号",
                       "小三",
                       "三号"
+                    ],
+                    "type": [
+                      "string",
+                      "number"
                     ]
                   },
                   "fontColor": {
                     "description": "字体颜色，例如 #000000、rgb(0, 0, 0) 或 [0, 0, 0]；十六进制颜色必须加引号",
-                    "type": [
-                      "string",
-                      "array"
-                    ],
                     "x-papper-suggestions": [
                       "\"#000000\"",
                       "\"#FF0000\"",
                       "\"#0000FF\""
+                    ],
+                    "type": [
+                      "string",
+                      "array"
                     ]
                   },
                   "bold": {
@@ -2424,21 +2181,20 @@
                   },
                   "lineSpacing": {
                     "description": "行距倍数、single、one-half、double 或精确磅值",
-                    "type": [
-                      "string",
-                      "number"
-                    ],
                     "x-papper-suggestions": [
                       "single",
                       "one-half",
                       "double",
                       "1.5",
                       "18pt"
+                    ],
+                    "type": [
+                      "string",
+                      "number"
                     ]
                   },
                   "alignment": {
                     "description": "段落对齐方式",
-                    "type": "string",
                     "x-papper-suggestions": [
                       "left",
                       "center",
@@ -2446,7 +2202,8 @@
                       "justify",
                       "distribute",
                       "centre"
-                    ]
+                    ],
+                    "type": "string"
                   },
                   "firstLineIndentChars": {
                     "description": "Word 字符数形式的首行缩进",
@@ -2488,7 +2245,7 @@
                         ]
                       }
                     },
-                    "additionalProperties": true
+                    "additionalProperties": false
                   },
                   "paragraphSpacing": {
                     "description": "段前和段后间距",
@@ -2509,75 +2266,17 @@
                         ]
                       }
                     },
-                    "additionalProperties": true
-                  },
-                  "font": {
-                    "description": "兼容旧配置的字体对象",
-                    "type": "object",
-                    "properties": {
-                      "family": {
-                        "description": "兼容旧配置的字体名称",
-                        "type": "string"
-                      }
-                    },
-                    "additionalProperties": true
+                    "additionalProperties": false
                   }
                 },
-                "additionalProperties": true
+                "additionalProperties": false
               }
             },
             "pandocMetadata": {
               "type": "object",
               "properties": {
-                "figureTitle": {
-                  "description": "图题前缀",
-                  "type": "string",
-                  "x-papper-section": "references"
-                },
-                "tableTitle": {
-                  "description": "表题前缀",
-                  "type": "string",
-                  "x-papper-section": "references"
-                },
-                "titleDelim": {
-                  "description": "编号和题注之间的分隔符",
-                  "type": "string",
-                  "x-papper-section": "references"
-                },
-                "figPrefix": {
-                  "description": "图引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "tblPrefix": {
-                  "description": "表引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "secPrefix": {
-                  "description": "章节引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "eqnPrefix": {
-                  "description": "公式引用前缀",
-                  "type": [
-                    "string",
-                    "array"
-                  ],
-                  "x-papper-section": "references"
-                },
-                "linkReferences": {
-                  "description": "是否将交叉引用转换为超链接",
+                "autoEqnLabels": {
+                  "description": "是否自动为行间公式编号",
                   "type": "boolean",
                   "x-papper-section": "references"
                 },
@@ -2586,19 +2285,9 @@
                   "type": "boolean",
                   "x-papper-section": "references"
                 },
-                "autoEqnLabels": {
-                  "description": "是否自动为行间公式编号",
-                  "type": "boolean",
-                  "x-papper-section": "references"
-                },
-                "numberSections": {
-                  "description": "是否为章节编号",
-                  "type": "boolean",
-                  "x-papper-section": "references"
-                },
-                "sectionsDepth": {
-                  "description": "章节编号深度",
-                  "type": "integer",
+                "chapDelim": {
+                  "description": "章节编号分隔符",
+                  "type": "string",
                   "x-papper-section": "references"
                 },
                 "chapters": {
@@ -2611,9 +2300,68 @@
                   "type": "integer",
                   "x-papper-section": "references"
                 },
-                "chapDelim": {
-                  "description": "章节编号分隔符",
+                "csl": {
+                  "description": "参考文献样式文件路径（CSL）",
                   "type": "string",
+                  "x-papper-section": "bibliography"
+                },
+                "eqnPrefix": {
+                  "description": "公式引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
+                },
+                "figPrefix": {
+                  "description": "图引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
+                },
+                "figureTitle": {
+                  "description": "图题前缀",
+                  "type": "string",
+                  "x-papper-section": "references"
+                },
+                "lang": {
+                  "description": "文档语言，例如 zh-CN 或 en-US",
+                  "type": "string",
+                  "x-papper-section": "references"
+                },
+                "link-citations": {
+                  "description": "是否将引文链接到参考文献",
+                  "type": "boolean",
+                  "x-papper-section": "bibliography"
+                },
+                "linkReferences": {
+                  "description": "是否将交叉引用转换为超链接",
+                  "type": "boolean",
+                  "x-papper-section": "references"
+                },
+                "numberSections": {
+                  "description": "是否为章节编号",
+                  "type": "boolean",
+                  "x-papper-section": "references"
+                },
+                "reference-section-title": {
+                  "description": "参考文献章节标题",
+                  "type": "string",
+                  "x-papper-section": "bibliography"
+                },
+                "secPrefix": {
+                  "description": "章节引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
+                },
+                "sectionsDepth": {
+                  "description": "章节编号深度",
+                  "type": "integer",
                   "x-papper-section": "references"
                 },
                 "subfigGrid": {
@@ -2631,23 +2379,21 @@
                   "type": "string",
                   "x-papper-section": "references"
                 },
-                "reference-section-title": {
-                  "description": "参考文献章节标题",
+                "tableTitle": {
+                  "description": "表题前缀",
                   "type": "string",
-                  "x-papper-section": "bibliography"
+                  "x-papper-section": "references"
                 },
-                "link-citations": {
-                  "description": "是否将引文链接到参考文献",
-                  "type": "boolean",
-                  "x-papper-section": "bibliography"
+                "tblPrefix": {
+                  "description": "表引用前缀",
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "x-papper-section": "references"
                 },
-                "csl": {
-                  "description": "参考文献样式文件路径（CSL）",
-                  "type": "string",
-                  "x-papper-section": "bibliography"
-                },
-                "lang": {
-                  "description": "文档语言，例如 zh-CN 或 en-US",
+                "titleDelim": {
+                  "description": "编号和题注之间的分隔符",
                   "type": "string",
                   "x-papper-section": "references"
                 }
@@ -2656,7 +2402,6 @@
               "description": "传给 Pandoc、pandoc-crossref 和 citeproc 的元数据；允许其他合法元数据"
             },
             "reply": {
-              "description": "审稿回复构建的覆盖配置；null 清除继承的回复配置",
               "type": [
                 "object",
                 "null"
@@ -2668,8 +2413,7 @@
                   "x-papper-section": "math",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": []
+                  ]
                 },
                 "mathtypeConversionMethod": {
                   "description": "MathType 转换后端",
@@ -2677,10 +2421,6 @@
                   "x-papper-section": "math",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "mathtype-conversion-method",
-                    "mathtype_conversion_method"
                   ],
                   "enum": [
                     "rust",
@@ -2690,11 +2430,12 @@
                     "both"
                   ],
                   "x-papper-value-aliases": {
-                    "set-data": "mathtype",
-                    "setdata": "mathtype",
-                    "set_data": "mathtype",
+                    "mathtype-rust": "rust",
+                    "mtef": "rust",
                     "sdk": "rust-sdk",
-                    "sdk-xform-ole": "rust-sdk"
+                    "sdk-xform-ole": "rust-sdk",
+                    "set-data": "mathtype",
+                    "setdata": "mathtype"
                   }
                 },
                 "mathtypeSvgBackend": {
@@ -2704,10 +2445,6 @@
                   "x-papper-targets": [
                     "docx"
                   ],
-                  "x-papper-aliases": [
-                    "mathtype-svg-backend",
-                    "mathtype_svg_backend"
-                  ],
                   "enum": [
                     "ratex",
                     "typst"
@@ -2715,50 +2452,46 @@
                 },
                 "mathtypeTypstMathFont": {
                   "description": "Typst 数学字体名称或字体文件路径",
-                  "type": [
-                    "string",
-                    "object"
-                  ],
-                  "properties": {
-                    "font": {
-                      "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
-                      "type": "string",
-                      "x-papper-suggestions": [
-                        "XITS Math",
-                        "STIX Two Math",
-                        "New Computer Modern Math"
-                      ],
-                      "minLength": 1
-                    },
-                    "calligraphicFont": {
-                      "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
-                      "type": "string",
-                      "x-papper-suggestions": [
-                        "XITS Math",
-                        "STIX Two Math",
-                        "New Computer Modern Math"
-                      ],
-                      "minLength": 1
-                    }
-                  },
-                  "additionalProperties": false,
                   "x-papper-suggestions": [
                     "XITS Math",
                     "STIX Two Math",
                     "New Computer Modern Math"
                   ],
+                  "type": [
+                    "string",
+                    "object"
+                  ],
                   "x-papper-section": "math",
                   "x-papper-targets": [
                     "docx"
                   ],
-                  "x-papper-aliases": [
-                    "mathtype-typst-math-font",
-                    "mathtype_typst_math_font"
-                  ],
+                  "properties": {
+                    "font": {
+                      "description": "普通数学符号字体，与 calligraphicFont 一起填写；也可输入字体文件路径",
+                      "x-papper-suggestions": [
+                        "XITS Math",
+                        "STIX Two Math",
+                        "New Computer Modern Math"
+                      ],
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "calligraphicFont": {
+                      "description": "花体数学符号字体，与 font 一起填写；也可输入字体文件路径",
+                      "x-papper-suggestions": [
+                        "XITS Math",
+                        "STIX Two Math",
+                        "New Computer Modern Math"
+                      ],
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
                   "required": [
                     "font",
                     "calligraphicFont"
                   ],
+                  "additionalProperties": false,
                   "minLength": 1
                 },
                 "docxNativeCrossref": {
@@ -2767,10 +2500,6 @@
                   "x-papper-section": "references",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-native-crossref",
-                    "docx_native_crossref"
                   ]
                 },
                 "tableAutofit": {
@@ -2780,10 +2509,6 @@
                   "x-papper-targets": [
                     "html",
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "table-autofit",
-                    "table_autofit"
                   ],
                   "enum": [
                     "window",
@@ -2798,12 +2523,6 @@
                   "x-papper-section": "images",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-embed-svg-images",
-                    "docx_embed_svg_images",
-                    "embed-svg-images",
-                    "embedSvgImages"
                   ]
                 },
                 "docxConvertSvgToPng": {
@@ -2812,50 +2531,41 @@
                   "x-papper-section": "images",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "convert-svg-to-png",
-                    "convertSvgToPng",
-                    "docx-convert-svg-to-png",
-                    "docx_convert_svg_to_png"
                   ]
                 },
                 "docxSvgToPngWidth": {
                   "description": "SVG 转 PNG 的像素宽度",
-                  "type": "integer",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
                   "x-papper-section": "images",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-svg-to-png-width",
-                    "docx_svg_to_png_width"
                   ],
                   "exclusiveMinimum": 0
                 },
                 "docxSvgToPngDpi": {
                   "description": "SVG 转 PNG 的 DPI",
-                  "type": "number",
+                  "type": [
+                    "number",
+                    "null"
+                  ],
                   "x-papper-section": "images",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-svg-to-png-dpi",
-                    "docx_svg_to_png_dpi"
                   ],
                   "exclusiveMinimum": 0
                 },
                 "docxSvgToPngScale": {
                   "description": "SVG 转 PNG 的缩放比例",
-                  "type": "number",
+                  "type": [
+                    "number",
+                    "null"
+                  ],
                   "x-papper-section": "images",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-svg-to-png-scale",
-                    "docx_svg_to_png_scale"
                   ],
                   "exclusiveMinimum": 0
                 },
@@ -2870,18 +2580,10 @@
                     "html",
                     "docx",
                     "latex"
-                  ],
-                  "x-papper-aliases": [
-                    "citation-number-range-delimiter",
-                    "citation_number_range_delimiter"
                   ]
                 },
                 "docxShowLineNumbers": {
                   "description": "DOCX 行号模式",
-                  "type": [
-                    "boolean",
-                    "string"
-                  ],
                   "x-papper-suggestions": [
                     "true",
                     "false",
@@ -2893,16 +2595,13 @@
                     "每节",
                     "关闭"
                   ],
+                  "type": [
+                    "boolean",
+                    "string"
+                  ],
                   "x-papper-section": "layout",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-show-line-numbers",
-                    "docx_show_line_numbers",
-                    "show-line-numbers",
-                    "showLineNumbers",
-                    "show_line_numbers"
                   ]
                 },
                 "docxShowPageNumbers": {
@@ -2911,21 +2610,9 @@
                     "boolean",
                     "null"
                   ],
-                  "x-papper-suggestions": [
-                    "true",
-                    "false",
-                    "null"
-                  ],
                   "x-papper-section": "layout",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-show-page-numbers",
-                    "docx_show_page_numbers",
-                    "show-page-numbers",
-                    "showPageNumbers",
-                    "show_page_numbers"
                   ]
                 },
                 "docxFooter": {
@@ -2933,6 +2620,10 @@
                   "type": [
                     "object",
                     "null"
+                  ],
+                  "x-papper-section": "layout",
+                  "x-papper-targets": [
+                    "docx"
                   ],
                   "properties": {
                     "content": {
@@ -2949,21 +2640,44 @@
                       ]
                     }
                   },
-                  "additionalProperties": false,
+                  "additionalProperties": false
+                },
+                "docxHeader": {
+                  "description": "DOCX 页眉；null 保留参考文档页眉，空 content 清空页眉",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
                   "x-papper-section": "layout",
                   "x-papper-targets": [
                     "docx"
                   ],
-                  "x-papper-aliases": [
-                    "docx-footer",
-                    "docx_footer"
-                  ]
+                  "properties": {
+                    "content": {
+                      "description": "页眉 Markdown 内容；例如 []{t=\"pageNum\" format=\"upperRoman\"} 插入页码",
+                      "type": "string"
+                    },
+                    "alignment": {
+                      "description": "页眉对齐方式",
+                      "type": "string",
+                      "enum": [
+                        "left",
+                        "center",
+                        "right"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
                 },
                 "docxPageMargins": {
                   "description": "DOCX 页面边距",
                   "type": [
                     "object",
                     "null"
+                  ],
+                  "x-papper-section": "layout",
+                  "x-papper-targets": [
+                    "docx"
                   ],
                   "properties": {
                     "top": {
@@ -2993,34 +2707,9 @@
                         "string",
                         "number"
                       ]
-                    },
-                    "inside": {
-                      "description": "左侧边距别名",
-                      "type": [
-                        "string",
-                        "number"
-                      ]
-                    },
-                    "outside": {
-                      "description": "右侧边距别名",
-                      "type": [
-                        "string",
-                        "number"
-                      ]
                     }
                   },
-                  "additionalProperties": true,
-                  "x-papper-suggestions": [
-                    "null"
-                  ],
-                  "x-papper-section": "layout",
-                  "x-papper-targets": [
-                    "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-page-margins",
-                    "docx_page_margins"
-                  ]
+                  "additionalProperties": false
                 },
                 "docxPageWidth": {
                   "description": "DOCX 页面宽度，例如 21cm；null 保留参考文档宽度",
@@ -3032,10 +2721,6 @@
                   "x-papper-section": "layout",
                   "x-papper-targets": [
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-page-width",
-                    "docx_page_width"
                   ]
                 },
                 "docxStyle": {
@@ -3048,10 +2733,6 @@
                   "x-papper-targets": [
                     "html",
                     "docx"
-                  ],
-                  "x-papper-aliases": [
-                    "docx-style",
-                    "docx_style"
                   ],
                   "additionalProperties": {
                     "type": "object",
@@ -3072,18 +2753,10 @@
                             "type": "string"
                           }
                         },
-                        "additionalProperties": true
-                      },
-                      "fontName": {
-                        "description": "兼容旧配置的字体名称",
-                        "type": "string"
+                        "additionalProperties": false
                       },
                       "fontSize": {
                         "description": "字体大小，例如 10.5pt、小五或四号；也可输入其他正磅值",
-                        "type": [
-                          "string",
-                          "number"
-                        ],
                         "x-papper-suggestions": [
                           "10.5pt",
                           "12pt",
@@ -3093,18 +2766,22 @@
                           "四号",
                           "小三",
                           "三号"
+                        ],
+                        "type": [
+                          "string",
+                          "number"
                         ]
                       },
                       "fontColor": {
                         "description": "字体颜色，例如 #000000、rgb(0, 0, 0) 或 [0, 0, 0]；十六进制颜色必须加引号",
-                        "type": [
-                          "string",
-                          "array"
-                        ],
                         "x-papper-suggestions": [
                           "\"#000000\"",
                           "\"#FF0000\"",
                           "\"#0000FF\""
+                        ],
+                        "type": [
+                          "string",
+                          "array"
                         ]
                       },
                       "bold": {
@@ -3113,21 +2790,20 @@
                       },
                       "lineSpacing": {
                         "description": "行距倍数、single、one-half、double 或精确磅值",
-                        "type": [
-                          "string",
-                          "number"
-                        ],
                         "x-papper-suggestions": [
                           "single",
                           "one-half",
                           "double",
                           "1.5",
                           "18pt"
+                        ],
+                        "type": [
+                          "string",
+                          "number"
                         ]
                       },
                       "alignment": {
                         "description": "段落对齐方式",
-                        "type": "string",
                         "x-papper-suggestions": [
                           "left",
                           "center",
@@ -3135,7 +2811,8 @@
                           "justify",
                           "distribute",
                           "centre"
-                        ]
+                        ],
+                        "type": "string"
                       },
                       "firstLineIndentChars": {
                         "description": "Word 字符数形式的首行缩进",
@@ -3177,7 +2854,7 @@
                             ]
                           }
                         },
-                        "additionalProperties": true
+                        "additionalProperties": false
                       },
                       "paragraphSpacing": {
                         "description": "段前和段后间距",
@@ -3198,75 +2875,17 @@
                             ]
                           }
                         },
-                        "additionalProperties": true
-                      },
-                      "font": {
-                        "description": "兼容旧配置的字体对象",
-                        "type": "object",
-                        "properties": {
-                          "family": {
-                            "description": "兼容旧配置的字体名称",
-                            "type": "string"
-                          }
-                        },
-                        "additionalProperties": true
+                        "additionalProperties": false
                       }
                     },
-                    "additionalProperties": true
+                    "additionalProperties": false
                   }
                 },
                 "pandocMetadata": {
                   "type": "object",
                   "properties": {
-                    "figureTitle": {
-                      "description": "图题前缀",
-                      "type": "string",
-                      "x-papper-section": "references"
-                    },
-                    "tableTitle": {
-                      "description": "表题前缀",
-                      "type": "string",
-                      "x-papper-section": "references"
-                    },
-                    "titleDelim": {
-                      "description": "编号和题注之间的分隔符",
-                      "type": "string",
-                      "x-papper-section": "references"
-                    },
-                    "figPrefix": {
-                      "description": "图引用前缀",
-                      "type": [
-                        "string",
-                        "array"
-                      ],
-                      "x-papper-section": "references"
-                    },
-                    "tblPrefix": {
-                      "description": "表引用前缀",
-                      "type": [
-                        "string",
-                        "array"
-                      ],
-                      "x-papper-section": "references"
-                    },
-                    "secPrefix": {
-                      "description": "章节引用前缀",
-                      "type": [
-                        "string",
-                        "array"
-                      ],
-                      "x-papper-section": "references"
-                    },
-                    "eqnPrefix": {
-                      "description": "公式引用前缀",
-                      "type": [
-                        "string",
-                        "array"
-                      ],
-                      "x-papper-section": "references"
-                    },
-                    "linkReferences": {
-                      "description": "是否将交叉引用转换为超链接",
+                    "autoEqnLabels": {
+                      "description": "是否自动为行间公式编号",
                       "type": "boolean",
                       "x-papper-section": "references"
                     },
@@ -3275,19 +2894,9 @@
                       "type": "boolean",
                       "x-papper-section": "references"
                     },
-                    "autoEqnLabels": {
-                      "description": "是否自动为行间公式编号",
-                      "type": "boolean",
-                      "x-papper-section": "references"
-                    },
-                    "numberSections": {
-                      "description": "是否为章节编号",
-                      "type": "boolean",
-                      "x-papper-section": "references"
-                    },
-                    "sectionsDepth": {
-                      "description": "章节编号深度",
-                      "type": "integer",
+                    "chapDelim": {
+                      "description": "章节编号分隔符",
+                      "type": "string",
                       "x-papper-section": "references"
                     },
                     "chapters": {
@@ -3300,9 +2909,68 @@
                       "type": "integer",
                       "x-papper-section": "references"
                     },
-                    "chapDelim": {
-                      "description": "章节编号分隔符",
+                    "csl": {
+                      "description": "参考文献样式文件路径（CSL）",
                       "type": "string",
+                      "x-papper-section": "bibliography"
+                    },
+                    "eqnPrefix": {
+                      "description": "公式引用前缀",
+                      "type": [
+                        "string",
+                        "array"
+                      ],
+                      "x-papper-section": "references"
+                    },
+                    "figPrefix": {
+                      "description": "图引用前缀",
+                      "type": [
+                        "string",
+                        "array"
+                      ],
+                      "x-papper-section": "references"
+                    },
+                    "figureTitle": {
+                      "description": "图题前缀",
+                      "type": "string",
+                      "x-papper-section": "references"
+                    },
+                    "lang": {
+                      "description": "文档语言，例如 zh-CN 或 en-US",
+                      "type": "string",
+                      "x-papper-section": "references"
+                    },
+                    "link-citations": {
+                      "description": "是否将引文链接到参考文献",
+                      "type": "boolean",
+                      "x-papper-section": "bibliography"
+                    },
+                    "linkReferences": {
+                      "description": "是否将交叉引用转换为超链接",
+                      "type": "boolean",
+                      "x-papper-section": "references"
+                    },
+                    "numberSections": {
+                      "description": "是否为章节编号",
+                      "type": "boolean",
+                      "x-papper-section": "references"
+                    },
+                    "reference-section-title": {
+                      "description": "参考文献章节标题",
+                      "type": "string",
+                      "x-papper-section": "bibliography"
+                    },
+                    "secPrefix": {
+                      "description": "章节引用前缀",
+                      "type": [
+                        "string",
+                        "array"
+                      ],
+                      "x-papper-section": "references"
+                    },
+                    "sectionsDepth": {
+                      "description": "章节编号深度",
+                      "type": "integer",
                       "x-papper-section": "references"
                     },
                     "subfigGrid": {
@@ -3320,23 +2988,21 @@
                       "type": "string",
                       "x-papper-section": "references"
                     },
-                    "reference-section-title": {
-                      "description": "参考文献章节标题",
+                    "tableTitle": {
+                      "description": "表题前缀",
                       "type": "string",
-                      "x-papper-section": "bibliography"
+                      "x-papper-section": "references"
                     },
-                    "link-citations": {
-                      "description": "是否将引文链接到参考文献",
-                      "type": "boolean",
-                      "x-papper-section": "bibliography"
+                    "tblPrefix": {
+                      "description": "表引用前缀",
+                      "type": [
+                        "string",
+                        "array"
+                      ],
+                      "x-papper-section": "references"
                     },
-                    "csl": {
-                      "description": "参考文献样式文件路径（CSL）",
-                      "type": "string",
-                      "x-papper-section": "bibliography"
-                    },
-                    "lang": {
-                      "description": "文档语言，例如 zh-CN 或 en-US",
+                    "titleDelim": {
+                      "description": "编号和题注之间的分隔符",
                       "type": "string",
                       "x-papper-section": "references"
                     }
@@ -3345,10 +3011,11 @@
                   "description": "传给 Pandoc、pandoc-crossref 和 citeproc 的元数据；允许其他合法元数据"
                 }
               },
-              "additionalProperties": true
+              "additionalProperties": false,
+              "description": "审稿回复构建的覆盖配置；null 清除继承的回复配置"
             }
           },
-          "additionalProperties": true,
+          "additionalProperties": false,
           "description": "本稿件的格式与构建覆盖配置，高于 style.yml；相对字体文件路径以当前 Markdown 所在目录为基准"
         }
       },
@@ -3364,10 +3031,10 @@
           "docxSvgToPngWidth"
         ],
         [
-          "docxSvgToPngDpi"
+          "docxSvgToPngScale"
         ],
         [
-          "docxSvgToPngScale"
+          "docxSvgToPngDpi"
         ]
       ]
     },
@@ -3390,7 +3057,7 @@
     }
   ],
   "templates": {
-    "styleProject": "# 设置为 true，可在构建期间将 DOCX 公式转换为 MathType OLE 对象。\r\n# 新项目默认启用；本地转换环境不可用时会回退到原生 Word 公式。\r\nmathtype: true\r\n\r\n# MathType 转换后端：rust、rust-sdk、mathtype、auto 或 both。\r\n# rust: 跨平台 LaTeX -> mathtype-rust OLE/MTEF + latex2wmf WMF/JSON。\r\n# mathtype: LaTeX -> MathType OLE TeX 输入 -> OLE/WMF/JSON。\r\n# auto: Windows 且 MathType 可用时依次尝试 mathtype、rust；否则直接使用 rust。\r\n# both: 仅限 Windows；同时使用 rust 和 mathtype，仅比较 OLE 中的 MTEF 公式数据流，不同时发出警告，并采用 mathtype 的结果。\r\nmathtypeConversionMethod: rust\r\n\r\n# 跨平台 rust 后端使用的 SVG 渲染器：ratex 或 typst。\r\n# ratex 直接解析 LaTeX；typst 通过 MiTeX 转换，默认使用内置的 XITS Math 字体，\r\n# 并读取公式框的实际基线深度。\r\nmathtypeSvgBackend: typst\r\n\r\n# Typst 数学字体：可填写字体名称，或 .otf/.ttf/.ttc/.otc 字体文件路径。\r\n# 开箱即用的数学字体：XITS Math、STIX Two Math（本工具内置）、New Computer Modern Math（Typst 内置）。\r\n# 其他字体可先安装后填写名称，或直接填写文件路径，无需安装。\r\n# 相对路径以本 style.yml 所在目录为基准，例如 fonts/STIXTwoMath-Regular.otf。\r\n# 仅影响 rust 路径的公式预览；both 最终采用 MathType 原生结果，不使用此字体设置。\r\n# 字符串表示主体与花体都使用同一字体。例如：\r\n# mathtypeTypstMathFont: XITS Math\r\n# 对象的 font、calligraphicFont 都必须填写，以下也是未配置时的默认值。\r\nmathtypeTypstMathFont:\r\n  font: XITS Math\r\n  calligraphicFont: New Computer Modern Math\r\n\r\n# true 使用 Word 原生 REF/SEQ 域和章节多级列表编号。\r\n# false 保留原有 Pandoc 编号和超链接引用行为。\r\ndocxNativeCrossref: false\r\n\r\n# 设置为 true，可在构建 DOCX 时将引用的 SVG 文件中的本地子图像内嵌。\r\n# 这样既能保持 SVG 文本和矢量元素清晰，又能让链接的子图像在 Word 中可见。\r\n# 当 docxConvertSvgToPng 为 true 时，此功能会自动禁用。\r\ndocxEmbedSvgImages: true\r\n\r\n# 设置为 true，可在构建 DOCX 时将所有引用的 SVG 图像栅格化为 PNG。\r\n# 如果只需栅格化单个 SVG，请为该图像设置 `{to-png=true}`。\r\n# 可再为该图像添加 `to-png-scale=2`，以覆盖全局 PNG 缩放比例。\r\n\r\ndocxConvertSvgToPng: false\r\n# 以下 SVG 转 PNG 尺寸控制选项最多只能启用一个，建议都不启用。\r\n# docxSvgToPngWidth: 1600\r\n# docxSvgToPngDpi: 300\r\n# docxSvgToPngScale: 1\r\n\r\n# 设置 citeproc 折叠数字引文范围的分隔符。设置为 \"-\" 可生成 [1-3]\r\n# citationNumberRangeDelimiter: \"-\"\r\n\r\n# 常规 DOCX 默认连续行号，中文 DOCX 默认不显示。中文需连续行号请显式设置为 true。\r\n# 也可用 '每页重编' 或 '每节重编' 指定重新编号方式。\r\n# docxShowLineNumbers: continuous\r\n\r\n# 自定义 DOCX 页脚；空 content 清空页脚，docxFooter: null 保留参考文档页脚。\r\n# content 支持 Pandoc Markdown；[]{t=\"pageNum\" format=\"upperRoman\"} 可指定页码格式。\r\n# alignment 支持 left、center、right，表格单元格沿用 Markdown 列对齐。\r\ndocxFooter:\r\n  content: '[]{t=\"pageNum\"}'\r\n  alignment: center\r\n\r\n# 手写表格默认 autofit：window、content、fixed；none 不补默认属性，自动生成的布局表格始终跳过。\r\ntableAutofit: none\r\n\r\n# docxPageMargins: # 控制输出的 DOCX 页面边距。\r\n#   top: 2.54cm\r\n#   bottom: 2.54cm\r\n#   left: 3.17cm\r\n#   right: 3.17cm\r\n\r\n# docxStyle: ## DOCX 段落样式格式（后处理时按精确的样式名称应用）\r\n#   Heading 1: { fontSize: 小四 }\r\n#   Heading 2: { fontSize: 小四 }\r\n#   Body Text:\r\n#     firstLineIndentChars: 2\r\n#     paragraphSpacing:\r\n#       before: 0pt\r\n#       after: 0pt\r\n\r\n# reply: 审稿回复输出的覆盖配置。Markdown 顶部 YAML 中的 reply 路径让 build html/docx 自动应用本节\r\n#   docxStyle:\r\n#     Body Text:\r\n#       firstLineIndentChars: 0\r\n#       paragraphSpacing:\r\n#         before: 6pt\r\n#         after: 6pt\r\n#   pandocMetadata: {}\r\n\r\n## 本节会作为 metadata 传给 Pandoc、pandoc-crossref 和 citeproc。\r\n## 请将稿件特有的元数据保留在 manuscript.md 中。构建时，稿件 YAML 头部中定义的值会覆盖这些默认值。\r\n## 可用值参考 https://pandoc.org/MANUAL.html https://lierdakil.github.io/pandoc-crossref/\r\n# pandocMetadata:\r\n#   # 题注前缀格式：{figureTitle} {number}{titleDelim} {caption}\r\n#   figureTitle: \"Figure \"\r\n#   tableTitle: \"Table \"\r\n#   titleDelim: \"\"\r\n\r\n#   # 项目交叉引用格式\r\n#   figPrefix: \"Figure\"\r\n#   tblPrefix: \"Table\"\r\n#   secPrefix: \"Section\"\r\n#   eqnPrefix: \"Equation\"\r\n\r\n#   # 章节编号和自动标签选项\r\n#   linkReferences: true        # 将引用转换为超链接\r\n#   autoSectionLabels: true     # 自动为章节标签添加 \"sec:\" 前缀\r\n#   autoEqnLabels: true         # 为所有行间公式编号\r\n#   numberSections: true        # 为章节编号，如 1.1、1.2 等\r\n#   sectionsDepth: 3            # 章节编号深度\r\n#   subfigGrid: true            # 支持子图网格布局\r\n#   subfigureChildTemplate: ($$i$$) $$t$$\r\n#   subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$\r\n\r\n#   # 参考文献章节标题\r\n#   reference-section-title: References\r\n#   link-citations: true\r\n\r\n#   # 引文样式语言（CSL）文件\r\n#   # 默认：一般 DOCX 使用 Vancouver；中文 DOCX 使用内置 GB/T 7714—2015（顺序编码，双语）\r\n#   # 可从 https://www.zotero.org/styles 下载 CSL 文件\r\n#   csl: pandoc/csl/elsevier-vancouver.csl\r\n"
+    "styleProject": "# 设置为 true，可在构建期间将 DOCX 公式转换为 MathType OLE 对象。\r\n# 新项目默认启用；本地转换环境不可用时会回退到原生 Word 公式。\r\nmathtype: true\r\n\r\n# MathType 转换后端：rust、rust-sdk、mathtype、auto 或 both。\r\n# rust: 跨平台 LaTeX -> mathtype-rust OLE/MTEF + latex2wmf WMF/JSON。\r\n# mathtype: LaTeX -> MathType OLE TeX 输入 -> OLE/WMF/JSON。\r\n# auto: Windows 且 MathType 可用时依次尝试 mathtype、rust；否则直接使用 rust。\r\n# both: 仅限 Windows；同时使用 rust 和 mathtype，仅比较 OLE 中的 MTEF 公式数据流，不同时发出警告，并采用 mathtype 的结果。\r\nmathtypeConversionMethod: rust\r\n\r\n# 跨平台 rust 后端使用的 SVG 渲染器：ratex 或 typst。\r\n# ratex 直接解析 LaTeX；typst 通过 MiTeX 转换，默认使用内置的 XITS Math 字体，\r\n# 并读取公式框的实际基线深度。\r\nmathtypeSvgBackend: typst\r\n\r\n# Typst 数学字体：可填写字体名称，或 .otf/.ttf/.ttc/.otc 字体文件路径。\r\n# 开箱即用的数学字体：XITS Math、STIX Two Math（本工具内置）、New Computer Modern Math（Typst 内置）。\r\n# 其他字体可先安装后填写名称，或直接填写文件路径，无需安装。\r\n# 相对路径以本 style.yml 所在目录为基准，例如 fonts/STIXTwoMath-Regular.otf。\r\n# 仅影响 rust 路径的公式预览；both 最终采用 MathType 原生结果，不使用此字体设置。\r\n# 字符串表示主体与花体都使用同一字体。例如：\r\n# mathtypeTypstMathFont: XITS Math\r\n# 对象的 font、calligraphicFont 都必须填写，以下也是未配置时的默认值。\r\nmathtypeTypstMathFont:\r\n  font: XITS Math\r\n  calligraphicFont: New Computer Modern Math\r\n\r\n# true 使用 Word 原生 REF/SEQ 域和章节多级列表编号。\r\n# false 保留原有 Pandoc 编号和超链接引用行为。\r\ndocxNativeCrossref: false\r\n\r\n# 设置为 true，可在构建 DOCX 时将引用的 SVG 文件中的本地子图像内嵌。\r\n# 这样既能保持 SVG 文本和矢量元素清晰，又能让链接的子图像在 Word 中可见。\r\n# 当 docxConvertSvgToPng 为 true 时，此功能会自动禁用。\r\ndocxEmbedSvgImages: true\r\n\r\n# 设置为 true，可在构建 DOCX 时将所有引用的 SVG 图像栅格化为 PNG。\r\n# 如果只需栅格化单个 SVG，请为该图像设置 `{to-png=true}`。\r\n# 可再为该图像添加 `to-png-scale=2`，以覆盖全局 PNG 缩放比例。\r\n\r\ndocxConvertSvgToPng: false\r\n# 以下 SVG 转 PNG 尺寸控制选项最多只能启用一个，建议都不启用。\r\n# docxSvgToPngWidth: 1600\r\n# docxSvgToPngDpi: 300\r\n# docxSvgToPngScale: 1\r\n\r\n# 设置 citeproc 折叠数字引文范围的分隔符。设置为 \"-\" 可生成 [1-3]\r\n# citationNumberRangeDelimiter: \"-\"\r\n\r\n# 常规 DOCX 默认连续行号，中文 DOCX 默认不显示。中文需连续行号请显式设置为 true。\r\n# 也可用 '每页重编' 或 '每节重编' 指定重新编号方式。\r\n# docxShowLineNumbers: continuous\r\n\r\n# 自定义 DOCX 页眉；默认保留参考文档页眉，可配置 content 和 alignment，与页脚语法相同。\r\n# 示例：{content: '**Review copy** · []{t=\"pageNum\" format=\"upperRoman\"}', alignment: right}。\r\ndocxHeader: null\r\n\r\n# 自定义 DOCX 页脚；空 content 清空页脚，docxFooter: null 保留参考文档页脚。\r\n# content 支持 Pandoc Markdown；[]{t=\"pageNum\" format=\"upperRoman\"} 可指定页码格式。\r\n# alignment 支持 left、center、right，表格单元格沿用 Markdown 列对齐。\r\ndocxFooter:\r\n  content: '[]{t=\"pageNum\"}'\r\n  alignment: center\r\n\r\n# 手写表格默认 autofit：window、content、fixed；none 不补默认属性，自动生成的布局表格始终跳过。\r\ntableAutofit: none\r\n\r\n# docxPageMargins: # 控制输出的 DOCX 页面边距。\r\n#   top: 2.54cm\r\n#   bottom: 2.54cm\r\n#   left: 3.17cm\r\n#   right: 3.17cm\r\n\r\n# docxStyle: ## DOCX 段落样式格式（后处理时按精确的样式名称应用）\r\n#   Heading 1: { fontSize: 小四 }\r\n#   Heading 2: { fontSize: 小四 }\r\n#   Body Text:\r\n#     firstLineIndentChars: 2\r\n#     paragraphSpacing:\r\n#       before: 0pt\r\n#       after: 0pt\r\n\r\n# reply: 审稿回复输出的覆盖配置。Markdown 顶部 YAML 中的 reply 路径让 build html/docx 自动应用本节\r\n#   docxStyle:\r\n#     Body Text:\r\n#       firstLineIndentChars: 0\r\n#       paragraphSpacing:\r\n#         before: 6pt\r\n#         after: 6pt\r\n#   pandocMetadata: {}\r\n\r\n## 本节会作为 metadata 传给 Pandoc、pandoc-crossref 和 citeproc。\r\n## 请将稿件特有的元数据保留在 manuscript.md 中。构建时，稿件 YAML 头部中定义的值会覆盖这些默认值。\r\n## 可用值参考 https://pandoc.org/MANUAL.html https://lierdakil.github.io/pandoc-crossref/\r\n# pandocMetadata:\r\n#   # 题注前缀格式：{figureTitle} {number}{titleDelim} {caption}\r\n#   figureTitle: \"Figure \"\r\n#   tableTitle: \"Table \"\r\n#   titleDelim: \"\"\r\n\r\n#   # 项目交叉引用格式\r\n#   figPrefix: \"Figure\"\r\n#   tblPrefix: \"Table\"\r\n#   secPrefix: \"Section\"\r\n#   eqnPrefix: \"Equation\"\r\n\r\n#   # 章节编号和自动标签选项\r\n#   linkReferences: true        # 将引用转换为超链接\r\n#   autoSectionLabels: true     # 自动为章节标签添加 \"sec:\" 前缀\r\n#   autoEqnLabels: true         # 为所有行间公式编号\r\n#   numberSections: true        # 为章节编号，如 1.1、1.2 等\r\n#   sectionsDepth: 3            # 章节编号深度\r\n#   subfigGrid: true            # 支持子图网格布局\r\n#   subfigureChildTemplate: ($$i$$) $$t$$\r\n#   subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$\r\n\r\n#   # 参考文献章节标题\r\n#   reference-section-title: References\r\n#   link-citations: true\r\n\r\n#   # 引文样式语言（CSL）文件\r\n#   # 默认：一般 DOCX 使用 Vancouver；中文 DOCX 使用内置 GB/T 7714—2015（顺序编码，双语）\r\n#   # 可从 https://www.zotero.org/styles 下载 CSL 文件\r\n#   csl: pandoc/csl/elsevier-vancouver.csl\r\n"
   },
   "defaults": {
     "standard": {
@@ -3402,6 +3069,7 @@
       "docxEmbedSvgImages": true,
       "docxConvertSvgToPng": false,
       "docxShowLineNumbers": true,
+      "docxHeader": null,
       "docxFooter": {
         "content": "[]{t=\"pageNum\"}",
         "alignment": "center"
@@ -3470,6 +3138,7 @@
       "docxEmbedSvgImages": true,
       "docxConvertSvgToPng": false,
       "docxShowLineNumbers": false,
+      "docxHeader": null,
       "docxFooter": {
         "content": "[]{t=\"pageNum\"}",
         "alignment": "center"

@@ -4,7 +4,6 @@ export type StyleField = {
   values?: readonly string[];
   enumValues?: readonly unknown[];
   valueTypes?: readonly string[];
-  aliases?: readonly string[];
   section?: string;
   children?: Record<string, StyleField>;
   dynamicChildren?: boolean;

@@ -121,11 +121,6 @@ function sameStyle(left: string, right: string): boolean {
   return normalize(left) === normalize(right);
 }
 
-/** Normalizes Papper's supported camelCase, snake_case and kebab-case field aliases. */
-function sameField(left: string, right: string): boolean {
-  return left.replace(/[-_]/g, "").toLowerCase() === right.replace(/[-_]/g, "").toLowerCase();
-}
-
 /** Adds a concrete style block in one YAML edit without overwriting user values or comments. */
 export function addManuscriptStyle(text: string, name: string, defaults: DocxStyleValues, type: DocxStyleType = "paragraph"): { text: string; styleName: string } {
   const header = getYamlHeader(text);
@@ -135,8 +130,8 @@ export function addManuscriptStyle(text: string, name: string, defaults: DocxSty
   if (!isMap(yaml.contents)) throw new Error("YAML header 顶层必须是对象");
   let changed = false;
   /** Obtains an editable map while rejecting aliases and incompatible existing scalar values. */
-  const ensureMap = (parent: YAMLMap, requested: string, fieldAlias = false): YAMLMap => {
-    const pair = parent.items.find((entry) => isScalar(entry.key) && (fieldAlias ? sameField(String(entry.key.value), requested) : String(entry.key.value) === requested));
+  const ensureMap = (parent: YAMLMap, requested: string): YAMLMap => {
+    const pair = parent.items.find((entry) => isScalar(entry.key) && String(entry.key.value) === requested);
     if (pair && isMap(pair.value)) {
       // Editing an anchored map would also change other metadata referencing that anchor.
       if (pair.value.anchor) throw new Error(`${requested} 使用了 YAML anchor，请先展开为独立对象再设置样式`);
@@ -150,27 +145,26 @@ export function addManuscriptStyle(text: string, name: string, defaults: DocxSty
     return map;
   };
   const papper = ensureMap(yaml.contents, "papperSettings");
-  const styles = ensureMap(papper, "docxStyle", true);
+  const styles = ensureMap(papper, "docxStyle");
   const existingName = styles.items.find((entry) => isScalar(entry.key) && sameStyle(String(entry.key.value), name));
   const styleName = existingName ? String((existingName.key as { value: unknown }).value) : name;
   const style = ensureMap(styles, styleName);
   /** Fills missing fields with inline help while preserving existing values, comments and compatible indents. */
   const fill = (target: YAMLMap, source: Record<string, unknown>, root = target, fields: Record<string, StyleField> = DOCX_STYLE_FIELDS): void => {
-    /** Looks up a field using Papper's accepted aliases. */
-    const has = (map: YAMLMap, key: string): boolean => map.items.some((entry) => isScalar(entry.key) && sameField(String(entry.key.value), key));
-    const indentationPair = root.items.find((entry) => isScalar(entry.key) && sameField(String(entry.key.value), "indentation"));
+    /** Looks up a field by its exact public name. */
+    const has = (map: YAMLMap, key: string): boolean => map.items.some((entry) => isScalar(entry.key) && String(entry.key.value) === key);
+    const indentationPair = root.items.find((entry) => isScalar(entry.key) && String(entry.key.value) === "indentation");
     for (const [key, value] of Object.entries(source)) {
       const field = fields[key];
       if (!field) continue; // Inline style actions must not insert paragraph fields even from an unexpected reference/cache.
       if (has(target, key)) {
-        const pair = target.items.find((entry) => isScalar(entry.key) && sameField(String(entry.key.value), key));
+        const pair = target.items.find((entry) => isScalar(entry.key) && String(entry.key.value) === key);
         if (isMap(pair.value) && value && typeof value === "object") {
           if (pair.value.anchor) throw new Error(`${key} 使用了 YAML anchor，请先展开为独立对象再设置样式`);
           fill(pair.value, value as Record<string, unknown>, root, field?.children ?? {});
         }
         continue;
       }
-      if (key === "fontFamily" && (has(root, "fontName") || has(root, "font"))) continue;
       if (key === "firstLineIndentChars" && indentationPair && (!isMap(indentationPair.value) || has(indentationPair.value, "firstLine") || has(indentationPair.value, "hanging"))) continue;
       if (["firstLine", "hanging"].includes(key) && (has(root, "firstLineIndentChars") || has(target, key === "firstLine" ? "hanging" : "firstLine"))) continue;
       if (value && typeof value === "object") {

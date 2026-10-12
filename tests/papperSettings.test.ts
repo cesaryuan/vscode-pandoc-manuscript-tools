@@ -13,29 +13,28 @@ function apply(text: string, style: boolean, keys: string[], input: string, rese
 }
 
 test("unified settings update formula, table and custom DOCX fields while preserving source prose and comments", () => {
-  let text = '\uFEFF---\r\ntitle: Paper # keep title\r\npapper-settings:\r\n  mathtype: false # keep formula\r\n---\r\nBody with $x$ and a table\r\n';
+  let text = '\uFEFF---\r\ntitle: Paper # keep title\r\npapperSettings:\r\n  mathtype: false # keep formula\r\n---\r\nBody with $x$ and a table\r\n';
   text = apply(text, false, ["papperSettings", "mathtype"], "true");
   text = apply(text, false, ["papperSettings", "tableAutofit"], "content");
   text = apply(text, false, ["papperSettings", "docxStyle", "Journal Body", "fontSize"], "10.5pt");
   text = apply(text, false, ["papperSettings", "docxStyle", "Journal Body", "bold"], "false");
   const header = getYamlHeader(text);
-  const settings = parse(header.content)["papper-settings"];
+  const settings = parse(header.content)["papperSettings"];
   assert.equal(settings.mathtype, true);
   assert.equal(settings.tableAutofit, "content");
   assert.deepEqual(settings.docxStyle["Journal Body"], { fontSize: "10.5pt", bold: false });
   assert.equal(text.slice(header.bodyStart), "Body with $x$ and a table\r\n");
   assert(text.startsWith("\uFEFF---\r\n"));
   assert(text.includes("# keep title") && text.includes("# keep formula"));
-  assert.equal(settings.papperSettings, undefined);
   const restored = apply(text, false, ["papperSettings", "mathtype"], "", true);
-  assert.equal(parse(getYamlHeader(restored).content)["papper-settings"].mathtype, undefined);
+  assert.equal(parse(getYamlHeader(restored).content)["papperSettings"].mathtype, undefined);
   const standalone = apply("Body\n", false, ["papperSettings", "mathtype"], "true");
   assert.equal(parse(getYamlHeader(standalone).content).papperSettings.mathtype, true);
   assert.equal(standalone.slice(getYamlHeader(standalone).bodyStart), "Body\n");
 });
 
 test("settings preserve project and reply scopes, show inherited values and refuse shared-node edits", () => {
-  const project = "mathtype: false\ntableAutofit: window\nreply:\n  tableAutofit: fixed\npandoc-metadata:\n  figPrefix: [Fig., Figs.]\ndocx-style:\n  Journal Body:\n    fontFamily: Times New Roman\n";
+  const project = "mathtype: false\ntableAutofit: window\nreply:\n  tableAutofit: fixed\npandocMetadata:\n  figPrefix: [Fig., Figs.]\ndocxStyle:\n  Journal Body:\n    fontFamily: Times New Roman\n";
   const inherited = model.getSettingsRows("Body\n", false, "main", "math", "Body Text", project);
   assert.equal(inherited.find((row) => row.title === "mathtype").inherited, "false");
   assert.equal(inherited.find((row) => row.title === "mathtype").configured, false);
@@ -45,8 +44,7 @@ test("settings preserve project and reply scopes, show inherited values and refu
   assert.equal(parse(updated).tableAutofit, "window");
   assert.equal(parse(updated).reply.tableAutofit, "content");
   const refs = apply(updated, true, ["pandocMetadata", "figPrefix"], "[Figure, Figures]");
-  assert.deepEqual(parse(refs)["pandoc-metadata"].figPrefix, ["Figure", "Figures"]);
-  assert.equal(parse(refs).pandocMetadata, undefined);
+  assert.deepEqual(parse(refs)["pandocMetadata"].figPrefix, ["Figure", "Figures"]);
   assert(model.getSettingsStyleNames(project, true, "main").includes("Journal Body"));
   assert.equal(model.getSettingsRows(project, true, "main", "docx", "Journal Body").find((row) => row.title === "fontFamily").value, "Times New Roman");
   assert.throws(() => apply("defaults: &shared {mathtype: false}\nreply: *shared\n", true, ["reply", "mathtype"], "true"), /anchor|alias/);
@@ -80,7 +78,7 @@ class SettingsPanel {
 }
 
 test("CSL entry navigates the reusable settings window, and downloads only after confirmation inside its bibliography section", async () => {
-  let text = "mathtype: false\npandoc-metadata:\n  csl: existing.csl\n";
+  let text = "mathtype: false\npandocMetadata:\n  csl: existing.csl\n";
   let indexLoads = 0;
   let applications = 0;
   let changed: (event: unknown) => void;
@@ -121,7 +119,7 @@ test("CSL entry navigates the reusable settings window, and downloads only after
   const controller = new PapperSettingsController({ appendLine() {} } as any, csl as any);
   /** Allows asynchronous host messages and configuration refreshes to finish. */
   async function settle() { await new Promise((resolve) => setImmediate(resolve)); }
-  await controller.open(undefined, "bibliography", ["pandoc-metadata", "csl"]);
+  await controller.open(undefined, "bibliography", ["pandocMetadata", "csl"]);
   const panel = panels[0];
   panel.send({ type: "settingsReady" }); await settle();
   assert.equal(panel.state().section, "bibliography");
@@ -131,7 +129,7 @@ test("CSL entry navigates the reusable settings window, and downloads only after
   assert.equal(indexLoads, 1);
   panel.send({ type: "select", name: "journal" }); await settle();
   assert.equal(applications, 1);
-  assert.equal(parse(text)["pandoc-metadata"].csl, "pandoc/csl/journal.csl");
+  assert.equal(parse(text)["pandocMetadata"].csl, "pandoc/csl/journal.csl");
   assert.equal(panel.disposed, false, "Applying a bibliography style keeps the unified settings window open");
   await controller.open(undefined, "math");
   assert.equal(panels.length, 1);
