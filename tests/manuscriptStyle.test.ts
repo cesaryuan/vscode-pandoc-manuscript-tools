@@ -436,5 +436,21 @@ test("source hover shows only a button without launching Papper", showsOnlyStyle
 test("image hovers show caption and figure actions without losing custom styles or scope", showsBothImageStyleButtons);
 test("inline custom styles insert character properties and preserve contextual inheritance", insertsCharacterFormattingOnly);
 test("styled spans and Divs add scoped character and paragraph buttons", addsCustomStyleButtons);
+
+/** Style actions must use the same literal context as highlights across comments, code and soft breaks. */
+function sharesStyleSyntaxContext(): void {
+  const text = ['Text <!-- [hidden]{custom-style="Hidden Char"} --> [visible]{custom-style="Visible Char"}',
+    '`start', '[fake]{custom-style="Code Char"}', 'end`', '', '[first', 'second]{custom-style="Multiline Char"}',
+    '$[fake]{custom-style="Math Char"}$', 'Literal ![image](plot.png){note="@fig:literal"}',
+    '::: {custom-style="A } B } C"}', 'Body', ':::'].join("\n");
+  const targets = getManuscriptStyleTargets(text);
+  assert.deepEqual([...new Set(targets.filter((target) => target.custom).map((target) => target.name))], ["A } B } C", "Visible Char", "Multiline Char"]);
+  const span = targets.find((target) => target.name === "Multiline Char");
+  assert.equal(span.line, 5);
+  assert.equal(span.endLine, 6);
+  assert.equal(targets.find((target) => target.line === 8 && target.name === "Image Caption").endCharacter, text.split("\n")[8].length);
+}
+
+test("style actions share comment, multiline code, math and attribute boundaries", sharesStyleSyntaxContext);
 test("style actions reuse and reveal the source editor with preview focus while preserving defaults and overrides", createsStylesAbsentFromReference);
 test("reference export is cached across body edits and extension sessions", cachesOnlyFormattingInputs);

@@ -49,6 +49,7 @@ function verifiesRevisionCharStyleBoundary(): void {
   assert.equal(isRevisionCharCustomStyle("custom-style=\"revision char\""), false);
   assert.equal(isRevisionCharCustomStyle("custom-style='Revision Char'"), true);
   assert.equal(isRevisionCharCustomStyle("custom-style=\"Revision Char\" custom-style=\"Other\""), false);
+  assert.equal(isRevisionCharCustomStyle(`note='contains custom-style="Revision Char" token'`), false);
 }
 
 test("parses quoted Line annotations for inline folding", verifiesLineExcerptFoldParsing);

@@ -24,6 +24,12 @@ JSON Schema validator or resolve manuscript configuration precedence.
 
 The editable extension sources live in `src/` as TypeScript. Helper scripts in `scripts/` are also TypeScript and run through `tsx`.
 
+Markdown scanning is split between `src/markdownSyntax.ts` (source context and delimiter/attribute recognition) and `src/parser.ts` (editor entries and indexes). Reference inlays, style targets and element-attribute help reuse the scanner; the completion reader still handles unfinished keys and embedded page-story attributes. Preserve UTF-16 offsets and end-exclusive ranges when changing either layer. Inline constructs can cross soft breaks, but blank lines and explicit block boundaries stop recovery of unfinished input. Block indentation currently covers ordinary paragraph/list continuations and quoted fences, rather than the full Pandoc container grammar.
+
+Keep parser regression coverage focused on observable behavior: literal examples must not generate diagnostics or highlights, quoted attributes must not truncate ranges, and text after a malformed construct must recover. Use local Pandoc AST output to investigate grammar discrepancies, retaining Papper's equation-label extensions where plain Pandoc differs. Long-line regression fixtures assert the surviving real tokens without machine-dependent timing thresholds.
+
+For performance work, compare warmed medians on both real manuscripts and code-heavy/unfinished-input long lines. The October 2026 scanner revision reduced 4,000 code spans (48,000 characters) from about 102 ms to 3 ms, 4,000 unfinished attribute candidates (40,000 characters) from about 359 ms to 2 ms, and 16,000 backslashes from about 289 ms to 1 ms in a same-process baseline comparison. Expanded syntax handling took about 3–4 ms on 62,000–78,000-character real manuscripts, compared with about 1 ms previously. These are local measurements, not guarantees or test limits; full editor costs also include diagnostics, decorations and downstream features.
+
 Type-check the TypeScript sources without emitting files:
 
 ```powershell

@@ -6,6 +6,7 @@ import { isReviewerReplyPath, mergeReviewerReplyDefinitions, resolveReviewerRepl
 
 export type ParsedCacheEntry = {
   uri: import("vscode").Uri;
+  document?: import("vscode").TextDocument;
   version?: number;
   parsed: ReturnType<typeof parsePandocDocument>;
 };
@@ -75,12 +76,12 @@ export class PandocWorkspaceIndex {
   updateDocument(document: vscode.TextDocument) {
     const uriText = document.uri.toString();
     const existing = this.documents.get(uriText);
-    if (existing && existing.version === document.version) {
+    if (existing && existing.document === document && existing.version === document.version) {
       return existing;
     }
 
     const parsed = parsePandocDocument(document.getText(), uriText);
-    const entry = { uri: document.uri, version: document.version, parsed };
+    const entry = { uri: document.uri, document, version: document.version, parsed };
     this.documents.set(uriText, entry);
     return entry;
   }
@@ -105,6 +106,9 @@ export class PandocWorkspaceIndex {
     try {
       const bytes = await vscode.workspace.fs.readFile(uri);
       const text = new TextDecoder("utf-8").decode(bytes);
+      // A read started before reopening must not replace the newer unsaved editor buffer.
+      const openDocument = vscode.workspace.textDocuments.find((document) => document.uri.toString() === uri.toString());
+      if (openDocument) return this.updateDocument(openDocument);
       const parsed = parsePandocDocument(text, uri.toString());
       const entry: ParsedCacheEntry = { uri, version: undefined, parsed };
       this.documents.set(uri.toString(), entry);
@@ -127,6 +131,17 @@ export class PandocWorkspaceIndex {
    */
   getParsedDocument(document: vscode.TextDocument) {
     return this.updateDocument(document).parsed;
+  }
+
+  /** Releases closed editor buffers; dependent reviewer/workspace sources reload their saved contents. */
+  async closeDocument(document: vscode.TextDocument): Promise<void> {
+    const key = document.uri.toString();
+    if (this.documents.get(key)?.document !== document) return;
+    this.documents.delete(key);
+    if (document.uri.scheme === "file" && (getConfiguration().get("includeWorkspaceReferences", false)
+      || this.isDefinitionSourceForOpenReviewerReply(document))) {
+      await this.updateUri(document.uri);
+    }
   }
 
   /**

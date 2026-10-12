@@ -70,3 +70,13 @@ test("marks complete reference expressions at original source positions", marksC
 test("ignores reference-shaped text in metadata, code, comments, math and URLs", ignoresLiteralReferenceExamples);
 test("keeps styled-span content and unrelated brackets outside reference hints", isolatesReferencesInsideStyledSpans);
 test("uses actual built citation and cross-reference text per occurrence", readsActualBuiltReferenceText);
+
+/** Quoted page stories remain attribute values even after an embedded page-number closing brace. */
+function excludesNestedPageStoryAttributes(): void {
+  const text = `[]{t="sectionBreak" footer='Page []{t="pageNum"} @fig:hidden @paper'}\n[see @fig:real]{title="A } B"}`;
+  const prepared = prepareReferenceSource(text);
+  assert.deepEqual(prepared.references.map((entry) => entry.labels), [["fig:real"]]);
+  assert.equal(prepared.markdown.replace(/<span data-pmt-inlay-reference="[^"]+">|<\/span>/g, ""), text);
+}
+
+test("nested page stories cannot leak references into inlay hints", excludesNestedPageStoryAttributes);

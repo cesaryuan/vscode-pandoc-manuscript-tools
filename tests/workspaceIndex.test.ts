@@ -98,3 +98,35 @@ async function preservesIndexedLookupSemantics(): Promise<void> {
 test("Reviewer definitions disappear after manuscript deletion and follow recreation", removesDeletedManuscriptDefinitions);
 test("Reviewer definitions survive transient manuscript read failures", preservesDefinitionsOnTransientFailures);
 test("Indexed lookups preserve document scope, duplicates and reviewer precedence", preservesIndexedLookupSemantics);
+
+/** Reopened buffers can reuse version 1 but must expose their new definitions instead of old cached text. */
+async function releasesClosedDocumentVersions(): Promise<void> {
+  const fixture = new IndexFixture();
+  const original = fixture.document("ordinary.md", "![Old](old.png){#fig:old}");
+  assert.equal(fixture.index.getDefinitions(original, "fig:old").length, 1);
+  fixture.documents.splice(fixture.documents.indexOf(original), 1);
+  await fixture.index.closeDocument(original);
+  assert.equal(fixture.index.documents.has(original.uri.toString()), false);
+  const reopened = fixture.document("ordinary.md", "![New](new.png){#fig:new}");
+  assert.equal(fixture.index.getDefinitions(reopened, "fig:new").length, 1);
+  assert.equal(fixture.index.getDefinitions(reopened, "fig:old").length, 0);
+  // A delayed close notification for the old buffer must not release its replacement.
+  await fixture.index.closeDocument(original);
+  assert.equal(fixture.index.getDefinitions(reopened, "fig:new").length, 1);
+}
+
+/** Closing an unsaved manuscript restores saved reviewer definitions without retaining discarded labels. */
+async function reloadsSavedReviewerDefinitionsOnClose(): Promise<void> {
+  const fixture = new IndexFixture();
+  const manuscript = fixture.document("manuscript.md", "![Unsaved](plot.png){#fig:unsaved}");
+  const reply = fixture.document("reply_to_reviewers.md", "See @fig:source");
+  await fixture.index.prepareDocument(reply);
+  assert.equal(fixture.index.getDefinitions(reply, "fig:unsaved").length, 1);
+  fixture.documents.splice(fixture.documents.indexOf(manuscript), 1);
+  await fixture.index.closeDocument(manuscript);
+  assert.equal(fixture.index.getDefinitions(reply, "fig:unsaved").length, 0);
+  assert.equal(fixture.index.getDefinitions(reply, "fig:source").length, 1);
+}
+
+test("closed/reopened buffers cannot reuse stale definitions with the same version", releasesClosedDocumentVersions);
+test("closing discarded manuscript edits restores saved reviewer definitions", reloadsSavedReviewerDefinitionsOnClose);

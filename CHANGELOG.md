@@ -42,6 +42,9 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Fixed
 
+- Share literal Markdown context across references, labels, highlights, style actions and attribute help; ignore code/comments/math/attribute values, accept both YAML closers and preserve multiline span/formula positions.
+- Parse span, Div, heading and custom-style attributes with shared quote-aware rules, keeping extra heading properties out of section IDs and quoted lookalikes out of inline folding.
+- Avoid repeated suffix and range scans on code-heavy, backslash-heavy and unfinished-attribute lines; release closed buffers and prevent reopened documents from reusing stale version-matched definitions.
 - Keep bracketed-span highlights through the complete attribute block when quoted headers or footers contain nested page-number spans, braces or escaped quotes.
 - Let CSL bibliography preview number columns grow with their labels, preventing long or bracketed numbers from wrapping or overlapping the reference text.
 - Preserve configured chapter separators in figure/table numbering hints, so Chinese captions such as `图 3-1`, `图 3-2` and `图 3-3` no longer collapse to `图 3`.

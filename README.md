@@ -139,7 +139,9 @@ The merge adds missing settings recursively. Existing values, including `false`,
 
 ## Notes
 
-This extension is intentionally a small language-service layer rather than a full Markdown parser. It scans the Pandoc-crossref syntax used by this manuscript template and avoids code fences and YAML front matter to reduce false positives.
+The editor scanner shares Pandoc syntax context across cross-reference diagnostics/navigation, span and Div highlighting, math hovers, reference inlays, style actions and attribute help. It recognizes YAML headers ending with `---` or `...`, code fences (including quoted fences), inline code across soft breaks, HTML comments/raw code elements, quoted attributes and balanced link destinations. Nested/multiline spans and formulas retain original UTF-16 positions. Dollar math follows opening/closing whitespace and closing-digit rules so currency stays literal. Incomplete inline attributes recover at paragraph boundaries.
+
+This remains a focused editor scanner for manuscript syntax. It does not implement the complete Pandoc reader, including all nested list/blockquote block rules, Markdown inside arbitrary raw HTML blocks, or every extension. Papper's Pandoc output remains authoritative for document builds and rendered numbering.
 
 The math hover uses MathJax's Node component loader to convert TeX into SVG and embeds the SVG as a hover image. Raw TeX is shown only as a fallback when rendering fails. Display math and inline math are rendered separately, and inline math is not treated as a cross-reference source. Paragraph-level inline math hovers are disabled by default because they produce larger hover cards. Paragraph translations may make network requests; the extension probes Google Translate on startup, falls back to Microsoft Translator if Google is unavailable, and shows the engine used for each translated hover. If the preview is unavailable, run `npm install` in this folder and reload the Extension Development Host.
 

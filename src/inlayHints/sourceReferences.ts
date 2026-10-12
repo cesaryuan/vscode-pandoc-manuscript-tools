@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { collectMarkdownCodeSpanRanges, parsePandocDocument } from "../parser";
+import { MarkdownSyntax, readAttributeBlock } from "../markdownSyntax";
 
 export type SourceReference = { marker: string; labels: string[]; sourceText: string; line: number; character: number };
 export type PreparedReferenceSource = { markdown: string; references: SourceReference[] };
@@ -36,8 +36,10 @@ export function prepareReferenceSource(text: string): PreparedReferenceSource {
       if (suffix && /^\[\s*(?:p{1,2}\.|pages?\b|chap(?:ter)?\.?\b|sec(?:tion)?\.?\b|vol(?:ume)?\.?\b|no\.|\d)/i.test(text.slice(suffix.start, suffix.end))
         && !tokens.some((entry) => entry.start >= suffix.start && entry.start < suffix.end)) end = suffix.end;
     }
-    const attributes = text.slice(end).match(/^\{[^}\r\n]*\}/);
-    if (attributes) end += attributes[0].length;
+    if (text[end] === "{") {
+      const attribute = readAttributeBlock(text, end).block;
+      if (attribute) end = attribute.end;
+    }
     const labels = tokens.filter((entry) => entry.start >= start && entry.end <= end).map((entry) => entry.label);
     const marker = `${nonce}:${references.length}`;
     let low = 0;
@@ -65,51 +67,7 @@ export function prepareReferenceSource(text: string): PreparedReferenceSource {
 
 /** Masks non-prose regions without shifting offsets or rewriting line endings. */
 function maskLiteralContent(text: string): string {
-  const characters = text.split("");
-  /** Removes an ignored range while keeping original source coordinates. */
-  const mask = (start: number, end: number): void => {
-    for (let index = start; index < end; index++) if (!/[\r\n]/.test(characters[index])) characters[index] = " ";
-  };
-  let offset = 0;
-  let fence = "";
-  let yaml = /^(?:\uFEFF)?---[ \t]*(?:\r?\n|$)/.test(text);
-  for (const line of text.split(/(?<=\n)/)) {
-    const content = line.replace(/[\r\n]+$/, "");
-    const match = content.match(/^\s*(`{3,}|~{3,})(.*)$/);
-    if (yaml) {
-      mask(offset, offset + line.length);
-      if (offset > 0 && /^(?:---|\.\.\.)\s*$/.test(content)) yaml = false;
-    } else if (fence) {
-      mask(offset, offset + line.length);
-      if (match && match[1][0] === fence[0] && match[1].length >= fence.length && !match[2].trim()) fence = "";
-    } else if (match && !(match[1][0] === "`" && match[2].includes("`"))) {
-      fence = match[1];
-      mask(offset, offset + line.length);
-    } else if (/^(?: {4}|\t)/.test(content) || /^\s*\[[^\]]+\]:\s*\S/.test(content)) {
-      mask(offset, offset + line.length);
-    }
-    offset += line.length;
-  }
-  let masked = characters.join("");
-  for (const comment of masked.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) mask(comment.index, comment.index + comment[0].length);
-  masked = characters.join("");
-  for (const code of collectMarkdownCodeSpanRanges(masked)) mask(code.start, code.end);
-  masked = characters.join("");
-  const parsed = parsePandocDocument(masked);
-  const lineOffsets = [0];
-  for (let index = 0; index < masked.length; index++) if (masked[index] === "\n") lineOffsets.push(index + 1);
-  for (const math of [...parsed.mathBlocks, ...parsed.inlineMath]) {
-    const range = "fullRange" in math ? math.fullRange : math.range;
-    mask(lineOffsets[range.start.line] + range.start.character, lineOffsets[range.end.line] + range.end.character);
-  }
-  masked = characters.join("");
-  // Attributes, raw tags, URLs, and escaped tokens are literal, even when they contain @ characters.
-  for (const literal of masked.matchAll(/<[^>\r\n]*>|\{[^}\r\n]*\}|\]\([^\r\n]*?\)|\\[^\r\n]/g)) {
-    // Keep the closing link-text bracket available to the bracket scanner.
-    const start = literal.index + (literal[0].startsWith("](") ? 1 : 0);
-    mask(start, literal.index + literal[0].length);
-  }
-  return characters.join("");
+  return new MarkdownSyntax(text).prose();
 }
 
 /** Pairs nested Markdown brackets and returns inner ranges first for citation expressions. */

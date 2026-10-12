@@ -1,60 +1,13 @@
 /** Finds authored attribute blocks, including unfinished input, without interpreting literal Markdown. */
-import { collectMarkdownCodeSpanRanges } from "../parser";
-import { getYamlHeader } from "../manuscriptStyle/document";
+import { MarkdownSyntax, maskSourceRanges } from "../markdownSyntax";
 
 export type AttributeToken = { key: string; start: number; keyEnd: number; end: number;
   value?: string; valueStart?: number; valueEnd?: number; quote?: string; quotePrefix?: string; closed?: boolean };
 export type AttributeGroup = { context: "table" | "emptySpan"; start: number; end: number; tokens: AttributeToken[]; outerQuote?: string };
-type Range = { start: number; end: number };
-
-/** Preserves absolute offsets while hiding frontmatter, code, comments, raw HTML and math. */
+/** Shares literal context with highlights and references while retaining unfinished attributes for completion. */
 function sourceWithoutLiterals(text: string): string {
-  const ranges: Range[] = [];
-  const header = getYamlHeader(text, true);
-  if (header) ranges.push({ start: 0, end: header.bodyStart });
-  let fence = "";
-  let displayMath = false;
-  for (const match of text.matchAll(/[^\n]*(?:\n|$)/g)) {
-    if (!match[0]) continue;
-    const start = match.index;
-    if (start < (header?.bodyStart ?? 0)) continue;
-    const line = match[0];
-    const delimiter = /^\s*(?:>\s*)?(`{3,}|~{3,})(.*)/.exec(line);
-    if (fence) {
-      ranges.push({ start, end: start + line.length });
-      if (delimiter && delimiter[1][0] === fence[0] && delimiter[1].length >= fence.length && !delimiter[2].trim()) fence = "";
-    } else if (delimiter) {
-      fence = delimiter[1];
-      ranges.push({ start, end: start + line.length });
-    } else if (displayMath || /^\s*(?:\$\$|\\\[)/.test(line)) {
-      ranges.push({ start, end: start + line.length });
-      if (/^\s*\$\$/.test(line)) displayMath = (line.match(/(?<!\\)\$\$/g)?.length ?? 0) % 2 === 1 ? !displayMath : displayMath;
-      else if (/^\s*\\\[/.test(line)) displayMath = !/\\\]/.test(line);
-      else if (/\\\]/.test(line)) displayMath = false;
-    } else if (/^(?: {4}|\t)/.test(line)) ranges.push({ start, end: start + line.length });
-  }
-  let source = maskRanges(text, ranges);
-  const inline = [...collectMarkdownCodeSpanRanges(source)];
-  for (const match of source.matchAll(/<!--[\s\S]*?(?:-->|$)|<(pre|code|script|style|textarea)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)|(?<!\\)\$(?!\$)(?:\\.|[^$\r\n])+(?<!\\)\$/gi)) {
-    inline.push({ start: match.index, end: match.index + match[0].length });
-  }
-  source = maskRanges(source, inline);
-  return source;
-}
-
-/** Masks overlapping literal ranges in one pass without changing line boundaries. */
-function maskRanges(text: string, ranges: Range[]): string {
-  const sorted = ranges.sort((a, b) => a.start - b.start);
-  const parts: string[] = [];
-  let offset = 0;
-  for (const range of sorted) {
-    if (range.end <= offset) continue;
-    const start = Math.max(offset, range.start);
-    parts.push(text.slice(offset, start), text.slice(start, range.end).replace(/[^\r\n]/g, " "));
-    offset = range.end;
-  }
-  parts.push(text.slice(offset));
-  return parts.join("");
+  const syntax = new MarkdownSyntax(text);
+  return maskSourceRanges(text, [...syntax.literalRanges, ...syntax.math]);
 }
 
 /** Distinguishes escaped delimiters from source markup, including doubled backslashes. */

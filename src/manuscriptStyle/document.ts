@@ -1,5 +1,6 @@
 import { isAlias, isMap, isScalar, Pair, parseDocument, YAMLMap } from "yaml";
-import { collectMarkdownCodeSpanRanges, parsePandocDocument } from "../parser";
+import { parsePandocSyntax } from "../parser";
+import { MarkdownSyntax, getAttributeValue, maskSourceRanges } from "../markdownSyntax";
 import { CHARACTER_STYLE_FIELDS, DOCX_STYLE_FIELDS, type StyleField } from "./fields";
 import type { DocxStyleType, DocxStyleValues } from "./referenceStyles";
 
@@ -23,12 +24,8 @@ export function getYamlHeader(text: string, allowIncomplete = false): YamlHeader
 
 /** Reads one unambiguous custom-style attribute without treating text inside other quoted attributes as keys. */
 function customStyleName(attributes: string): string | undefined {
-  const names: string[] = [];
-  const pattern = /(?:^|[\s{])([\w-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^\s{}]+))/g;
-  for (const match of attributes.matchAll(pattern)) {
-    if (match[1] === "custom-style") names.push((match[2] ?? match[3] ?? match[4]).replace(/\\(["'\\])/g, "$1"));
-  }
-  return names.length === 1 && names[0].trim() ? names[0] : undefined;
+  const name = getAttributeValue(attributes, "custom-style");
+  return name?.trim() ? name : undefined;
 }
 
 /** Finds eligible source blocks without offering prose styles inside code, comments, YAML or math. */
@@ -36,37 +33,31 @@ export function getManuscriptStyleTargets(text: string): StyleTarget[] {
   const sourceText = text.replace(/^\uFEFF/, "");
   const header = getYamlHeader(sourceText);
   const lines = sourceText.split(/\r?\n/);
-  // Mask metadata without shifting source positions: the shared scanner only recognizes --- as a YAML close.
-  const parsed = parsePandocDocument(header ? sourceText.slice(0, header.bodyStart).replace(/[^\r\n]/g, " ") + sourceText.slice(header.bodyStart) : sourceText);
+  const syntax = new MarkdownSyntax(sourceText);
+  const parsed = parsePandocSyntax(syntax);
+  const visibleLines = maskSourceRanges(sourceText, [...syntax.literalRanges, ...syntax.math, ...syntax.attributeRecoveryRanges]).split(/\r?\n/);
+  const destinations = new Set(syntax.destinations);
+  const imageLines = maskSourceRanges(sourceText, [...syntax.literalRanges.filter((range) => !destinations.has(range)),
+    ...syntax.math, ...syntax.attributes, ...syntax.attributeRecoveryRanges]).split(/\r?\n/);
+  const rawImageStarts = new Set(syntax.rawTags.filter((tag) => /^<img\b/i.test(sourceText.slice(tag.start, tag.end))).map((tag) => tag.start));
+  const attributesByStart = new Map(syntax.attributes.map((attribute) => [attribute.start, attribute]));
+  const headingsByLine = new Map(parsed.headings.map((heading) => [heading.line, heading]));
   const targets: StyleTarget[] = [];
   const eligibleLines = new Set<number>();
   const headerEndLine = header ? sourceText.slice(0, header.bodyStart).split(/\r?\n/).length - 1 : 0;
-  let fence = "";
-  let comment = false;
-  let displayMath = false;
   let gridTable = false;
   let pipeTableEnd = -1;
   for (let line = headerEndLine; line < lines.length; line += 1) {
     const source = lines[line];
-    const trimmed = source.trim();
-    const codeFence = /^\s*(`{3,}|~{3,})(.*)$/.exec(source);
-    if (fence) {
-      if (codeFence && codeFence[1][0] === fence[0] && codeFence[1].length >= fence.length && !codeFence[2].trim()) fence = "";
-      continue;
-    }
-    if (codeFence) { fence = codeFence[1]; continue; }
-    if (comment) { if (source.includes("-->")) comment = false; continue; }
-    if (trimmed.startsWith("<!--")) { comment = !source.includes("-->"); continue; }
-    if (/^\$\$|^\\\[|^\\\]/.test(trimmed)) {
-      // A complete one-line display formula must not hide all subsequent body-style actions.
-      if (!/^\$\$.+\$\$/.test(trimmed) && !/^\\\[.*\\\]/.test(trimmed)) displayMath = !displayMath;
-      continue;
-    }
-    if (displayMath || /^ {4}|^\t/.test(source)) continue;
+    const visible = visibleLines[line];
+    const trimmed = visible.trim();
+    // Shared context suppresses raw/comment/code/math content without hiding ordinary indented prose.
+    const rawImage = rawImageStarts.has(syntax.lines[line].start + source.indexOf("<"));
+    if (source.trim() && !trimmed && !rawImage) continue;
     eligibleLines.add(line);
-    if (!trimmed) { gridTable = false; continue; }
+    if (!trimmed && !rawImage) { gridTable = false; continue; }
     if (/^(?::{3,}|<\/?(?:div|table|thead|tbody|tr)\b|<\/?figure\b)/i.test(trimmed)) continue;
-    const heading = parsed.headings.find((entry) => entry.line === line);
+    const heading = headingsByLine.get(line);
     const setext = line + 1 < lines.length && /^\s*(?:={3,}|-{3,})\s*$/.test(lines[line + 1]);
     let name: string;
     if (heading) name = `标题 ${heading.level}`;
@@ -90,10 +81,11 @@ export function getManuscriptStyleTargets(text: string): StyleTarget[] {
     targets.push({ name, type: "paragraph", line, endLine, startCharacter: 0, endCharacter: lines[endLine].length });
     // Images inside prose expose their caption action only over the image token.
     const images = /!\[(?:[^\]\\]|\\.)*\](?:\([^\n]*?\)|\[[^\]\n]*\])(?:\{[^}\n]*\})?/g;
-    const literalRanges = collectMarkdownCodeSpanRanges(source);
-    for (const image of source.matchAll(images)) {
-      if (literalRanges.some((range) => image.index >= range.start && image.index < range.end) || /\\$/.test(source.slice(0, image.index))) continue;
-      targets.push({ name: "Image Caption", type: "paragraph", line, endLine: line, startCharacter: image.index, endCharacter: image.index + image[0].length });
+    for (const image of imageLines[line].matchAll(images)) {
+      const imageEnd = image.index + image[0].length;
+      const attribute = attributesByStart.get(syntax.lines[line].start + imageEnd);
+      targets.push({ name: "Image Caption", type: "paragraph", line, endLine: line, startCharacter: image.index,
+        endCharacter: attribute ? attribute.end - syntax.lines[line].start : imageEnd });
     }
     if (endLine > line) { eligibleLines.add(endLine); line = endLine; }
   }

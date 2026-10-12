@@ -283,6 +283,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument((document) => {
     inlayHints.closeDocument(document);
+    void index.closeDocument(document).then(() => {
+      if (isPandocDocument(document)) updateDiagnosticsForOpenDocuments(index, diagnostics);
+    }, (error) => output.appendLine(`Failed to release closed document index: ${String(error)}`));
   }));
 
   // Closed manuscript files can change or disappear outside the editor. Refresh
