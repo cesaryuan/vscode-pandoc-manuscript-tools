@@ -18,6 +18,8 @@ export function buildPapperSettingsHtml(): string {
     #open-source { margin-left:auto; }
     select,textarea { font:inherit; color:var(--vscode-input-foreground); background:var(--vscode-input-background); border:1px solid var(--vscode-input-border,var(--vscode-panel-border)); padding:9px 12px; border-radius:5px; }
     input { border-color:var(--vscode-input-border,var(--vscode-panel-border)); border-radius:5px; }
+    input,textarea { font-family:var(--vscode-editor-font-family,monospace); }
+    input::placeholder,textarea::placeholder { font-family:var(--vscode-font-family,sans-serif); }
     input:focus,select:focus,textarea:focus { outline:1px solid var(--vscode-focusBorder); outline-offset:1px; }
     button { border-radius:5px; } .secondary:hover { background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground)); }
     .settings-layout { display:grid; grid-template-columns:210px minmax(0,1fr); flex:1; min-height:0; }
@@ -32,21 +34,22 @@ export function buildPapperSettingsHtml(): string {
     .setting-group { margin-bottom:28px; }
     .group-title { font-size:14px; font-weight:600; margin:0 0 12px; }
     .setting { padding:18px 20px; border:1px solid var(--vscode-panel-border); border-radius:8px; margin-bottom:10px; background:var(--vscode-settings-rowHoverBackground,var(--vscode-editor-background)); }
-    .setting-heading { display:flex; align-items:center; gap:12px; justify-content:space-between; margin-bottom:6px; }
+    .setting-heading { display:flex; align-items:flex-start; gap:12px; justify-content:space-between; margin-bottom:14px; }
+    .setting-info { flex:1; min-width:0; overflow-wrap:anywhere; }
+    .setting-heading-tools { display:flex; align-items:baseline; justify-content:flex-end; gap:10px; flex-shrink:0; }
     .setting label { font-size:14px; font-weight:600; }
     .setting-badge { flex-shrink:0; font-size:11px; font-weight:400; padding:2px 8px; border:1px solid var(--vscode-panel-border); border-radius:10px; color:var(--vscode-descriptionForeground); }
     .setting-badge.configured { color:var(--vscode-textLink-foreground); border-color:var(--vscode-textLink-foreground); }
-    .setting-description { color:var(--vscode-descriptionForeground); margin-bottom:14px; overflow-wrap:anywhere; }
+    .setting-description { color:var(--vscode-descriptionForeground); margin-left:10px; }
     .setting-controls { display:flex; gap:12px; align-items:flex-start; }
     .setting-controls input,.setting-controls select,.setting-controls textarea { flex:1; width:0; min-width:0; }
     .setting-controls textarea { min-height:100px; resize:vertical; font-family:var(--vscode-editor-font-family,monospace); }
     .setting-actions { display:flex; gap:8px; flex-shrink:0; }
     .setting-actions button { white-space:nowrap; }
-    .setting-meta { display:flex; gap:12px; align-items:baseline; justify-content:space-between; margin-top:12px; font-size:12px; }
-    .setting-status { min-width:0; overflow-wrap:anywhere; white-space:pre-wrap; }
-    .setting-path { flex-shrink:0; max-width:55%; color:var(--vscode-descriptionForeground); }
+    .setting-status { margin-top:12px; font-size:12px; overflow-wrap:anywhere; white-space:pre-wrap; }
+    .setting-path { position:relative; font-size:12px; color:var(--vscode-descriptionForeground); }
     .setting-path summary { cursor:pointer; text-align:right; }
-    .setting-path code { display:block; margin-top:8px; overflow-wrap:anywhere; font-family:var(--vscode-editor-font-family,monospace); }
+    .setting-path code { position:absolute; right:0; top:100%; z-index:1; display:block; width:max-content; max-width:min(420px,calc(100vw - 64px)); margin-top:8px; padding:10px 12px; border:1px solid var(--vscode-panel-border); border-radius:5px; background:var(--vscode-editorWidget-background,var(--vscode-editor-background)); box-shadow:0 2px 8px var(--vscode-widget-shadow,transparent); overflow-wrap:anywhere; font-family:var(--vscode-editor-font-family,monospace); }
     .advanced-settings { margin-top:12px; }
     .advanced-settings > summary { cursor:pointer; color:var(--vscode-descriptionForeground); padding:10px 0; }
     .advanced-settings[open] > summary { margin-bottom:8px; }
@@ -56,7 +59,6 @@ export function buildPapperSettingsHtml(): string {
     .error { color:var(--vscode-errorForeground); }
     #csl-config { flex-shrink:0; } #csl-config .setting { padding:14px 18px; margin:0; }
     #csl-config > .advanced-settings { max-height:230px; overflow:auto; }
-    #csl-config .setting-description { margin-bottom:10px; }
     #bibliography .content { gap:18px; grid-template-columns:minmax(190px,32%) minmax(0,1fr); min-height:260px; }
     #bibliography { overflow:auto; } #bibliography h1 { font-size:22px; }
     #bibliography footer { padding-top:12px; border-top:1px solid var(--vscode-panel-border); }
@@ -64,7 +66,7 @@ export function buildPapperSettingsHtml(): string {
     #list,.preview { border-radius:8px; } #search { padding:11px 14px; }
     @media(max-width:900px) { .settings-layout { grid-template-columns:180px minmax(0,1fr); } #field-page,.page { padding:24px; } .setting-controls { flex-wrap:wrap; } .setting-controls input,.setting-controls select,.setting-controls textarea { flex-basis:100%; width:100%; } .setting-actions { margin-left:auto; } }
     @media(max-width:780px) { .settings-layout { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); } nav { display:flex; padding:8px; border-right:0; border-bottom:1px solid var(--vscode-panel-border); overflow-x:auto; } .nav-item { white-space:nowrap; width:auto; margin:0 4px 0 0; } .settings-heading { flex-wrap:wrap; gap:4px 16px; margin-bottom:12px; } .settings-head { padding:16px 20px; } }
-    @media(max-width:650px) { #bibliography .content { grid-template-columns:1fr; grid-template-rows:190px minmax(260px,1fr); } #field-page,.page { padding:20px 16px; } .setting { padding:16px; } .setting-meta { align-items:flex-start; flex-direction:column; gap:6px; } .setting-path { max-width:100%; } .setting-path summary { text-align:left; } #style-picker { flex-wrap:wrap; padding:16px; } #style-name { flex-basis:100%; order:1; } #choose-style { margin-left:auto; } .settings-tools { gap:8px; } #open-source { margin-left:0; } #source { width:100%; } }
+    @media(max-width:650px) { #bibliography .content { grid-template-columns:1fr; grid-template-rows:190px minmax(260px,1fr); } #field-page,.page { padding:20px 16px; } .setting { padding:16px; } .setting-heading { flex-wrap:wrap; gap:8px; } .setting-info { flex-basis:100%; } .setting-heading-tools { margin-left:auto; } #style-picker { flex-wrap:wrap; padding:16px; } #style-name { flex-basis:100%; order:1; } #choose-style { margin-left:auto; } .settings-tools { gap:8px; } #open-source { margin-left:0; } #source { width:100%; } }
     `,
     before: `<header class="settings-head"><div class="settings-heading"><h1>Papper 设置</h1><div id="source" class="muted">正在读取配置…</div></div>
       <div class="settings-tools"><label for="scope">设置范围</label><select id="scope"><option value="main">当前稿件 / 项目</option><option value="reply">审稿回复覆盖</option></select>
@@ -111,11 +113,13 @@ export function buildPapperSettingsHtml(): string {
         if (section === 'docx' && row.title === 'font') label.textContent = '旧版字体对象';
         const inputId = 'setting-' + row.path.map(encodeURIComponent).join('-'); label.htmlFor = inputId;
         const badge = document.createElement('span'); badge.className = 'setting-badge' + (row.configured ? ' configured' : ''); badge.textContent = row.configured ? '已设置' : row.inherited !== undefined ? '继承' : '默认';
-        const heading = document.createElement('div'); heading.className = 'setting-heading'; heading.append(label,badge);
-        const description = document.createElement('div'); description.className = 'setting-description'; description.textContent = row.description; description.hidden = row.description === label.textContent;
+        const heading = document.createElement('div'); heading.className = 'setting-heading';
+        const description = document.createElement('span'); description.className = 'setting-description'; description.textContent = row.description; description.hidden = row.description === label.textContent;
         const path = document.createElement('details'); path.className = 'setting-path';
         const pathSummary = document.createElement('summary'); pathSummary.textContent = '配置字段';
         const pathValue = document.createElement('code'); pathValue.textContent = row.path.join(' › '); path.append(pathSummary,pathValue);
+        const info = document.createElement('div'); info.className = 'setting-info'; info.append(label,description);
+        const tools = document.createElement('div'); tools.className = 'setting-heading-tools'; tools.append(badge,path); heading.append(info,tools);
         const controls = document.createElement('div'); controls.className = 'setting-controls';
         const input = document.createElement(row.kind === 'boolean' ? 'select' : row.kind === 'yaml' ? 'textarea' : 'input'); input.id = inputId; input.setAttribute('aria-label', row.description);
         if (row.kind === 'boolean') { for (const [value, title] of [['','继承 / 默认'],['true','开启'],['false','关闭']]) { const option = document.createElement('option'); option.value = value; option.textContent = title; input.append(option); } }
@@ -132,10 +136,9 @@ export function buildPapperSettingsHtml(): string {
           vscode.postMessage({type:'settingsSave', path:row.path, input:input.value, reset:resetValue, original:state.content});
         }
         save.addEventListener('click', () => applySetting(false)); reset.addEventListener('click', () => applySetting(true));
-        const note = document.createElement('div'); note.className = 'setting-status muted'; note.textContent = row.configured ? '当前范围的覆盖配置' : row.inherited !== undefined ? '继承值：' + row.inherited : '沿用 Papper 默认或其他继承配置';
+        const note = document.createElement('div'); note.className = 'setting-status muted'; note.hidden = row.configured || row.inherited === undefined; note.textContent = note.hidden ? '' : '继承值：' + row.inherited;
         const actions = document.createElement('div'); actions.className = 'setting-actions'; actions.append(save,reset);
-        const meta = document.createElement('div'); meta.className = 'setting-meta'; meta.append(note,path);
-        controls.append(input,actions); container.append(heading,description,controls,meta); return container;
+        controls.append(input,actions); container.append(heading,controls,note); return container;
       }
       /** Matches schema group keys to existing camelCase, kebab-case or snake_case source paths. */
       function normalize(key) { return key.replace(/[-_]/g,'').toLowerCase(); }
