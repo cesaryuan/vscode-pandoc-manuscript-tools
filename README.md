@@ -67,6 +67,19 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## Style Configuration Editing
 
+Configuration completion, hover help, the settings window and **Papper: 合并示例配置**
+use definitions exported by the installed Papper through
+`papper config describe --format json`. New fields and the official project
+template are picked up when Papper changes. If Papper is absent, an older version
+does not support the export, or the export fails, bundled definitions keep these
+editing features available. Refreshing definitions does not change manuscript
+files; the example is applied only when you invoke its merge action.
+
+Page layout settings include `docxFooter` and `docxPageWidth`. New formatting
+fields without a known navigation section appear under **其他设置**. Bundled
+language defaults are exported for tools; the settings window continues to show
+explicit local and project values rather than claiming to resolve all build defaults.
+
 Hover over a heading, body text, a pipe/grid table cell, or an image in a local Markdown/MDX document to see the **Papper: 设置 标题 N / 正文文本 / Table Text / Image Caption 的样式** button. Image hovers show both **设置 Image Caption 的样式** and **设置 Figure 的样式** in the same action row, allowing caption and figure formatting to be configured separately. Click the action to read the actual reference defaults, add the corresponding style under the document's YAML `papperSettings.docxStyle`, and jump to it for editing. Newly inserted fields include Chinese descriptions as inline YAML comments; existing values and comments are retained. A missing YAML header is created automatically, the manuscript body is retained, and the edit can be undone in one step. English built-in names already in YAML are reused instead of adding duplicate Chinese aliases. Table captions use their separate `Table Caption` style.
 
 Pandoc spans such as `[revised text]{custom-style="Revision Char"}` and fenced Divs such as `::: {custom-style="Quote"}` add a **设置 Revision Char / Quote 的样式** button alongside the usual source-element action. Nested styled spans and Divs each contribute their own action. Hover contains only a single row of actions, separated by ` | ` and sharing one `Papper:` prefix. Span actions look up character styles and insert only font family, font size, font color and bold formatting; unspecified character properties continue inheriting from the surrounding paragraph. Div actions look up paragraph styles and can also insert alignment, indentation and paragraph spacing. Reference styles are matched by both name and type. If a style is absent from the reference, the action fills its configuration using actual Body Text defaults, falling back to Normal when Body Text is unavailable. Span actions still insert only supported character fields. Existing settings are preserved, including when filling previously empty style entries.

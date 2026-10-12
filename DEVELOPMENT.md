@@ -1,5 +1,25 @@
 # Development
 
+Configuration definitions are owned by Papper. After building the Papper CLI,
+regenerate this extension's offline contract and readable example with:
+
+```powershell
+npm run sync:papper-config -- ..\papper\target\debug\papper.exe
+```
+
+The command validates the export before replacing `assets/papper-configuration.json`
+and `assets/style-project.yml`. The JSON is bundled into the extension. Runtime
+queries share one cache, use a 10-second deadline, and retry when the executable's
+path, size or timestamp changes; installation/update explicitly refreshes it.
+Hover caches also track contract revisions. Unsupported contract versions and
+failed exports keep the last working definitions.
+
+Do not add hand-maintained configuration field lists in the extension. Papper's
+contract supplies field types, descriptions, canonical enumerations, suggestions,
+aliases, navigation sections and mutual-exclusion rules. UI labels and grouping
+remain extension presentation data. This integration does not implement a full
+JSON Schema validator or resolve manuscript configuration precedence.
+
 ## Build and Package
 
 The editable extension sources live in `src/` as TypeScript. Helper scripts in `scripts/` are also TypeScript and run through `tsx`.

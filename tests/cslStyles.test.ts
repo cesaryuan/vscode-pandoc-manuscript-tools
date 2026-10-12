@@ -344,7 +344,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("CSL key and path hovers offer style selection for their own source and metadata scope", () => {
+test("CSL key and path hovers offer style selection for their own source and metadata scope", async () => {
   /** Models hover markdown so the test can follow the actual command URI presented to users. */
   class MarkdownString {
     value = "";
@@ -377,7 +377,7 @@ test("CSL key and path hovers offer style selection for their own source and met
       getText: () => scenario.text, positionAt: (offset: number) => offset, offsetAt: (position: number) => position };
     const provider = scenario.language === "yaml" ? new StyleConfigurationHoverProvider() : new MarkdownYamlHeaderHoverProvider();
     for (const offset of [scenario.text.indexOf("csl:"), scenario.text.indexOf("chosen.csl")]) {
-      const hover = provider.provideHover(document as any, offset as any, { isCancellationRequested: false } as any) as unknown as Hover;
+      const hover = await provider.provideHover(document as any, offset as any, { isCancellationRequested: false } as any) as unknown as Hover;
       const link = /\[设置参考文献样式\]\(command:([^?]+)\?([^)]*)\)/.exec(hover.contents.value);
       assert(link, "Both the CSL key and file path should offer selection");
       assert.deepEqual(JSON.parse(decodeURIComponent(link[2])), [uri, scenario.keys]);

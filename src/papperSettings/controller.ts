@@ -16,7 +16,8 @@ export class PapperSettingsController implements vscode.Disposable {
   private lastSource?: string;
 
   /** Shares downloaded styles and preview caches across all settings windows. */
-  constructor(private readonly output: vscode.OutputChannel, private readonly csl: CslStyleController) {}
+  constructor(private readonly output: vscode.OutputChannel, private readonly csl: CslStyleController,
+    private readonly ensureConfiguration: () => Promise<void> = async () => {}) {}
 
   /** Opens the unified page and optionally navigates directly to a setting section or a hovered CSL scope. */
   async open(uriText?: unknown, section: SettingsSection = "math", cslPath?: unknown): Promise<void> {
@@ -29,7 +30,7 @@ export class PapperSettingsController implements vscode.Disposable {
       const key = uri.toString();
       let session = this.sessions.get(key);
       if (!session) {
-        session = new SettingsSession(document, this.output, this.csl, () => this.sessions.delete(key));
+        session = new SettingsSession(document, this.output, this.csl, () => this.sessions.delete(key), this.ensureConfiguration);
         this.sessions.set(key, session);
       }
       this.lastSource = key;
@@ -62,7 +63,8 @@ class SettingsSession implements vscode.Disposable {
 
   /** Installs the host bridge before rendering HTML so its first ready message cannot be lost. */
   constructor(private readonly document: vscode.TextDocument, private readonly output: vscode.OutputChannel,
-    private readonly csl: CslStyleController, private readonly onClose: () => void) {
+    private readonly csl: CslStyleController, private readonly onClose: () => void,
+    private readonly ensureConfiguration: () => Promise<void> = async () => {}) {
     this.panel = vscode.window.createWebviewPanel("pandocManuscriptTools.settings", "Papper 设置", vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
     this.subscriptions.push(this.panel.onDidDispose(() => this.dispose()));
@@ -113,6 +115,8 @@ class SettingsSession implements vscode.Disposable {
   /** Renders configuration values after an explicit refresh, navigation or successful application. */
   private async refresh(): Promise<void> {
     const revision = ++this.refreshing;
+    await this.ensureConfiguration();
+    if (this.closed || revision !== this.refreshing) return;
     const style = isCslStyleDocument(this.document);
     if (!style) {
       const project = await findPandocManuscriptProject(this.document.uri);

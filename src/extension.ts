@@ -23,6 +23,7 @@ import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, Sty
 import { ManuscriptStyleController, SET_MANUSCRIPT_STYLE_COMMAND } from "./manuscriptStyle";
 import { MarkdownYamlHeaderCompletionProvider, MarkdownYamlHeaderHoverProvider } from "./markdownYamlHeader";
 import { PapperSettingsController, OPEN_PAPPER_SETTINGS_COMMAND } from "./papperSettings/controller";
+import { PapperConfigurationSync } from "./papperConfigurationSync";
 
 /**
  * Activates the local Pandoc Markdown helper extension.
@@ -31,6 +32,9 @@ import { PapperSettingsController, OPEN_PAPPER_SETTINGS_COMMAND } from "./papper
  */
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel(EXTENSION_NAME);
+  const configurationSync = new PapperConfigurationSync(output);
+  /** Deduplicates schema refreshes across completion, hover and settings requests. */
+  const ensureConfiguration = () => configurationSync.ensure();
   const diagnostics = vscode.languages.createDiagnosticCollection("pandoc-manuscript-tools");
   const index = new PandocWorkspaceIndex(output);
   const mathRenderer = new MathJaxRenderer(output);
@@ -46,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
   const inlayHints = new PandocInlayHints(output);
   const inlayMetadata = new InlayMetadataController(output);
   const cslStyles = new CslStyleController(output);
-  const papperSettings = new PapperSettingsController(output, cslStyles);
+  const papperSettings = new PapperSettingsController(output, cslStyles, ensureConfiguration);
   const papperUpdateChecker = new PapperUpdateChecker(context.globalState);
   let papperMaintenanceRunning = false;
   const fencedDivHighlighter = new FencedDivHighlighter(index, output);
@@ -97,11 +101,11 @@ export function activate(context: vscode.ExtensionContext) {
     /** Opens the settings window for the active source or the last settings source. */
     (uriText: unknown) => papperSettings.open(uriText)));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new PandocCompletionProvider(index), "@", ":"));
-  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(), ":", " ", "{", ","));
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCompletionProvider(ensureConfiguration), ":", " ", "{", ","));
   context.subscriptions.push(vscode.languages.registerCodeLensProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationCodeLensProvider()));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationHoverProvider()));
-  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new MarkdownYamlHeaderCompletionProvider(), ":", " ", "{", ",", "-"));
-  context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, new MarkdownYamlHeaderHoverProvider()));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationHoverProvider(ensureConfiguration)));
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new MarkdownYamlHeaderCompletionProvider(ensureConfiguration), ":", " ", "{", ",", "-"));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, new MarkdownYamlHeaderHoverProvider(ensureConfiguration)));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });
@@ -135,8 +139,8 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
         const editor = await vscode.window.showTextDocument(document, { preview: false });
-        const examplePath = vscode.Uri.joinPath(context.extensionUri, "assets", "style-project.yml").fsPath;
-        await mergeStyleExampleIntoEditor(editor, examplePath, output);
+        await ensureConfiguration();
+        await mergeStyleExampleIntoEditor(editor, output);
       } catch (error) {
         output.appendLine(`Could not merge the style example: ${String(error)}`);
         void vscode.window.showErrorMessage(`合并示例配置失败：${error instanceof Error ? error.message : String(error)}`);
@@ -156,6 +160,7 @@ export function activate(context: vscode.ExtensionContext) {
         /** Streams uv progress to the shared extension output channel. */
         async () => {
           await installOrUpdatePapper(output);
+          await configurationSync.ensure(true);
         },
       );
       await markdownPreview.refreshContext();

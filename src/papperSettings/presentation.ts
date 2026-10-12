@@ -6,6 +6,7 @@ export const SETTINGS_LABELS: Record<string, string> = {
   docxEmbedSvgImages: "内嵌 SVG 子图像", docxConvertSvgToPng: "SVG 转 PNG",
   docxSvgToPngWidth: "输出宽度", docxSvgToPngDpi: "输出 DPI", docxSvgToPngScale: "缩放比例",
   docxShowLineNumbers: "行号模式", docxShowPageNumbers: "页脚页码", docxPageMargins: "页面边距",
+  docxFooter: "页脚内容与对齐", content: "Markdown 内容", docxPageWidth: "页面宽度",
   top: "上边距", bottom: "下边距", left: "左边距", right: "右边距", inside: "内侧边距", outside: "外侧边距",
   fontFamily: "字体", western: "西文字体", chinese: "中文字体", fontName: "旧版字体名称",
   fontSize: "字号", fontColor: "字体颜色", bold: "粗体", lineSpacing: "行距", alignment: "对齐方式",
@@ -36,8 +37,8 @@ export const SETTINGS_GROUPS: Record<string, Array<{ title: string; keys: string
     { title: "PNG 输出尺寸", keys: ["docxSvgToPngWidth", "docxSvgToPngDpi", "docxSvgToPngScale"] },
   ],
   layout: [
-    { title: "页码与行号", keys: ["docxShowLineNumbers", "docxShowPageNumbers"] },
-    { title: "页面边距", keys: ["docxPageMargins"] },
+    { title: "页脚、页码与行号", keys: ["docxFooter", "docxShowLineNumbers", "docxShowPageNumbers"] },
+    { title: "页面尺寸与边距", keys: ["docxPageWidth", "docxPageMargins"] },
   ],
   references: [
     { title: "题注与引用文字", keys: ["figureTitle", "tableTitle", "titleDelim", "figPrefix", "tblPrefix", "secPrefix", "eqnPrefix"] },

@@ -5,16 +5,20 @@ import type { StyleField } from "../manuscriptStyle/fields";
 
 export type SettingsRow = { path: string[]; title: string; description: string; options?: readonly string[];
   kind: "text" | "boolean" | "yaml"; value: string; configured: boolean; inherited?: string };
-export type SettingsSection = "math" | "tables" | "docx" | "bibliography" | "images" | "layout" | "references";
+export type SettingsSection = "math" | "tables" | "docx" | "bibliography" | "images" | "layout" | "references" | "general";
 export type SettingsScope = "main" | "reply";
 export const SETTINGS_SECTIONS: Array<{ id: SettingsSection; title: string }> = [
   { id: "math", title: "公式与 MathType" }, { id: "tables", title: "表格" }, { id: "docx", title: "DOCX 样式" },
   { id: "bibliography", title: "参考文献样式" }, { id: "images", title: "图片与 SVG" },
   { id: "layout", title: "页面与行号" }, { id: "references", title: "交叉引用与编号" },
+  { id: "general", title: "其他设置" },
 ];
 
 /** Matches Papper's accepted field aliases without changing custom Word style names. */
-function normalize(key: string): string { return key.replace(/[-_]/g, "").toLowerCase(); }
+function normalize(key: string): string {
+  const canonical = Object.keys(STYLE_FIELDS).find((name) => STYLE_FIELDS[name].aliases?.includes(key)) ?? key;
+  return canonical.replace(/[-_]/g, "").toLowerCase();
+}
 
 /** Parses only the configuration scope, keeping manuscript body text outside YAML. */
 function configuration(text: string, style: boolean) {
@@ -115,17 +119,15 @@ export function getSettingsRows(text: string, style: boolean, scope: SettingsSco
   const inheritedPrefix = settingsPrefix(true, scope);
   if (section === "docx") add(STYLE_FIELDS.docxStyle.children, [...prefix, "docxStyle", styleName], [...inheritedPrefix, "docxStyle", styleName]);
   else if (section === "references" || section === "bibliography") {
-    const fields = Object.fromEntries(Object.entries(PANDOC_METADATA_FIELDS).filter(([key]) =>
-      section === "bibliography" ? ["csl", "reference-section-title", "link-citations"].includes(key) : !["csl", "reference-section-title", "link-citations"].includes(key))
+    const fields = Object.fromEntries(Object.entries(PANDOC_METADATA_FIELDS).filter(([, field]) => field.section === section)
       .sort(([left], [right]) => Number(right === "csl") - Number(left === "csl")));
     add(fields, settingsPrefix(style, scope, true), settingsPrefix(true, scope, true));
-    if (section === "bibliography") add({ citationNumberRangeDelimiter: STYLE_FIELDS.citationNumberRangeDelimiter }, prefix, inheritedPrefix);
-    else add({ docxNativeCrossref: STYLE_FIELDS.docxNativeCrossref }, prefix, inheritedPrefix);
+    add(Object.fromEntries(Object.entries(STYLE_FIELDS).filter(([, field]) => field.section === section)), prefix, inheritedPrefix);
   } else {
-    /** Assigns documented formatting fields to their settings navigation section. */
-    const matches = (key: string): boolean => section === "math" ? key.startsWith("mathtype") : section === "tables" ? key.startsWith("table")
-      : section === "images" ? /Svg/.test(key) : /Margins|LineNumbers|PageNumbers/.test(key);
-    add(Object.fromEntries(Object.entries(STYLE_FIELDS).filter(([key]) => matches(key))), prefix, inheritedPrefix);
+    const knownSections = new Set(SETTINGS_SECTIONS.map((entry) => entry.id));
+    add(Object.fromEntries(Object.entries(STYLE_FIELDS).filter(([key, field]) =>
+      !["reply", "pandocMetadata", "docxStyle"].includes(key)
+      && (section === "general" ? field.section === "general" || !knownSections.has(field.section as SettingsSection) : field.section === section))), prefix, inheritedPrefix);
   }
   return rows;
 }
