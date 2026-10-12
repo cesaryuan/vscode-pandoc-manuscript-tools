@@ -2,7 +2,8 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 
 const CSL_NAMESPACE = "http://purl.org/net/xbiblio/csl";
 const STYLE_INDEX_URL = "https://www.zotero.org/styles-files/styles.json";
-export type ZoteroStyle = { name: string; title: string; titleShort?: string; format?: string };
+export type ZoteroStyle = { name: string; title: string; titleShort?: string; format?: string; dependent?: boolean };
+export type ZoteroPreview = { citations: string[]; bibliography: string };
 type ReadResource = (url: string, signal?: AbortSignal) => Promise<string>;
 
 /** Accepts only repository slugs that can safely name a local CSL file. */
@@ -55,6 +56,7 @@ function parseCsl(xml: string) {
 /** Uses the same index and download endpoints as Zotero's style repository, caching its index per session. */
 export class ZoteroStyleRepository {
   private index?: Promise<ZoteroStyle[]>;
+  private readonly previews = new Map<string, ZoteroPreview>();
 
   /** Allows isolated network fixtures while production uses official Zotero HTTPS resources. */
   constructor(private readonly read: ReadResource = readZoteroResource) {}
@@ -77,10 +79,29 @@ export class ZoteroStyleRepository {
       const categories = entry.categories as Record<string, unknown> | undefined;
       styles.push({ name: entry.name, title: entry.title,
         titleShort: typeof entry.titleShort === "string" ? entry.titleShort : undefined,
-        format: typeof categories?.format === "string" ? categories.format : undefined });
+        format: typeof categories?.format === "string" ? categories.format : undefined,
+        dependent: entry.dependent === 1 || entry.dependent === true });
     }
     if (!styles.length) throw new Error("Zotero 样式索引中没有可用样式");
     return styles;
+  }
+
+  /** Loads Zotero's actual sample citations and bibliography, caching successful previews with bounded memory. */
+  async getPreview(style: ZoteroStyle, signal?: AbortSignal): Promise<ZoteroPreview> {
+    if (!isStyleName(style.name)) throw new Error("无效的 CSL 预览名称");
+    signal?.throwIfAborted();
+    const key = `${style.dependent ? "dependent/" : ""}${style.name}`;
+    const cached = this.previews.get(key);
+    if (cached) { this.previews.delete(key); this.previews.set(key, cached); return cached; }
+    const data: unknown = JSON.parse(await this.read(`https://www.zotero.org/styles-files/previews/combined/${key}.json`, signal));
+    signal?.throwIfAborted();
+    const record = data as Record<string, unknown>;
+    if (!record || !Array.isArray(record.citation) || !record.citation.every((entry) => typeof entry === "string")
+      || typeof record.bibliography !== "string") throw new Error("Zotero 样式预览格式不正确");
+    const preview = { citations: record.citation as string[], bibliography: record.bibliography };
+    this.previews.set(key, preview);
+    if (this.previews.size > 64) this.previews.delete(this.previews.keys().next().value);
+    return preview;
   }
 
   /** Resolves dependent journal aliases into a self-contained CSL, retaining their overriding locale for offline builds. */

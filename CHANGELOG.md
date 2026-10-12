@@ -6,6 +6,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Replace the CSL quick picker with a searchable journal page containing Zotero's formatted Citations and Bibliography previews; support hover/keyboard comparison, explicit confirmation and cancellation of obsolete preview requests.
 - Add a bibliography inlay-hint action to search Zotero's journal styles, download a usable local CSL into the manuscript workspace, and set/reveal its `csl` header path; remove build-explanation text from number-hint tooltips.
 - Add inlay-hint hover actions for reference prefixes and figure/table caption titles, prefilled from effective build metadata and applied to the source manuscript's YAML header as one undoable edit.
 - Show actual built bibliography and cross-reference text after source citations, including grouped citations, locators and subfigure references; consolidate the provider, JSON build and AST/source mapping under `src/inlayHints/`.

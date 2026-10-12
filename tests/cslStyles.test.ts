@@ -9,6 +9,7 @@ import { ZoteroStyleRepository, type ZoteroStyle } from "../src/inlayHints/csl/z
 import { saveCslStyle } from "../src/inlayHints/csl/files";
 import { getYamlHeader } from "../src/manuscriptStyle/document";
 import { SourceModuleFixture } from "./helpers/sourceModule";
+import { renderZoteroPreview, sanitizePreviewHtml } from "../src/inlayHints/csl/previewHtml";
 
 const CSL_NS = "http://purl.org/net/xbiblio/csl";
 
@@ -30,7 +31,7 @@ test("Zotero index retains searchable journals, abbreviations and formats and re
   });
   await assert.rejects(repository.getStyles(), /network/);
   const styles = await repository.getStyles();
-  assert.deepEqual(styles, [{ name: "journal", title: "Journal of Testing", titleShort: "J Test", format: "numeric" }]);
+  assert.deepEqual(styles, [{ name: "journal", title: "Journal of Testing", titleShort: "J Test", format: "numeric", dependent: false }]);
   assert.equal(await repository.getStyles(), styles);
   assert.equal(calls, 2);
 });
@@ -79,64 +80,63 @@ test("local CSL download reuses identical files and preserves customized files o
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-/** Emulates QuickPick interactions while letting tests drive actual selection, input and cancellation events. */
+/** Emulates the search page's host bridge so tests drive actual searches, previews and confirmation messages. */
 class PickerFixture {
-  title = "";
-  placeholder = "";
-  value = "";
-  matchOnDescription = false;
-  matchOnDetail = false;
-  ignoreFocusOut = false;
-  busy = false;
   disposed = false;
-  items: Array<{ label: string; description: string; detail: string; style: ZoteroStyle }> = [];
-  selectedItems: typeof this.items = [];
-  activeItems: typeof this.items = [];
-  private accept?: () => void;
+  messages: Array<Record<string, any>> = [];
+  private receive?: (message: unknown) => void;
   private hidden?: () => void;
-  shown?: () => void;
-  /** Registers acceptance and returns a disposable listener. */
-  onDidAccept(listener: () => void) { this.accept = listener; return { dispose: () => { this.accept = undefined; } }; }
-  /** Registers cancellation and returns a disposable listener. */
-  onDidHide(listener: () => void) { this.hidden = listener; return { dispose: () => { this.hidden = undefined; } }; }
-  /** Simulates opening the search UI. */
-  show() { this.shown?.(); }
-  /** Simulates closing the search UI. */
-  hide() { this.hidden?.(); }
-  /** Releases the picker instance. */
-  dispose() { this.disposed = true; }
-  /** Confirms the selected journal. */
-  acceptSelection() { this.accept?.(); }
+  webview = {
+    html: "",
+    /** Records messages that the search page would render. */
+    postMessage: async (message: Record<string, unknown>) => { this.messages.push(message); return true; },
+    /** Attaches the extension's handler for browser search and preview events. */
+    onDidReceiveMessage: (listener: (message: unknown) => void) => { this.receive = listener; return { dispose: () => { this.receive = undefined; } }; },
+  };
+  /** Registers page closure and returns a disposable listener. */
+  onDidDispose(listener: () => void) { this.hidden = listener; return { dispose: () => { this.hidden = undefined; } }; }
+  /** Releases the panel, including when the user closes its editor tab. */
+  dispose() { if (this.disposed) return; this.disposed = true; this.hidden?.(); }
+  /** Sends an actual search-page interaction through the registered bridge. */
+  send(message: Record<string, unknown>) { this.receive?.(message); }
 }
 
-test("journal picker exposes searchable names and abbreviations and discards loading results after cancel", async () => {
+test("journal search ranks exact names and abbreviations and discards loading results after cancel", async () => {
   const picker = new PickerFixture();
-  const fixture = new SourceModuleFixture({ vscode: { window: { createQuickPick: () => picker } } });
-  const { pickZoteroStyle } = fixture.load<{ pickZoteroStyle(repository: unknown): Promise<ZoteroStyle | undefined> }>("src/inlayHints/csl/picker.ts");
+  const fixture = new SourceModuleFixture({ vscode: { ViewColumn: { Active: -1 }, window: { createWebviewPanel: () => picker } } });
+  const { pickZoteroStyle, searchZoteroStyles } = fixture.load<{
+    pickZoteroStyle(repository: unknown): Promise<ZoteroStyle | undefined>;
+    searchZoteroStyles(styles: ZoteroStyle[], query: string): ZoteroStyle[];
+  }>("src/inlayHints/csl/picker.ts");
   let complete: (styles: ZoteroStyle[]) => void;
   const loaded = new Promise<ZoteroStyle[]>((resolve) => { complete = resolve; });
   const selected = pickZoteroStyle({ getStyles: () => loaded });
-  picker.value = "J Test";
+  picker.send({ type: "ready" });
+  picker.send({ type: "search", query: "J Test", revision: 1 });
   complete([{ name: "journal", title: "Journal of Testing", titleShort: "J Test", format: "numeric" }]);
   await Promise.resolve();
-  assert.equal(picker.value, "J Test");
-  assert(picker.matchOnDescription && picker.matchOnDetail);
-  assert.equal(picker.items[0].label, "Journal of Testing");
-  assert.match(picker.items[0].description, /J Test/);
-  picker.selectedItems = [picker.items[0]];
-  picker.acceptSelection();
+  const results = picker.messages.find((message) => message.type === "results");
+  assert.equal(results.revision, 1);
+  assert.equal(results.styles[0].title, "Journal of Testing");
+  assert.match(results.styles[0].description, /J Test/);
+  picker.send({ type: "select", name: "journal" });
   assert.equal((await selected).name, "journal");
   assert(picker.disposed);
   const cancelled = new PickerFixture();
-  const cancelledFixture = new SourceModuleFixture({ vscode: { window: { createQuickPick: () => cancelled } } });
+  const cancelledFixture = new SourceModuleFixture({ vscode: { ViewColumn: { Active: -1 }, window: { createWebviewPanel: () => cancelled } } });
   const pickerModule = cancelledFixture.load<{ pickZoteroStyle(repository: unknown): Promise<unknown> }>("src/inlayHints/csl/picker.ts");
   let late: (styles: ZoteroStyle[]) => void;
   const pending = pickerModule.pickZoteroStyle({ getStyles: () => new Promise<ZoteroStyle[]>((resolve) => { late = resolve; }) });
-  cancelled.hide();
+  cancelled.dispose();
   assert.equal(await pending, undefined);
   late([{ name: "late", title: "Late" }]);
   await Promise.resolve();
-  assert.equal(cancelled.items.length, 0);
+  assert.equal(cancelled.messages.length, 0);
+  const styles = [{ name: "nature-medicine", title: "Nature Medicine" }, { name: "nature", title: "Nature" },
+    { name: "test", title: "Testing Journal", titleShort: "J Test" }];
+  assert.equal(searchZoteroStyles(styles, "NATURE")[0].name, "nature");
+  assert.equal(searchZoteroStyles(styles, "J Test")[0].name, "test");
+  assert.deepEqual(searchZoteroStyles(styles, "unmatched"), []);
 });
 
 test("selected journal downloads into its own workspace, sets a build-relative CSL path and reveals the YAML field", async () => {
@@ -174,7 +174,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
       Uri: { parse: () => document.uri },
       workspace: { openTextDocument: async () => document, getWorkspaceFolder: () => ({ uri: { fsPath: root } }) },
       window: {
-        createQuickPick: () => { picker = new PickerFixture(); return picker; }, visibleTextEditors: [editor],
+        createWebviewPanel: () => { picker = new PickerFixture(); return picker; }, visibleTextEditors: [editor],
         showTextDocument: async (shown: typeof document) => { assert.equal(shown, document); return editor; },
         withProgress: async (_options: unknown, callback: (progress: unknown, token: unknown) => Promise<unknown>) => callback({}, {
           isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }),
@@ -190,8 +190,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
     const pending = controller.setCsl(uriText);
     // Let the source open and cached index populate before simulating the user's journal selection.
     await new Promise((resolve) => setImmediate(resolve));
-    picker.selectedItems = [picker.items[0]];
-    picker.acceptSelection();
+    picker.send({ type: "select", name: "journal" });
     await pending;
     assert.deepEqual(errors, []);
     const metadata = parse(getYamlHeader(text).content);
@@ -207,8 +206,7 @@ test("selected journal downloads into its own workspace, sets a build-relative C
     repository.downloadStyle = async () => { throw new Error("Download failed"); };
     const failed = controller.setCsl(uriText);
     await new Promise((resolve) => setImmediate(resolve));
-    picker.selectedItems = [picker.items[0]];
-    picker.acceptSelection();
+    picker.send({ type: "select", name: "journal" });
     await failed;
     assert.match(errors[0], /Download failed/);
     assert.equal(text, configured);
@@ -216,9 +214,72 @@ test("selected journal downloads into its own workspace, sets a build-relative C
 
     const cancelled = controller.setCsl(uriText);
     await new Promise((resolve) => setImmediate(resolve));
-    picker.hide();
+    picker.dispose();
     await cancelled;
     assert.equal(errors.length, 1);
     assert.equal(text, configured);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Zotero preview fetches independent and dependent samples and retries failures without caching them", async () => {
+  const urls: string[] = [];
+  let fail = true;
+  const repository = new ZoteroStyleRepository(async (url) => {
+    urls.push(url);
+    if (fail) { fail = false; throw new Error("Preview temporarily unavailable"); }
+    return JSON.stringify({ citation: ["<sup>1</sup>", "<sup>2</sup>"], bibliography: '<div class="csl-entry"><i>Journal</i></div>' });
+  });
+  const style = { name: "journal", title: "Journal", dependent: true };
+  await assert.rejects(repository.getPreview(style), /temporarily/);
+  const preview = await repository.getPreview(style);
+  assert.deepEqual(preview.citations, ["<sup>1</sup>", "<sup>2</sup>"]);
+  assert.equal(await repository.getPreview(style), preview);
+  assert.equal(urls.length, 2);
+  assert(urls[1].endsWith("/dependent/journal.json"));
+  await repository.getPreview({ name: "nature", title: "Nature" });
+  assert(urls[2].endsWith("/combined/nature.json"));
+});
+
+test("preview preserves citation typography, bibliography indents and text while removing executable HTML", () => {
+  const html = renderZoteroPreview({ citations: ["<sup>1</sup>"], bibliography:
+    '<div class="csl-bib-body" style="padding-left: 1em; text-indent:-1em; line-height:1.35">'
+    + '<div class="csl-entry"><i>Book &amp; Journal</i> <b>26</b></div></div>' });
+  assert(html.includes("<sup>1</sup>"));
+  assert(html.includes("<i>Book &amp; Journal</i> <b>26</b>"));
+  assert(html.includes("text-indent:-1em"));
+  const safe = sanitizePreviewHtml('<div onclick="alert(1)" style="background:url(https://example.com); text-indent:-1em">'
+    + '<script>alert(1)</script><img src="https://example.com/x"><a href="javascript:alert(1)">DOI</a><em>safe</em></div>');
+  assert(!/script|onclick|src=|href=|url\(/i.test(safe));
+  assert(safe.includes("DOI<em>safe</em>"));
+  assert(safe.includes("text-indent:-1em"));
+});
+
+test("switching and closing a preview prevents obsolete responses from replacing the current journal", async () => {
+  const picker = new PickerFixture();
+  const fixture = new SourceModuleFixture({ vscode: { ViewColumn: { Active: -1 }, window: { createWebviewPanel: () => picker } } });
+  const { pickZoteroStyle } = fixture.load<{ pickZoteroStyle(repository: unknown): Promise<unknown> }>("src/inlayHints/csl/picker.ts");
+  const pending = new Map<string, { resolve: (value: unknown) => void; signal: AbortSignal }>();
+  const choosing = pickZoteroStyle({ getStyles: async () => [{ name: "first", title: "First" }, { name: "second", title: "Second" }],
+    getPreview: (style: ZoteroStyle, signal: AbortSignal) => new Promise((resolve) => pending.set(style.name, { resolve, signal })) });
+  picker.send({ type: "ready" });
+  await Promise.resolve();
+  picker.send({ type: "preview", name: "first" });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  picker.send({ type: "preview", name: "second" });
+  assert(pending.get("first").signal.aborted);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  pending.get("second").resolve({ citations: ["(Second, 2024)"], bibliography: "Second reference" });
+  await Promise.resolve();
+  pending.get("first").resolve({ citations: ["(First, 2023)"], bibliography: "First reference" });
+  await Promise.resolve();
+  const previews = picker.messages.filter((message) => message.type === "preview");
+  assert.equal(previews.length, 1);
+  assert.equal(previews[0].name, "second");
+  picker.send({ type: "preview", name: "first" });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  picker.dispose();
+  assert.equal(await choosing, undefined);
+  pending.get("first").resolve({ citations: ["late"], bibliography: "late" });
+  await Promise.resolve();
+  assert.equal(picker.messages.filter((message) => message.type === "preview").length, 1);
 });
