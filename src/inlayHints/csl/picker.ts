@@ -4,6 +4,9 @@ import { renderZoteroPreview } from "./previewHtml";
 
 const FORMAT_LABELS: Record<string, string> = { numeric: "数字编号", "author-date": "作者年份", author: "作者", note: "脚注", label: "标签" };
 
+/** Keeps same-named styles from different libraries distinct in selection and preview messages. */
+function styleIdentity(style: ZoteroStyle): string { return style.source === "chinese" ? `chinese/${style.name}` : style.name; }
+
 /** Searches Zotero names and abbreviations, ranking exact and title-prefix matches ahead of other results. */
 export function searchZoteroStyles(styles: ZoteroStyle[], query: string): ZoteroStyle[] {
   const normalized = query.trim().toLocaleLowerCase();
@@ -14,7 +17,7 @@ export function searchZoteroStyles(styles: ZoteroStyle[], query: string): Zotero
     return [title, style.name, style.titleShort?.toLocaleLowerCase()].includes(normalized) ? 0 : title.startsWith(normalized) ? 1 : 2;
   };
   return styles.filter((style) => {
-    const searchable = `${style.title} ${style.titleShort ?? ""} ${style.name}`.toLocaleLowerCase();
+    const searchable = `${style.title} ${style.titleShort ?? ""} ${style.name} ${style.searchText ?? ""} ${style.source === "chinese" ? "Zotero 中文社区" : "Zotero 官方"}`.toLocaleLowerCase();
     return terms.every((term) => searchable.includes(term));
   }).sort((left, right) => score(left) - score(right) || left.title.localeCompare(right.title));
 }
@@ -45,12 +48,12 @@ export function attachZoteroSearch(webview: vscode.Webview, repository: ZoteroSt
     if (!ready || !styles || closed) return;
     const matches = searchZoteroStyles(styles, query);
     void webview.postMessage({ type: "results", revision, count: matches.length, styles: matches.slice(0, 100).map((style) => ({
-      name: style.name, title: style.title, description: [style.titleShort, FORMAT_LABELS[style.format] ?? style.format].filter(Boolean).join(" · "),
+      name: styleIdentity(style), title: style.title, description: [style.source === "chinese" ? "Zotero 中文社区" : "Zotero 官方", style.titleShort, FORMAT_LABELS[style.format] ?? style.format].filter(Boolean).join(" · "),
     })) });
   };
   /** Loads only the current preview and prevents slower previous requests from replacing it. */
   const showPreview = (style: ZoteroStyle): void => {
-    activeName = style.name;
+    const identity = styleIdentity(style); activeName = identity;
     if (previewTimer) clearTimeout(previewTimer);
     previewController?.abort();
     const controller = new AbortController();
@@ -58,21 +61,24 @@ export function attachZoteroSearch(webview: vscode.Webview, repository: ZoteroSt
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
       void repository.getPreview(style, controller.signal).then((preview) => {
-        if (!closed && !controller.signal.aborted && activeName === style.name) {
-          void webview.postMessage({ type: "preview", name: style.name, html: renderZoteroPreview(preview) });
+        if (!closed && !controller.signal.aborted && activeName === identity) {
+          void webview.postMessage({ type: "preview", name: identity, html: renderZoteroPreview(preview) });
         }
       }).catch((error) => {
-        if (!closed && !controller.signal.aborted && activeName === style.name) {
-          void webview.postMessage({ type: "previewError", name: style.name, error: error instanceof Error ? error.message : String(error) });
+        if (!closed && !controller.signal.aborted && activeName === identity) {
+          void webview.postMessage({ type: "previewError", name: identity, error: error instanceof Error ? error.message : String(error) });
         }
       });
     }, 180);
   };
   /** Loads styles on first bibliography visit and permits an explicit retry after a network failure. */
   const loadIndex = (): void => {
-    if (loading || styles) return;
+    if (loading || styles && !repository.indexWarnings?.length) return;
     loading = true;
-    void repository.getStyles().then((loaded) => { if (!closed) { styles = loaded; publishResults(); } })
+    void repository.getStyles().then((loaded) => { if (!closed) {
+      styles = loaded; publishResults();
+      void webview.postMessage({ type: "styleSourcesWarning", warnings: repository.indexWarnings ?? [] });
+    } })
       .catch((error) => { if (!closed) fail(error); }).finally(() => { loading = false; });
   };
   subscriptions.push(webview.onDidReceiveMessage((message: unknown) => {
@@ -89,7 +95,7 @@ export function attachZoteroSearch(webview: vscode.Webview, repository: ZoteroSt
       if (previewTimer) clearTimeout(previewTimer);
       previewController?.abort(); loadIndex(); publishResults();
     } else if ((request.type === "preview" || request.type === "select") && typeof request.name === "string") {
-      const style = styles?.find((candidate) => candidate.name === request.name);
+      const style = styles?.find((candidate) => styleIdentity(candidate) === request.name);
       if (!style) return;
       if (request.type === "preview") showPreview(style);
       else select(style);

@@ -21,7 +21,7 @@ export class CslStyleController {
     // Alternate style filenames may not mark a Papper project; their paths still resolve beside the style file.
     const projectRoot = isCslStyleDocument(document) ? path.dirname(uri.fsPath) : (await findPandocManuscriptProject(uri)).rootUri.fsPath;
     const root = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? path.dirname(uri.fsPath);
-    this.output.appendLine(`[CSL] Downloading Zotero style: ${style.name}`);
+    this.output.appendLine(`[CSL] Downloading ${style.source === "chinese" ? "Zotero Chinese" : "Zotero official"} style: ${style.name}`);
     const xml = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
       title: `正在下载参考文献样式：${style.title}`, cancellable: true }, async (_progress, token) => {
       const controller = new AbortController();

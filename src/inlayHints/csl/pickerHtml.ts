@@ -14,6 +14,7 @@ export function buildCslPickerHtml(shell?: PickerShell): string {
 .page { display:flex; flex-direction:column; height:100vh; padding:24px; gap:18px; }
 header h1 { margin:0 0 6px; font-size:21px; font-weight:600; } .muted { color:var(--vscode-descriptionForeground); } header p { margin:0; }
 .toolbar { display:flex; gap:10px; } input { flex:1; min-width:0; border:1px solid var(--vscode-input-border,transparent); background:var(--vscode-input-background); color:var(--vscode-input-foreground); padding:10px 12px; font:inherit; border-radius:3px; }
+.sources-warning { color:var(--vscode-descriptionForeground); font-size:12px; } .sources-warning:empty { display:none; }
 input:focus { outline:1px solid var(--vscode-focusBorder); } button { font:inherit; cursor:pointer; border:0; border-radius:3px; padding:9px 14px; background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
 button:hover { background:var(--vscode-button-hoverBackground); } button:focus-visible { outline:1px solid var(--vscode-focusBorder); outline-offset:2px; } button:disabled { opacity:.5; cursor:default; }
 .secondary { background:var(--vscode-button-secondaryBackground); color:var(--vscode-button-secondaryForeground); }
@@ -34,12 +35,13 @@ button:hover { background:var(--vscode-button-hoverBackground); } button:focus-v
 @media(max-width:650px) { .page { padding:14px; } .content { grid-template-columns:1fr; grid-template-rows:minmax(140px,38%) minmax(0,1fr); gap:14px; } .preview { padding:14px; } footer { align-items:flex-start; } }
 ${shell?.styles ?? ""}
 </style></head><body>${shell?.before ?? ""}<main class="page" id="bibliography">
-<header><h1>设置参考文献样式</h1><p class="muted">搜索期刊名称或缩写，查看引用和参考文献的格式</p></header>
+<header><h1>设置参考文献样式</h1><p class="muted">搜索期刊、学校或样式名称 · Zotero 官方与中文社区样式库</p></header>
 <div id="csl-config"></div>
-<div class="toolbar"><input id="search" type="search" aria-label="搜索期刊名称或缩写" placeholder="例如 Nature、PLOS ONE" autocomplete="off"><button id="cancel" class="secondary">${shell ? "清空搜索" : "取消"}</button></div>
-<div class="content"><div class="results"><div id="count" class="muted" role="status">正在加载 Zotero 样式库…</div><div id="list" role="listbox" aria-label="期刊样式"></div></div>
-<article class="preview" aria-label="样式预览"><h2 id="style-title">样式预览</h2><p id="style-format" class="muted"></p><div id="sample" aria-live="polite"><p class="notice">将鼠标移到期刊名称，或使用方向键查看 Citations 和 Bibliography</p></div></article></div>
-<footer><span class="muted">Zotero 示例文献 · 确认后下载并更新参考文献样式配置</span><button id="apply" disabled>使用此样式</button></footer>
+<div class="toolbar"><input id="search" type="search" aria-label="搜索期刊、学校或样式名称" placeholder="例如 Nature、GB/T 7714、北京大学" autocomplete="off"><button id="cancel" class="secondary">${shell ? "清空搜索" : "取消"}</button></div>
+<div id="sources-warning" class="sources-warning" role="status"></div>
+<div class="content"><div class="results"><div id="count" class="muted" role="status">正在加载参考文献样式库…</div><div id="list" role="listbox" aria-label="参考文献样式"></div></div>
+<article class="preview" aria-label="样式预览"><h2 id="style-title">样式预览</h2><p id="style-format" class="muted"></p><div id="sample" aria-live="polite"><p class="notice">将鼠标移到样式名称，或使用方向键查看 Citations 和 Bibliography</p></div></article></div>
+<footer><span class="muted">样式库示例文献 · 确认后下载并更新参考文献样式配置</span><button id="apply" disabled>使用此样式</button></footer>
 </main>${shell?.after ?? ""}<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const search = document.getElementById('search');
@@ -91,9 +93,10 @@ window.addEventListener('message', (event) => {
     list.replaceChildren(...nodes);
     if (results.length) activate(results[0]);
   } else if (message.type === 'preview' && message.name === active?.name) { sample.innerHTML = message.html; }
-  else if (message.type === 'previewError' && message.name === active?.name) { notice(message.error + '。仍可使用此样式，或切换其他期刊'); }
+  else if (message.type === 'previewError' && message.name === active?.name) { notice(message.error + '。仍可使用此样式，或切换其他样式'); }
   else if (message.type === 'ready') { requestSearch(); }
   else if (message.type === 'indexError') { count.textContent = message.error + '，修改搜索词以重试'; }
+  else if (message.type === 'styleSourcesWarning') { document.getElementById('sources-warning').textContent = message.warnings.join('；') + (message.warnings.length ? '。可继续使用已加载样式，修改搜索词以重试' : ''); }
   else if (message.type === 'cslBusy') { apply.disabled = message.busy || !active; }
 });
 ${shell ? shell.script : "search.focus(); vscode.postMessage({type:'ready'});"}

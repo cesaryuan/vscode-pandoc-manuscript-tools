@@ -10,6 +10,7 @@ All notable changes to Papper Tools are documented in this file.
 
 ### Added
 
+- Search Zotero Chinese community journal and thesis styles alongside the official repository, label each result's source, show community-generated citation/bibliography previews and download community CSL files into the workspace; keep either library usable when the other fails and retry failed sources on later searches.
 - Add a unified **Papper: 打开设置** window with formula/MathType, table, named DOCX style, bibliography, image, page-layout and cross-reference sections; edit manuscript/project and reply scopes with apply/reset controls and protection against stale configuration edits.
 - Route **设置参考文献样式** commands and hover actions to the unified settings window's bibliography section, retaining Zotero search/previews and downloading only on confirmation without closing the settings window.
 - Expose **Papper: 设置参考文献样式** in the Command Palette and on YAML `csl` key/value hovers in manuscript headers and project style files; update and reveal the selected metadata scope, including reply overrides.

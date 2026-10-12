@@ -10,6 +10,7 @@ import { saveCslStyle } from "../src/inlayHints/csl/files";
 import { getYamlHeader } from "../src/manuscriptStyle/document";
 import { SourceModuleFixture } from "./helpers/sourceModule";
 import { renderZoteroPreview, sanitizePreviewHtml } from "../src/inlayHints/csl/previewHtml";
+import { parseCommunityIndex } from "../src/inlayHints/csl/chinese";
 
 const CSL_NS = "http://purl.org/net/xbiblio/csl";
 
@@ -22,7 +23,8 @@ ${parent ? "" : '<citation><layout><text variable="title"/></layout></citation>'
 
 test("Zotero index retains searchable journals, abbreviations and formats and retries failed loads", async () => {
   let calls = 0;
-  const repository = new ZoteroStyleRepository(async () => {
+  const repository = new ZoteroStyleRepository(async (url) => {
+    if (!url.endsWith("styles.json")) throw new Error("Community unavailable");
     if (++calls === 1) throw new Error("Temporary network failure");
     return JSON.stringify([
       { name: "journal", title: "Journal of Testing", titleShort: "J Test", categories: { format: "numeric" } },
@@ -32,8 +34,77 @@ test("Zotero index retains searchable journals, abbreviations and formats and re
   await assert.rejects(repository.getStyles(), /network/);
   const styles = await repository.getStyles();
   assert.deepEqual(styles, [{ name: "journal", title: "Journal of Testing", titleShort: "J Test", format: "numeric", dependent: false }]);
-  assert.equal(await repository.getStyles(), styles);
+  assert.deepEqual(await repository.getStyles(), styles);
   assert.equal(calls, 2);
+});
+
+/** Models the community's published summary bundle, including its JavaScript string escaping. */
+function communityBundle(entries: unknown[]): string { return `const styles=JSON.parse(${JSON.stringify(JSON.stringify(entries))});`; }
+
+/** Supplies the current asset-discovery contract while letting tests control metadata and CSL resources. */
+function communityResource(url: string, entries: unknown[]): string | undefined {
+  if (url === "https://zotero-chinese.com/styles/") return '<script src="/assets/chunks/theme.fixture.js"></script>';
+  if (url.endsWith("/theme.fixture.js")) return 'import("./StyleCards.fixture.js")';
+  if (url.endsWith("/StyleCards.fixture.js")) return communityBundle(entries);
+  return undefined;
+}
+
+test("community styles remain searchable and downloadable when official loading fails, then merge on retry", async () => {
+  let officialAvailable = false;
+  const urls: string[] = [];
+  const entry = { dir: "示例大学学位论文", file: "示例大学学位论文.csl", title: "示例大学学位论文", key: "abc123", citation_format: "numeric", tags: ["双语"], summary: "GB/T 7714" };
+  const repository = new ZoteroStyleRepository(async url => {
+    urls.push(url);
+    const index = communityResource(url, [entry, { ...entry, dir: "../escape" }]);
+    if (index !== undefined) return index;
+    if (url.endsWith("styles.json")) {
+      if (!officialAvailable) throw Error("Official offline");
+      return JSON.stringify([{ name: "journal", title: "Journal" }]);
+    }
+    if (url.endsWith(".json")) return JSON.stringify({ citations: "<sup>1</sup> 中文引注", bibliography: '<div class="csl-entry">中文参考文献</div>' });
+    return csl(undefined, "zh-CN").replace(' version="1.0" default-locale', ' version="1.0mlz1" default-locale');
+  });
+  const styles = await repository.getStyles();
+  assert.equal(styles.length, 1);
+  assert.match(repository.indexWarnings.join(" "), /Zotero 官方/);
+  const fixture = new SourceModuleFixture({ vscode: {} });
+  const { searchZoteroStyles } = fixture.load<typeof import("../src/inlayHints/csl/picker")>("src/inlayHints/csl/picker.ts");
+  assert.equal(searchZoteroStyles(styles, "学位论文 双语 GB/T")[0], styles[0]);
+  const preview = await repository.getPreview(styles[0]);
+  assert.match(renderZoteroPreview(preview), /中文引注/);
+  assert.match(preview.bibliography, /中文参考文献/);
+  const xml = await repository.downloadStyle(styles[0]);
+  assert.match(xml, /version="1.0mlz1"/);
+  assert.ok(urls.includes("https://zotero-chinese.com/styles/" + encodeURIComponent(entry.dir) + "/" + encodeURIComponent(entry.file)));
+  const root = await mkdtemp(path.join(os.tmpdir(), "pmt-community-test-"));
+  try { assert.equal(await readFile(await saveCslStyle(root, styles[0].name, xml), "utf8"), xml); }
+  finally { await rm(root, { recursive: true, force: true }); }
+  officialAvailable = true;
+  const merged = await repository.getStyles();
+  assert.equal(merged.length, 2);
+  assert.deepEqual(repository.indexWarnings, []);
+  assert.equal(await repository.getStyles(), merged);
+  assert.equal(urls.filter(url => url === "https://zotero-chinese.com/styles/").length, 1);
+});
+
+test("community index treats generated bundles only as data and rejects unsafe resource paths", () => {
+  const entry = { dir: "中国期刊", file: "中国期刊.csl", title: "中国期刊's 样式", key: "aa12" };
+  const literal = JSON.stringify([entry]).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  assert.equal(parseCommunityIndex(`var styles=JSON.parse('${literal}');throw Error('never executed');`)[0].title, entry.title);
+  assert.throws(() => parseCommunityIndex('JSON.parse(fetch("https://example.org"))'));
+  assert.throws(() => parseCommunityIndex(communityBundle([{ ...entry, file: "../outside.csl" }])));
+  assert.throws(() => parseCommunityIndex(communityBundle([{ ...entry, key: "../outside" }])));
+});
+
+test("community downloads resolve official parents with locale preserved and reject external parent URLs", async () => {
+  const style: ZoteroStyle = { name: "zotero-chinese-aa12", title: "中文别名", source: "chinese",
+    community: { directory: "中文别名", file: "中文别名.csl", previewKey: "aa12" } };
+  const repository = new ZoteroStyleRepository(async url => url.startsWith("https://zotero-chinese.com/")
+    ? csl("http://www.zotero.org/styles/parent", "zh-CN") : csl(undefined, "en-US"));
+  const xml = await repository.downloadStyle(style);
+  assert.match(xml, /default-locale="zh-CN"/);
+  assert.doesNotMatch(xml, /independent-parent/);
+  await assert.rejects(new ZoteroStyleRepository(async () => csl("https://example.org/styles/parent")).downloadStyle(style), /母样式链接/);
 });
 
 test("dependent journal downloads produce usable local CSL without another online dependency and preserve locale", async () => {
@@ -100,6 +171,33 @@ class PickerFixture {
   /** Sends an actual search-page interaction through the registered bridge. */
   send(message: Record<string, unknown>) { this.receive?.(message); }
 }
+
+test("same-named official and community styles retain their own selection and preview source", async () => {
+  const picker = new PickerFixture();
+  const official: ZoteroStyle = { name: "same-name", title: "Official" };
+  const community: ZoteroStyle = { name: "same-name", title: "中文社区", source: "chinese" };
+  const selected: ZoteroStyle[] = [];
+  const previewed: ZoteroStyle[] = [];
+  const fixture = new SourceModuleFixture({ vscode: {} });
+  const { attachZoteroSearch } = fixture.load<typeof import("../src/inlayHints/csl/picker")>("src/inlayHints/csl/picker.ts");
+  const bridge = attachZoteroSearch(picker.webview as any, { getStyles: async () => [official, community],
+    /** Records which source the selected row requests for preview. */
+    getPreview: async (style: ZoteroStyle) => { previewed.push(style); return { citations: [style.title], bibliography: "" }; } } as any,
+  style => selected.push(style), () => {}, () => {});
+  try {
+    picker.send({ type: "ready" });
+    await new Promise(resolve => setImmediate(resolve));
+    const results = picker.messages.find(message => message.type === "results");
+    assert.equal(new Set(results.styles.map((style: { name: string }) => style.name)).size, 2);
+    picker.send({ type: "select", name: "same-name" });
+    picker.send({ type: "select", name: "chinese/same-name" });
+    assert.deepEqual(selected, [official, community]);
+    picker.send({ type: "preview", name: "chinese/same-name" });
+    await new Promise(resolve => setTimeout(resolve, 210));
+    assert.deepEqual(previewed, [community]);
+    assert.equal(picker.messages.find(message => message.type === "preview").name, "chinese/same-name");
+  } finally { bridge.dispose(); }
+});
 
 test("journal search ranks exact names and abbreviations and discards loading results after cancel", async () => {
   const picker = new PickerFixture();
