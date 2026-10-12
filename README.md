@@ -22,6 +22,7 @@ Local VS Code tools for this repository's Pandoc Markdown manuscript syntax.
 - Context-aware YAML key and value completions for `style.yml`, including `pandocMetadata`, `reply`, named DOCX styles and inline mappings, with Chinese descriptions.
 - Hover help for existing style YAML keys and values, showing Chinese descriptions and value hints.
 - Completion and hover help in Markdown/MDX YAML headers, including manuscript metadata, author-list fields and local `papperSettings` overrides.
+- Completion and hover help for Papper table-caption attributes and empty `[]{t="..."}` insertion spans, using exported per-type definitions and value choices.
 - Source-element hover buttons for headings, body text, pipe/grid table cells and images, adding missing settings with inline Chinese help to the current document's `papperSettings.docxStyle` header using effective reference DOCX defaults.
 - A **Papper: 合并示例配置** text action above style YAML that recursively adds missing example settings while retaining existing values and comments.
 - Diagnostics for undefined references and duplicate labels in the current Markdown document.
@@ -67,13 +68,31 @@ For build and packaging commands, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## Style Configuration Editing
 
-Configuration completion, hover help, the settings window and **Papper: 合并示例配置**
+Configuration and element-attribute completion/hover help, the settings window and **Papper: 合并示例配置**
 use definitions exported by the installed Papper through
 `papper config describe --format json`. New fields and the official project
 template are picked up when Papper changes. If Papper is absent, an older version
 does not support the export, or the export fails, bundled definitions keep these
 editing features available. Refreshing definitions does not change manuscript
 files; the example is applied only when you invoke its merge action.
+
+In table captions such as `: Results {#tbl:results cell_margin="0.1cm"}`, complete
+attribute names and choices (for example `alignment="center"` or `autofit="window"`).
+In `[]{t="..."}`, complete `t` first; subsequent help follows that exact type:
+`toc` offers `title` and `depth`, `pageNum` offers page-number `format` values,
+and `sectionBreak` offers section/header/footer options. Hover a key or value
+to see its description, examples, accepted aliases and output formats. Attribute
+names, descriptions and choices come from Papper's `elementAttributes` export,
+including legitimate table aliases such as `cell-margin`; they are independent
+of the strict camelCase spelling of YAML configuration fields.
+
+Completion supports unfinished blocks, single/double quotes, attributes after
+the cursor, and nested empty spans in quoted section stories. It preserves
+existing labels and surrounding source text, suppresses already-present keys,
+and ignores literal examples in frontmatter, code, comments and math. Local
+Markdown/MDX files and unsaved buffers are supported. Use **Ctrl+Space** to
+request suggestions explicitly. Older Papper exports lacking `elementAttributes`
+retain the bundled attribute help.
 
 Page layout settings include `docxFooter` and `docxPageWidth`. New formatting
 fields without a known navigation section appear under **其他设置**. Bundled

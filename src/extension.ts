@@ -22,6 +22,7 @@ import { installOrUpdatePapper } from "./papperBuildUtils";
 import { STYLE_CONFIGURATION_SELECTOR, StyleConfigurationCompletionProvider, StyleConfigurationHoverProvider, StyleConfigurationCodeLensProvider, isStyleConfigurationDocument, mergeStyleExampleIntoEditor } from "./styleConfiguration";
 import { ManuscriptStyleController, SET_MANUSCRIPT_STYLE_COMMAND } from "./manuscriptStyle";
 import { MarkdownYamlHeaderCompletionProvider, MarkdownYamlHeaderHoverProvider } from "./markdownYamlHeader";
+import { ElementAttributeProvider } from "./elementAttributes/providers";
 import { PapperSettingsController, OPEN_PAPPER_SETTINGS_COMMAND } from "./papperSettings/controller";
 import { PapperConfigurationSync } from "./papperConfigurationSync";
 
@@ -106,6 +107,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerHoverProvider(STYLE_CONFIGURATION_SELECTOR, new StyleConfigurationHoverProvider(ensureConfiguration)));
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, new MarkdownYamlHeaderCompletionProvider(ensureConfiguration), ":", " ", "{", ",", "-"));
   context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, new MarkdownYamlHeaderHoverProvider(ensureConfiguration)));
+  const elementAttributes = new ElementAttributeProvider(ensureConfiguration);
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(PANDOC_SELECTOR, elementAttributes, "{", " ", "=", '"', "'"));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(PANDOC_SELECTOR, elementAttributes));
   context.subscriptions.push({ dispose: () => mathRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewRenderer.dispose() });
   context.subscriptions.push({ dispose: () => imagePreviewSidePanel.dispose() });

@@ -1,6 +1,7 @@
 /** Adapts Papper's versioned editor export to the shared completion and settings model. */
 import bundledContract from "../assets/papper-configuration.json";
 import type { StyleField } from "./manuscriptStyle/fields";
+import { parseElementAttributeCatalog, type ElementAttributeCatalog } from "./elementAttributes/catalog";
 
 type Schema = { description?: string; type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>;
   items?: Schema; additionalProperties?: boolean | Schema; required?: string[];
@@ -9,7 +10,7 @@ export type ConfigurationRule = { scope: "style" | "docxTextStyle"; kind: "atMos
 export type ConfigurationContract = { contractVersion: number; papperVersion: string;
   schemas: Record<"style" | "pandocMetadata" | "docxTextStyle" | "manuscriptFrontmatter", Schema>;
   templates: { styleProject: string }; defaults: { standard: Record<string, unknown>; chinese: Record<string, unknown> };
-  rules: ConfigurationRule[] };
+  rules: ConfigurationRule[]; elementAttributes?: ElementAttributeCatalog };
 
 export const STYLE_FIELDS: Record<string, StyleField> = {};
 export const PANDOC_METADATA_FIELDS: Record<string, StyleField> = {};
@@ -18,6 +19,7 @@ export const CHARACTER_STYLE_FIELDS: Record<string, StyleField> = {};
 export const MANUSCRIPT_FIELDS: Record<string, StyleField> = {};
 let currentContract: ConfigurationContract;
 let revision = 0;
+let elementAttributes: ElementAttributeCatalog = {};
 
 /** Rejects unsupported or malformed exports before replacing any working editor data. */
 export function parseConfigurationContract(value: unknown): ConfigurationContract {
@@ -45,6 +47,7 @@ export function parseConfigurationContract(value: unknown): ConfigurationContrac
       throw new Error("Invalid Papper configuration rule");
     }
   }
+  if (candidate.elementAttributes !== undefined) parseElementAttributeCatalog(candidate.elementAttributes);
   return candidate;
 }
 
@@ -96,6 +99,8 @@ export function applyConfigurationContract(value: unknown): void {
   const metadata = fieldsFromSchema(contract.schemas.pandocMetadata);
   const text = fieldsFromSchema(contract.schemas.docxTextStyle);
   const manuscript = fieldsFromSchema(contract.schemas.manuscriptFrontmatter);
+  // Older Papper executables omit this additive member; keep the usable offline catalog.
+  const attributes = contract.elementAttributes ?? elementAttributes;
   // Named styles must share the live typography model instead of a stale nested copy.
   style.docxStyle.children = text;
   if (style.reply?.children?.docxStyle) style.reply.children.docxStyle.children = text;
@@ -108,6 +113,7 @@ export function applyConfigurationContract(value: unknown): void {
   replaceFields(CHARACTER_STYLE_FIELDS, Object.fromEntries(
     ["fontFamily", "fontSize", "fontColor", "bold"].filter((key) => text[key]).map((key) => [key, text[key]])));
   currentContract = contract;
+  elementAttributes = attributes;
   revision += 1;
 }
 
@@ -116,5 +122,8 @@ export function getConfigurationContract(): ConfigurationContract { return curre
 
 /** Invalidates document hover caches when installed Papper definitions change. */
 export function getConfigurationRevision(): number { return revision; }
+
+/** Returns live element definitions, preserving offline help when an older CLI omits them. */
+export function getElementAttributeCatalog(): ElementAttributeCatalog { return elementAttributes; }
 
 applyConfigurationContract(bundledContract);
