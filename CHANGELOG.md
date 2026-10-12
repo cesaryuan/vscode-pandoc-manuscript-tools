@@ -4,6 +4,10 @@ All notable changes to Papper Tools are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Organize Papper settings into themed cards and named groups with short titles, separate descriptions, visible inheritance badges and aligned controls; collapse field paths, complete YAML editors and legacy DOCX options, and adapt navigation and bibliography previews to narrow windows.
+
 ### Added
 
 - Add a unified **Papper: 打开设置** window with formula/MathType, table, named DOCX style, bibliography, image, page-layout and cross-reference sections; edit manuscript/project and reply scopes with apply/reset controls and protection against stale configuration edits.
