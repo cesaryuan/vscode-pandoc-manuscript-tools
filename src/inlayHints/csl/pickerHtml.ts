@@ -40,7 +40,7 @@ ${shell?.styles ?? ""}
 <div class="toolbar"><input id="search" type="search" aria-label="搜索期刊、学校或样式名称" placeholder="例如 Nature、GB/T 7714、北京大学" autocomplete="off"><button id="cancel" class="secondary">${shell ? "清空搜索" : "取消"}</button></div>
 <div id="sources-warning" class="sources-warning" role="status"></div>
 <div class="content"><div class="results"><div id="count" class="muted" role="status">正在加载参考文献样式库…</div><div id="list" role="listbox" aria-label="参考文献样式"></div></div>
-<article class="preview" aria-label="样式预览"><h2 id="style-title">样式预览</h2><p id="style-format" class="muted"></p><div id="sample" aria-live="polite"><p class="notice">将鼠标移到样式名称，或使用方向键查看 Citations 和 Bibliography</p></div></article></div>
+<article class="preview" aria-label="样式预览"><h2 id="style-title">样式预览</h2><p id="style-format" class="muted"></p><div id="sample" aria-live="polite"><p class="notice">点击样式名称，或使用方向键查看 Citations 和 Bibliography</p></div></article></div>
 <footer><span class="muted">样式库示例文献 · 确认后下载并更新参考文献样式配置</span><button id="apply" disabled>使用此样式</button></footer>
 </main>${shell?.after ?? ""}<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
@@ -77,6 +77,8 @@ document.addEventListener('keydown', (event) => {
   if (document.getElementById('bibliography').hidden) return;
   if (!document.getElementById('search').contains(event.target) && !list.contains(event.target) && event.target !== apply && event.target !== document.getElementById('cancel')) return;
   if (event.key === 'Escape') { event.preventDefault(); ${shell ? "search.value = ''; requestSearch();" : "vscode.postMessage({type:'cancel'});"} }
+  // Tab focus no longer switches previews; Enter on a result must select that row rather than apply the previous style.
+  if (event.key === 'Enter' && list.contains(event.target)) { event.preventDefault(); event.target.closest('.item')?.click(); return; }
   if (event.key === 'Enter' && event.target !== document.getElementById('cancel')) { event.preventDefault(); accept(); }
   if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && results.length) {
     event.preventDefault(); const current = results.findIndex(style => style.name === active?.name); const next = Math.max(0, Math.min(results.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1))); activate(results[next], true);
@@ -89,7 +91,7 @@ window.addEventListener('message', (event) => {
   if (message.type === 'results' && message.revision === revision) {
     results = message.styles;
     count.textContent = message.count ? message.count.toLocaleString() + ' 个样式' + (message.count > results.length ? '（显示前 ' + results.length + ' 个，请缩小搜索范围）' : '') : '没有匹配的样式，请尝试期刊全名或其他关键词';
-    const nodes = results.map(style => { const row = document.createElement('button'); row.className = 'item'; row.dataset.name = style.name; row.setAttribute('role','option'); row.setAttribute('aria-selected','false'); const name = document.createElement('span'); name.className = 'name'; name.textContent = style.title; const description = document.createElement('span'); description.className = 'format'; description.textContent = style.description; row.append(name, description); row.addEventListener('mouseenter', () => activate(style)); row.addEventListener('focus', () => activate(style)); row.addEventListener('click', () => activate(style)); return row; });
+    const nodes = results.map(style => { const row = document.createElement('button'); row.className = 'item'; row.dataset.name = style.name; row.setAttribute('role','option'); row.setAttribute('aria-selected','false'); const name = document.createElement('span'); name.className = 'name'; name.textContent = style.title; const description = document.createElement('span'); description.className = 'format'; description.textContent = style.description; row.append(name, description); row.addEventListener('click', () => activate(style)); return row; });
     list.replaceChildren(...nodes);
     if (results.length) activate(results[0]);
   } else if (message.type === 'preview' && message.name === active?.name) { sample.innerHTML = message.html; }
